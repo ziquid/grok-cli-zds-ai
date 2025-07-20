@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { DiffRenderer } from "./diff-renderer";
 
 interface ConfirmationDialogProps {
   operation: string;
@@ -7,6 +8,7 @@ interface ConfirmationDialogProps {
   onConfirm: (dontAskAgain?: boolean) => void;
   onReject: (feedback?: string) => void;
   showVSCodeOpen?: boolean;
+  content?: string; // Optional content to show (file content or command)
 }
 
 export default function ConfirmationDialog({
@@ -15,6 +17,7 @@ export default function ConfirmationDialog({
   onConfirm,
   onReject,
   showVSCodeOpen = false,
+  content,
 }: ConfirmationDialogProps) {
   const [selectedOption, setSelectedOption] = useState(0);
   const [feedbackMode, setFeedbackMode] = useState(false);
@@ -123,6 +126,20 @@ export default function ConfirmationDialog({
           <Box marginTop={1}>
             <Text color="gray">⎿ Opened changes in Visual Studio Code ⧉</Text>
           </Box>
+        )}
+
+        {/* Show content preview if provided */}
+        {content && (
+          <>
+            <Text color="gray">⎿ {content.split('\n')[0]}</Text>
+            <Box marginLeft={4} flexDirection="column">
+              <DiffRenderer
+                diffContent={content}
+                filename={filename}
+                terminalWidth={80}
+              />
+            </Box>
+          </>
         )}
       </Box>
 

@@ -52,17 +52,21 @@ You have access to these tools:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
 - str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)
-- bash: Execute bash commands
+- bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
-- request_confirmation: Request user confirmation before performing operations
-- check_session_acceptance: Check if user has accepted operations for this session
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
 - ALWAYS use str_replace_editor to modify existing files, even for small changes
 - Before editing a file, use view_file to see its current contents
 - Use create_file ONLY when creating entirely new files that don't exist
+
+SEARCHING AND EXPLORATION:
+- Use bash with commands like 'find', 'grep', 'rg' (ripgrep), 'ls', etc. for searching files and content
+- Examples: 'find . -name "*.js"', 'grep -r "function" src/', 'rg "import.*react"'
+- Use bash for directory navigation, file discovery, and content searching
+- view_file is best for reading specific files you already know exist
 
 When a user asks you to edit, update, modify, or change an existing file:
 1. First use view_file to see the current contents
@@ -81,32 +85,10 @@ TASK PLANNING WITH TODO LISTS:
 - Todo lists provide visual feedback with colors: ✅ Green (completed), 🔄 Cyan (in progress), ⏳ Yellow (pending)
 - Always create todos with priorities: 'high' (🔴), 'medium' (🟡), 'low' (🟢)
 
-MANDATORY USER CONFIRMATION SYSTEM:
-CRITICAL: You MUST follow this confirmation protocol for ALL file operations and bash commands:
+USER CONFIRMATION SYSTEM:
+File operations (create_file, str_replace_editor) and bash commands will automatically request user confirmation before execution. The confirmation system will show users the actual content or command before they decide. Users can choose to approve individual operations or approve all operations of that type for the session.
 
-1. BEFORE performing ANY file operation (create_file, str_replace_editor) or bash command:
-   - First use check_session_acceptance to see if the user has already accepted operations for this session
-   - If the response shows hasAnyAcceptance: true for the relevant operation type, you may proceed without additional confirmation
-   - If hasAnyAcceptance: false or the specific operation type is not accepted, you MUST use request_confirmation before proceeding
-
-2. Session acceptance tracking:
-   - fileOperationsAccepted: true means user accepted "don't ask again" for file operations
-   - bashCommandsAccepted: true means user accepted "don't ask again" for bash commands  
-   - allOperationsAccepted: true means user accepted "don't ask again" for all operations
-   - hasAnyAcceptance: true means user has accepted at least one type of operation
-
-3. Confirmation workflow:
-   - Use request_confirmation with operation type, filename/command, and optional description
-   - If confirmation is rejected, DO NOT proceed with the operation
-   - If confirmation is accepted, proceed with the file operation or bash command
-   - The confirmation system will automatically track "don't ask again" preferences
-
-4. Operation types for confirmation:
-   - "Create file" for create_file operations
-   - "Edit file" for str_replace_editor operations
-   - "Run bash command" for bash operations
-
-NEVER bypass the confirmation system - it is a critical security feature that protects users from unintended operations.
+If a user rejects an operation, the tool will return an error and you should not proceed with that specific operation.
 
 Be helpful, direct, and efficient. Always explain what you're doing and show the results.
 
@@ -169,6 +151,7 @@ Current working directory: ${process.cwd()}`
           // Execute tool calls
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await this.executeTool(toolCall);
+            
             const toolResultEntry: ChatEntry = {
               type: 'tool_result',
               content: result.success ? result.output || 'Success' : result.error || 'Error occurred',
@@ -179,7 +162,7 @@ Current working directory: ${process.cwd()}`
             this.chatHistory.push(toolResultEntry);
             newEntries.push(toolResultEntry);
 
-            // Add tool result to messages with proper format
+            // Add tool result to messages with proper format (needed for AI context)
             this.messages.push({
               role: 'tool',
               content: result.success ? (result.output || 'Success') : (result.error || 'Error'),
@@ -372,7 +355,7 @@ Current working directory: ${process.cwd()}`
               toolResult: result
             };
 
-            // Add tool result with proper format
+            // Add tool result with proper format (needed for AI context)
             this.messages.push({
               role: 'tool',
               content: result.success ? (result.output || 'Success') : (result.error || 'Error'),
@@ -435,16 +418,6 @@ Current working directory: ${process.cwd()}`
         case 'update_todo_list':
           return await this.todoTool.updateTodoList(args.updates);
           
-        case 'request_confirmation':
-          return await this.confirmationTool.requestConfirmation({
-            operation: args.operation,
-            filename: args.filename,
-            description: args.description,
-            showVSCodeOpen: args.showVSCodeOpen
-          });
-          
-        case 'check_session_acceptance':
-          return await this.confirmationTool.checkSessionAcceptance();
           
         default:
           return {

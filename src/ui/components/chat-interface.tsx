@@ -87,6 +87,7 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
     };
   }, [confirmationService]);
 
+
   useEffect(() => {
     if (!isProcessing && !isStreaming) {
       setProcessingTime(0);
@@ -141,10 +142,12 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
           operation={confirmationOptions.operation}
           filename={confirmationOptions.filename}
           showVSCodeOpen={confirmationOptions.showVSCodeOpen}
+          content={confirmationOptions.content}
           onConfirm={handleConfirmation}
           onReject={handleRejection}
         />
       )}
+
 
       {!confirmationOptions && (
         <>

@@ -58,14 +58,15 @@ export class ConfirmationTool {
   async checkSessionAcceptance(): Promise<ToolResult> {
     try {
       const sessionFlags = this.confirmationService.getSessionFlags();
+      // Return structured data without JSON output to avoid displaying raw JSON
       return {
         success: true,
-        output: JSON.stringify({
+        data: {
           fileOperationsAccepted: sessionFlags.fileOperations,
           bashCommandsAccepted: sessionFlags.bashCommands,
           allOperationsAccepted: sessionFlags.allOperations,
           hasAnyAcceptance: sessionFlags.fileOperations || sessionFlags.bashCommands || sessionFlags.allOperations
-        })
+        }
       };
     } catch (error: any) {
       return {

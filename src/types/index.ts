@@ -2,6 +2,7 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  data?: any;
 }
 
 export interface Tool {

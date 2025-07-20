@@ -170,46 +170,5 @@ export const GROK_TOOLS: GrokTool[] = [
         required: ['updates']
       }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'request_confirmation',
-      description: 'Request user confirmation before performing operations. Use this tool before editing/creating/deleting files or running bash commands.',
-      parameters: {
-        type: 'object',
-        properties: {
-          operation: {
-            type: 'string',
-            description: 'Description of the operation to be performed (e.g., "Edit file", "Create file", "Run bash command")'
-          },
-          filename: {
-            type: 'string',
-            description: 'Name of the file or command to be operated on'
-          },
-          description: {
-            type: 'string',
-            description: 'Optional additional description of what will be done'
-          },
-          showVSCodeOpen: {
-            type: 'boolean',
-            description: 'Whether to offer opening the file in VS Code for review (default: false)'
-          }
-        },
-        required: ['operation', 'filename']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'check_session_acceptance',
-      description: 'Check if the user has already accepted operations for this session to avoid unnecessary confirmation prompts',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: []
-      }
-    }
   }
 ];

@@ -118,51 +118,17 @@ export const DiffRenderer = ({
   const parsedLines = parseDiffWithLineNumbers(actualDiffContent);
 
   if (parsedLines.length === 0) {
-    return (
-      <Box borderStyle="round" borderColor={Colors.Gray} padding={1}>
-        <Text dimColor>No changes detected.</Text>
-      </Box>
-    );
+    return <Text dimColor>No changes detected.</Text>;
   }
 
-  // Check if the diff represents a new file (only additions and header lines)
-  const isNewFile = parsedLines.every(
-    (line) =>
-      line.type === 'add' ||
-      line.type === 'hunk' ||
-      line.type === 'other' ||
-      line.content.startsWith('diff --git') ||
-      line.content.startsWith('new file mode'),
+  // Always render as diff format to show line numbers and + signs
+  const renderedOutput = renderDiffContent(
+    parsedLines,
+    filename,
+    tabWidth,
+    availableTerminalHeight,
+    terminalWidth,
   );
-
-  let renderedOutput: React.ReactNode;
-
-  if (isNewFile) {
-    // Extract only the added lines' content
-    const addedContent = parsedLines
-      .filter((line) => line.type === 'add')
-      .map((line) => line.content)
-      .join('\n');
-    // Attempt to infer language from filename, default to plain text if no filename
-    const fileExtension = filename?.split('.').pop() || null;
-    const language = fileExtension
-      ? getLanguageFromExtension(fileExtension)
-      : null;
-    renderedOutput = colorizeCode(
-      addedContent,
-      language,
-      availableTerminalHeight,
-      terminalWidth,
-    );
-  } else {
-    renderedOutput = renderDiffContent(
-      parsedLines,
-      filename,
-      tabWidth,
-      availableTerminalHeight,
-      terminalWidth,
-    );
-  }
 
   return <>{renderedOutput}</>;
 };
@@ -186,11 +152,7 @@ const renderDiffContent = (
   );
 
   if (displayableLines.length === 0) {
-    return (
-      <Box borderStyle="round" borderColor={Colors.Gray} padding={1}>
-        <Text dimColor>No changes detected.</Text>
-      </Box>
-    );
+    return <Text dimColor>No changes detected.</Text>;
   }
 
   // Calculate the minimum indentation across all displayable lines
@@ -282,7 +244,8 @@ const renderDiffContent = (
 
         acc.push(
           <Box key={lineKey} flexDirection="row">
-            <Text color={backgroundColor ? '#000000' : Colors.Gray} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim}>{gutterNumStr.padEnd(3)}{prefixSymbol} </Text>
+            <Text color={Colors.Gray} dimColor={dim}>{gutterNumStr.padEnd(4)}</Text>
+            <Text color={backgroundColor ? '#000000' : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim}>{prefixSymbol} </Text>
             <Text color={backgroundColor ? '#000000' : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim} wrap="wrap">
               {displayContent}
             </Text>

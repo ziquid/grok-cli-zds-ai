@@ -109,12 +109,13 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
         const actionName = getToolActionName(toolName);
         const filePath = getToolFilePath(entry.toolCall);
 
+
         const shouldShowDiff =
           toolName === "str_replace_editor" || toolName === "create_file";
         const shouldShowFileContent = toolName === "view_file";
 
         return (
-          <Box key={index} flexDirection="column">
+          <Box key={index} flexDirection="column" marginTop={1}>
             <Box>
               <Text color="magenta">⏺</Text>
               <Text color="white">
@@ -130,6 +131,9 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
                     {renderFileContent(entry.content)}
                   </Box>
                 </Box>
+              ) : shouldShowDiff ? (
+                // For diff results, show only the summary line, not the raw content
+                <Text color="gray">⎿ {entry.content.split('\n')[0]}</Text>
               ) : (
                 <Text color="gray">⎿ {entry.content}</Text>
               )}

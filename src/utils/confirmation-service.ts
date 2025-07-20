@@ -8,6 +8,7 @@ export interface ConfirmationOptions {
   operation: string;
   filename: string;
   showVSCodeOpen?: boolean;
+  content?: string;  // Content to show in confirmation dialog
 }
 
 export interface ConfirmationResult {
