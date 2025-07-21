@@ -11,7 +11,7 @@ A conversational AI CLI tool powered by Grok-3 with intelligent text editor capa
 - **⚡ Bash Integration**: Execute shell commands through natural conversation
 - **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
 - **💬 Interactive UI**: Beautiful terminal interface built with Ink
-- **🌍 Global Installation**: Install and use anywhere with `npm i -g grok-cli`
+- **🌍 Global Installation**: Install and use anywhere with `npm i -g @vibe-kit/grok-cli`
 
 ## Installation
 
