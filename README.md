@@ -19,7 +19,7 @@ A conversational AI CLI tool powered by Grok-3 with intelligent text editor capa
 
 ### Global Installation (Recommended)
 ```bash
-npm install -g grok-cli
+npm install -g @vibe-kit/grok-cli
 ```
 
 ### Local Development
