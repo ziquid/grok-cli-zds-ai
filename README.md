@@ -65,6 +65,27 @@ Or specify a working directory:
 grok -d /path/to/project
 ```
 
+### Custom Instructions
+
+You can provide custom instructions to tailor Grok's behavior to your project by creating a `.grok/GROK.md` file in your project directory:
+
+```bash
+mkdir .grok
+```
+
+Create `.grok/GROK.md` with your custom instructions:
+```markdown
+# Custom Instructions for Grok CLI
+
+Always use TypeScript for any new code files.
+When creating React components, use functional components with hooks.
+Prefer const assertions and explicit typing over inference where it improves clarity.
+Always add JSDoc comments for public functions and interfaces.
+Follow the existing code style and patterns in this project.
+```
+
+Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
+
 ## Example Conversations
 
 Instead of typing commands, just tell Grok what you want to do:
