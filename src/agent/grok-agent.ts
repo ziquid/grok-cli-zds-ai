@@ -4,6 +4,7 @@ import { TextEditorTool, BashTool, TodoTool, ConfirmationTool } from '../tools';
 import { ToolResult } from '../types';
 import { EventEmitter } from 'events';
 import { createTokenCounter, TokenCounter } from '../utils/token-counter';
+import { loadCustomInstructions } from '../utils/custom-instructions';
 
 export interface ChatEntry {
   type: 'user' | 'assistant' | 'tool_result';
@@ -43,10 +44,16 @@ export class GrokAgent extends EventEmitter {
     this.confirmationTool = new ConfirmationTool();
     this.tokenCounter = createTokenCounter('grok-4-latest');
     
+    // Load custom instructions
+    const customInstructions = loadCustomInstructions();
+    const customInstructionsSection = customInstructions 
+      ? `\n\nCUSTOM INSTRUCTIONS:\n${customInstructions}\n\nThe above custom instructions should be followed alongside the standard instructions below.`
+      : '';
+    
     // Initialize with system message
     this.messages.push({
       role: 'system',
-      content: `You are Grok CLI, an AI assistant that helps with file editing, coding tasks, and system operations. 
+      content: `You are Grok CLI, an AI assistant that helps with file editing, coding tasks, and system operations.${customInstructionsSection}
 
 You have access to these tools:
 - view_file: View file contents or directory listings
