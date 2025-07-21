@@ -2,6 +2,8 @@
 
 A conversational AI CLI tool powered by Grok-3 with intelligent text editor capabilities and tool usage.
 
+<img width="980" height="435" alt="Screenshot 2025-07-21 at 13 35 41" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
+
 ## Features
 
 - **🤖 Conversational AI**: Natural language interface powered by Grok-3
