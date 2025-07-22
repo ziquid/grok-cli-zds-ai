@@ -45,6 +45,11 @@ export function useInputHandler({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [autoEditEnabled, setAutoEditEnabled] = useState(() => {
+    const confirmationService = ConfirmationService.getInstance();
+    const sessionFlags = confirmationService.getSessionFlags();
+    return sessionFlags.allOperations;
+  });
   const { exit } = useApp();
 
   const commandSuggestions: CommandSuggestion[] = [
@@ -97,6 +102,9 @@ Built-in Commands:
   /models     - Switch Grok models
   /exit       - Exit application
   exit, quit  - Exit application
+  
+Keyboard Shortcuts:
+  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
   ls [path]   - List directory contents
@@ -290,21 +298,27 @@ Available models: ${modelNames.join(", ")}`,
           case "tool_result":
             if (chunk.toolCall && chunk.toolResult) {
               setChatHistory((prev) =>
-                prev.map((entry) =>
-                  entry.isStreaming ? { ...entry, isStreaming: false } : entry
-                )
+                prev.map((entry) => {
+                  if (entry.isStreaming) {
+                    return { ...entry, isStreaming: false };
+                  }
+                  // Update the existing tool_call entry with the result
+                  if (
+                    entry.type === "tool_call" &&
+                    entry.toolCall?.id === chunk.toolCall?.id
+                  ) {
+                    return {
+                      ...entry,
+                      type: "tool_result",
+                      content: chunk.toolResult.success
+                        ? chunk.toolResult.output || "Success"
+                        : chunk.toolResult.error || "Error occurred",
+                      toolResult: chunk.toolResult,
+                    };
+                  }
+                  return entry;
+                })
               );
-
-              const toolResultEntry: ChatEntry = {
-                type: "tool_result",
-                content: chunk.toolResult.success
-                  ? chunk.toolResult.output || "Success"
-                  : chunk.toolResult.error || "Error occurred",
-                timestamp: new Date(),
-                toolCall: chunk.toolCall,
-                toolResult: chunk.toolResult,
-              };
-              setChatHistory((prev) => [...prev, toolResultEntry]);
               streamingEntry = null;
             }
             break;
@@ -343,6 +357,23 @@ Available models: ${modelNames.join(", ")}`,
 
     if (key.ctrl && inputChar === "c") {
       exit();
+      return;
+    }
+
+    // Handle shift+tab to toggle auto-edit mode
+    if (key.shift && key.tab) {
+      const newAutoEditState = !autoEditEnabled;
+      setAutoEditEnabled(newAutoEditState);
+
+      const confirmationService = ConfirmationService.getInstance();
+      if (newAutoEditState) {
+        // Enable auto-edit: set all operations to be accepted
+        confirmationService.setSessionFlag("allOperations", true);
+      } else {
+        // Disable auto-edit: reset session flags
+        confirmationService.resetSession();
+      }
+
       return;
     }
 
@@ -476,5 +507,6 @@ Available models: ${modelNames.join(", ")}`,
     commandSuggestions,
     availableModels,
     agent,
+    autoEditEnabled,
   };
 }
