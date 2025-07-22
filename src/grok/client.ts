@@ -40,10 +40,10 @@ export class GrokClient {
   private client: OpenAI;
   private currentModel: string = 'grok-3-latest';
 
-  constructor(apiKey: string, model?: string) {
+  constructor(apiKey: string, model?: string, baseURL?: string) {
     this.client = new OpenAI({
       apiKey,
-      baseURL: 'https://api.x.ai/v1',
+      baseURL: baseURL || process.env.GROK_BASE_URL || 'https://api.x.ai/v1',
       timeout: 360000,
     });
     if (model) {

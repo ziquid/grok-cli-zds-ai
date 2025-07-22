@@ -36,9 +36,9 @@ export class GrokAgent extends EventEmitter {
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, baseURL?: string) {
     super();
-    this.grokClient = new GrokClient(apiKey);
+    this.grokClient = new GrokClient(apiKey, undefined, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
