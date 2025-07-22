@@ -58,7 +58,12 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
   useEffect(() => {
     console.clear();
-    cfonts.say("GROK", {
+
+    // Add top padding
+    console.log("    ");
+
+    // Generate logo with margin to match Ink paddingX={2}
+    const logoOutput = cfonts.render("GROK", {
       font: "3d",
       align: "left",
       colors: ["magenta", "gray"],
@@ -70,15 +75,17 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       env: "node",
     });
 
-    console.log("Tips for getting started:");
-    console.log("1. Ask questions, edit files, or run commands.");
-    console.log("2. Be specific for the best results.");
-    console.log(
-      "3. Create GROK.md files to customize your interactions with Grok."
-    );
-    console.log("4. Press Shift+Tab to toggle auto-edit mode.");
-    console.log("5. /help for more information.");
-    console.log("");
+    // Add horizontal margin (2 spaces) to match Ink paddingX={2}
+    const logoLines = (logoOutput as any).string.split("\n");
+    logoLines.forEach((line: string) => {
+      if (line.trim()) {
+        console.log(" " + line); // Add 2 spaces for horizontal margin
+      } else {
+        console.log(line); // Keep empty lines as-is
+      }
+    });
+
+    console.log(" "); // Spacing after logo
 
     setChatHistory([]);
   }, []);
@@ -135,7 +142,29 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   };
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <Box flexDirection="column" paddingX={2}>
+      {/* Show tips only when no chat history and no confirmation dialog */}
+      {chatHistory.length === 0 && !confirmationOptions && (
+        <Box flexDirection="column" marginBottom={2}>
+          <Text color="cyan" bold>
+            Tips for getting started:
+          </Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text color="gray">
+              1. Ask questions, edit files, or run commands.
+            </Text>
+            <Text color="gray">2. Be specific for the best results.</Text>
+            <Text color="gray">
+              3. Create GROK.md files to customize your interactions with Grok.
+            </Text>
+            <Text color="gray">
+              4. Press Shift+Tab to toggle auto-edit mode.
+            </Text>
+            <Text color="gray">5. /help for more information.</Text>
+          </Box>
+        </Box>
+      )}
+
       <Box flexDirection="column" marginBottom={1}>
         <Text dimColor>
           Type your request in natural language. Type 'exit' or Ctrl+C to quit.
@@ -175,7 +204,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             isStreaming={isStreaming}
           />
 
-          <Box marginLeft={1}>
+          <Box>
             <Text color="cyan">
               {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
               {autoEditEnabled ? "on" : "off"}
