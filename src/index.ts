@@ -68,6 +68,7 @@ program
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option("-u, --base-url <url>", "Grok API base URL (or set GROK_BASE_URL env var)")
+  .option("-m, --model <model>", "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)")
   .action((options) => {
     if (options.directory) {
       try {
@@ -85,7 +86,8 @@ program
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
-      const agent = apiKey ? new GrokAgent(apiKey, baseURL) : undefined;
+      const model = options.model;
+      const agent = apiKey ? new GrokAgent(apiKey, baseURL, model) : undefined;
 
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
