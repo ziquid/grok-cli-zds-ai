@@ -1,5 +1,6 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
-import { GROK_TOOLS } from "../grok/tools";
+import { GROK_TOOLS, addMCPToolsToGrokTools, getAllGrokTools, getMCPManager, initializeMCPServers } from "../grok/tools";
+import { loadMCPConfig } from "../mcp/config";
 import {
   TextEditorTool,
   BashTool,
@@ -43,6 +44,7 @@ export class GrokAgent extends EventEmitter {
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  private mcpInitialized: boolean = false;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
@@ -56,6 +58,9 @@ export class GrokAgent extends EventEmitter {
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter(modelToUse);
+
+    // Initialize MCP servers if configured
+    this.initializeMCP();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -126,7 +131,31 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
+  private async initializeMCP(): Promise<void> {
+    try {
+      const config = loadMCPConfig();
+      if (config.servers.length > 0) {
+        console.log(`Found ${config.servers.length} MCP server(s) - connecting now...`);
+        await initializeMCPServers();
+        console.log(`Successfully connected to MCP servers`);
+      }
+      this.mcpInitialized = true;
+    } catch (error) {
+      console.warn('Failed to initialize MCP servers:', error);
+      this.mcpInitialized = true; // Don't block if MCP fails
+    }
+  }
+
+  private async waitForMCPInitialization(): Promise<void> {
+    while (!this.mcpInitialized) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // Wait for MCP initialization before processing
+    await this.waitForMCPInitialization();
+    
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -141,9 +170,10 @@ Current working directory: ${process.cwd()}`,
     let toolRounds = 0;
 
     try {
+      const tools = await getAllGrokTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        GROK_TOOLS,
+        tools,
         undefined,
         { search_parameters: { mode: "auto" } }
       );
@@ -237,7 +267,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            GROK_TOOLS,
+            tools,
             undefined,
             { search_parameters: { mode: "auto" } }
           );
@@ -355,9 +385,10 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
+        const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          GROK_TOOLS,
+          tools,
           undefined,
           { search_parameters: { mode: "auto" } }
         );
@@ -584,6 +615,11 @@ Current working directory: ${process.cwd()}`,
           });
 
         default:
+          // Check if this is an MCP tool
+          if (toolCall.function.name.startsWith('mcp__')) {
+            return await this.executeMCPTool(toolCall);
+          }
+          
           return {
             success: false,
             error: `Unknown tool: ${toolCall.function.name}`,
@@ -593,6 +629,44 @@ Current working directory: ${process.cwd()}`,
       return {
         success: false,
         error: `Tool execution error: ${error.message}`,
+      };
+    }
+  }
+
+  private async executeMCPTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const mcpManager = getMCPManager();
+      
+      const result = await mcpManager.callTool(toolCall.function.name, args);
+      
+      if (result.isError) {
+        return {
+          success: false,
+          error: (result.content[0] as any)?.text || 'MCP tool error'
+        };
+      }
+      
+      // Extract content from result
+      const output = result.content
+        .map(item => {
+          if (item.type === 'text') {
+            return item.text;
+          } else if (item.type === 'resource') {
+            return `Resource: ${item.resource?.uri || 'Unknown'}`;
+          }
+          return String(item);
+        })
+        .join('\n');
+      
+      return {
+        success: true,
+        output: output || 'Success'
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `MCP tool execution error: ${error.message}`
       };
     }
   }

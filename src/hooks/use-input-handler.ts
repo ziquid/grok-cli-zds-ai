@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useInput, useApp } from "ink";
+import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { updateSetting } from "../utils/settings";
@@ -52,7 +52,7 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
-  const { exit } = useApp();
+  // Removed useApp().exit - using process.exit(0) instead for better terminal handling
 
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
@@ -546,7 +546,7 @@ Respond with ONLY the commit message, no additional text.`;
     }
 
     if (key.ctrl && inputChar === "c") {
-      exit();
+      process.exit(0);
       return;
     }
 
@@ -652,7 +652,7 @@ Respond with ONLY the commit message, no additional text.`;
     if (key.return) {
       const userInput = input.trim();
       if (userInput === "exit" || userInput === "quit") {
-        exit();
+        process.exit(0);
         return;
       }
 
