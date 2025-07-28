@@ -12,6 +12,7 @@ import * as path from "path";
 import * as os from "os";
 import { ConfirmationService } from "./utils/confirmation-service";
 import { createMCPCommand } from "./commands/mcp";
+import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables
 dotenv.config();
@@ -272,55 +273,66 @@ async function processPromptHeadless(
     const confirmationService = ConfirmationService.getInstance();
     confirmationService.setSessionFlag("allOperations", true);
 
-    console.log("🤖 Processing prompt...\n");
-
     // Process the user message
     const chatEntries = await agent.processUserMessage(prompt);
 
-    // Output the results
+    // Convert chat entries to OpenAI compatible message objects
+    const messages: ChatCompletionMessageParam[] = [];
+
     for (const entry of chatEntries) {
       switch (entry.type) {
         case "user":
-          console.log(`> ${entry.content}\n`);
+          messages.push({
+            role: "user",
+            content: entry.content,
+          });
           break;
 
         case "assistant":
-          if (entry.content.trim()) {
-            console.log(entry.content.trim());
-            console.log();
+          const assistantMessage: ChatCompletionMessageParam = {
+            role: "assistant",
+            content: entry.content,
+          };
+
+          // Add tool calls if present
+          if (entry.toolCalls && entry.toolCalls.length > 0) {
+            assistantMessage.tool_calls = entry.toolCalls.map((toolCall) => ({
+              id: toolCall.id,
+              type: "function",
+              function: {
+                name: toolCall.function.name,
+                arguments: toolCall.function.arguments,
+              },
+            }));
           }
+
+          messages.push(assistantMessage);
           break;
 
         case "tool_result":
-          const toolName = entry.toolCall?.function?.name || "unknown";
-          const getFilePath = (toolCall: any) => {
-            if (toolCall?.function?.arguments) {
-              try {
-                const args = JSON.parse(toolCall.function.arguments);
-                if (toolCall.function.name === "search") {
-                  return args.query;
-                }
-                return args.path || args.file_path || args.command || "";
-              } catch {
-                return "";
-              }
-            }
-            return "";
-          };
-
-          const filePath = getFilePath(entry.toolCall);
-          const toolDisplay = filePath ? `${toolName}(${filePath})` : toolName;
-
-          if (entry.toolResult?.success) {
-            console.log(`✅ ${toolDisplay}: ${entry.content.split("\n")[0]}`);
-          } else {
-            console.log(`❌ ${toolDisplay}: ${entry.content}`);
+          if (entry.toolCall) {
+            messages.push({
+              role: "tool",
+              tool_call_id: entry.toolCall.id,
+              content: entry.content,
+            });
           }
           break;
       }
     }
+
+    // Output each message as a separate JSON object
+    for (const message of messages) {
+      console.log(JSON.stringify(message));
+    }
   } catch (error: any) {
-    console.error("❌ Error processing prompt:", error.message);
+    // Output error in OpenAI compatible format
+    console.log(
+      JSON.stringify({
+        role: "assistant",
+        content: `Error: ${error.message}`,
+      })
+    );
     process.exit(1);
   }
 }
