@@ -621,31 +621,33 @@ Respond with ONLY the commit message, no additional text.`;
       );
 
       if (filteredSuggestions.length === 0) {
-        return;
-      }
-
-      if (key.upArrow) {
-        setSelectedCommandIndex((prev) =>
-          prev === 0 ? filteredSuggestions.length - 1 : prev - 1
-        );
-        return;
-      }
-      if (key.downArrow) {
-        setSelectedCommandIndex(
-          (prev) => (prev + 1) % filteredSuggestions.length
-        );
-        return;
-      }
-      if (key.tab || key.return) {
-        const safeIndex = Math.min(
-          selectedCommandIndex,
-          filteredSuggestions.length - 1
-        );
-        const selectedCommand = filteredSuggestions[safeIndex];
-        setInput(selectedCommand.command + " ");
         setShowCommandSuggestions(false);
         setSelectedCommandIndex(0);
-        return;
+        // Continue processing the input instead of returning
+      } else {
+        if (key.upArrow) {
+          setSelectedCommandIndex((prev) =>
+            prev === 0 ? filteredSuggestions.length - 1 : prev - 1
+          );
+          return;
+        }
+        if (key.downArrow) {
+          setSelectedCommandIndex(
+            (prev) => (prev + 1) % filteredSuggestions.length
+          );
+          return;
+        }
+        if (key.tab || key.return) {
+          const safeIndex = Math.min(
+            selectedCommandIndex,
+            filteredSuggestions.length - 1
+          );
+          const selectedCommand = filteredSuggestions[safeIndex];
+          setInput(selectedCommand.command + " ");
+          setShowCommandSuggestions(false);
+          setSelectedCommandIndex(0);
+          return;
+        }
       }
     }
 
@@ -707,12 +709,7 @@ Respond with ONLY the commit message, no additional text.`;
       const newInput = input + inputChar;
       setInput(newInput);
 
-      if (
-        newInput.startsWith("/") ||
-        ["ls", "pwd", "cd", "cat", "mkdir", "touch"].some((cmd) =>
-          cmd.startsWith(newInput)
-        )
-      ) {
+      if (newInput.startsWith("/")) {
         setShowCommandSuggestions(true);
         setSelectedCommandIndex(0);
       } else {
