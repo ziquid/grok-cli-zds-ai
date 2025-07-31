@@ -6,10 +6,7 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
-import { getSetting, loadSettings } from "./utils/settings";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
+import { getSettingsManager } from "./utils/settings-manager";
 import { ConfirmationService } from "./utils/confirmation-service";
 import { createMCPCommand } from "./commands/mcp";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
@@ -47,27 +44,12 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
-// Ensure user .grok directory exists with default settings
+// Ensure user settings are initialized
 function ensureUserSettingsDirectory(): void {
   try {
-    const homeDir = os.homedir();
-    const grokDir = path.join(homeDir, ".grok");
-    const settingsFile = path.join(grokDir, "user-settings.json");
-
-    // Create .grok directory if it doesn't exist
-    if (!fs.existsSync(grokDir)) {
-      fs.mkdirSync(grokDir, { recursive: true });
-    }
-
-    // Create default user-settings.json if it doesn't exist
-    if (!fs.existsSync(settingsFile)) {
-      const defaultSettings = {
-        apiKey: "",
-        baseURL: "",
-        defaultModel: "grok-4-latest",
-      };
-      fs.writeFileSync(settingsFile, JSON.stringify(defaultSettings, null, 2));
-    }
+    const manager = getSettingsManager();
+    // This will create default settings if they don't exist
+    manager.loadUserSettings();
   } catch (error) {
     // Silently ignore errors during setup
   }
@@ -75,50 +57,33 @@ function ensureUserSettingsDirectory(): void {
 
 // Load API key from user settings if not in environment
 function loadApiKey(): string | undefined {
-  // First check environment variables
-  let apiKey = process.env.GROK_API_KEY;
-
-  if (!apiKey) {
-    // Try to load from user settings file
-    try {
-      ensureUserSettingsDirectory();
-      const homeDir = os.homedir();
-      const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
-
-      if (fs.existsSync(settingsFile)) {
-        const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
-        apiKey = settings.apiKey;
-      }
-    } catch (error) {
-      // Ignore errors, apiKey will remain undefined
-    }
-  }
-
-  return apiKey;
+  const manager = getSettingsManager();
+  return manager.getApiKey();
 }
 
 // Load base URL from user settings if not in environment
-function loadBaseURL(): string | undefined {
-  // First check environment variables
-  let baseURL = process.env.GROK_BASE_URL;
+function loadBaseURL(): string {
+  const manager = getSettingsManager();
+  return manager.getBaseURL();
+}
 
-  if (!baseURL) {
-    // Try to load from user settings file
-    try {
-      ensureUserSettingsDirectory();
-      const homeDir = os.homedir();
-      const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
+// Save command line settings to user settings file
+async function saveCommandLineSettings(apiKey?: string, baseURL?: string): Promise<void> {
+  try {
+    const manager = getSettingsManager();
 
-      if (fs.existsSync(settingsFile)) {
-        const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
-        baseURL = settings.baseURL;
-      }
-    } catch (error) {
-      // Ignore errors, baseURL will remain undefined
+    // Update with command line values
+    if (apiKey) {
+      manager.updateUserSetting('apiKey', apiKey);
+      console.log("✅ API key saved to ~/.grok/user-settings.json");
     }
+    if (baseURL) {
+      manager.updateUserSetting('baseURL', baseURL);
+      console.log("✅ Base URL saved to ~/.grok/user-settings.json");
+    }
+  } catch (error) {
+    console.warn("⚠️ Could not save settings to file:", error instanceof Error ? error.message : "Unknown error");
   }
-
-  return baseURL;
 }
 
 // Load model from user settings if not in environment
@@ -127,10 +92,10 @@ function loadModel(): string | undefined {
   let model = process.env.GROK_MODEL;
 
   if (!model) {
-    // Try to load from local settings file
+    // Use the unified model loading from settings manager
     try {
-      const settings = loadSettings();
-      model = settings.model;
+      const manager = getSettingsManager();
+      model = manager.getCurrentModel();
     } catch (error) {
       // Ignore errors, model will remain undefined
     }
@@ -383,6 +348,11 @@ program
         process.exit(1);
       }
 
+      // Save API key and base URL to user settings if provided via command line
+      if (options.apiKey || options.baseUrl) {
+        await saveCommandLineSettings(options.apiKey, options.baseUrl);
+      }
+
       // Headless mode: process prompt and exit
       if (options.prompt) {
         await processPromptHeadless(options.prompt, apiKey, baseURL, model);
@@ -392,6 +362,9 @@ program
       // Interactive mode: launch UI
       const agent = new GrokAgent(apiKey, baseURL, model);
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
+
+      ensureUserSettingsDirectory();
+
       render(React.createElement(ChatInterface, { agent }));
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
@@ -441,6 +414,11 @@ gitCommand
           "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
         );
         process.exit(1);
+      }
+
+      // Save API key and base URL to user settings if provided via command line
+      if (options.apiKey || options.baseUrl) {
+        await saveCommandLineSettings(options.apiKey, options.baseUrl);
       }
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model);

@@ -1,87 +1,56 @@
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
+import { getSettingsManager } from "../utils/settings-manager";
 import { MCPServerConfig } from "./client";
-
-const CONFIG_DIR = path.join(process.cwd(), ".grok");
-const SETTINGS_FILE = path.join(CONFIG_DIR, "settings.json");
-
-export interface Settings {
-  model?: string;
-  mcpServers?: Record<string, MCPServerConfig>;
-}
 
 export interface MCPConfig {
   servers: MCPServerConfig[];
 }
 
-function loadSettings(): Settings {
-  try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      return {};
-    }
-
-    const settingsData = fs.readFileSync(SETTINGS_FILE, "utf8");
-    return JSON.parse(settingsData);
-  } catch (error) {
-    console.warn("Failed to load settings:", error);
-    return {};
-  }
-}
-
-function saveSettings(settings: Settings): void {
-  try {
-    // Ensure config directory exists
-    if (!fs.existsSync(CONFIG_DIR)) {
-      fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-  } catch (error) {
-    console.error("Failed to save settings:", error);
-    throw error;
-  }
-}
-
+/**
+ * Load MCP configuration from project settings
+ */
 export function loadMCPConfig(): MCPConfig {
-  const settings = loadSettings();
-  const servers = settings.mcpServers ? Object.values(settings.mcpServers) : [];
+  const manager = getSettingsManager();
+  const projectSettings = manager.loadProjectSettings();
+  const servers = projectSettings.mcpServers ? Object.values(projectSettings.mcpServers) : [];
   return { servers };
 }
 
 export function saveMCPConfig(config: MCPConfig): void {
-  const settings = loadSettings();
-  settings.mcpServers = {};
+  const manager = getSettingsManager();
+  const mcpServers: Record<string, MCPServerConfig> = {};
 
   // Convert servers array to object keyed by name
   for (const server of config.servers) {
-    settings.mcpServers[server.name] = server;
+    mcpServers[server.name] = server;
   }
 
-  saveSettings(settings);
+  manager.updateProjectSetting('mcpServers', mcpServers);
 }
 
 export function addMCPServer(config: MCPServerConfig): void {
-  const settings = loadSettings();
-  if (!settings.mcpServers) {
-    settings.mcpServers = {};
-  }
+  const manager = getSettingsManager();
+  const projectSettings = manager.loadProjectSettings();
+  const mcpServers = projectSettings.mcpServers || {};
 
-  settings.mcpServers[config.name] = config;
-  saveSettings(settings);
+  mcpServers[config.name] = config;
+  manager.updateProjectSetting('mcpServers', mcpServers);
 }
 
 export function removeMCPServer(serverName: string): void {
-  const settings = loadSettings();
-  if (settings.mcpServers) {
-    delete settings.mcpServers[serverName];
-    saveSettings(settings);
+  const manager = getSettingsManager();
+  const projectSettings = manager.loadProjectSettings();
+  const mcpServers = projectSettings.mcpServers;
+
+  if (mcpServers) {
+    delete mcpServers[serverName];
+    manager.updateProjectSetting('mcpServers', mcpServers);
   }
 }
 
 export function getMCPServer(serverName: string): MCPServerConfig | undefined {
-  const settings = loadSettings();
-  return settings.mcpServers?.[serverName];
+  const manager = getSettingsManager();
+  const projectSettings = manager.loadProjectSettings();
+  return projectSettings.mcpServers?.[serverName];
 }
 
 // Predefined server configurations

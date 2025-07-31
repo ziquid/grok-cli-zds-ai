@@ -18,7 +18,7 @@ import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSetting } from "../utils/settings";
+import { getSettingsManager } from "../utils/settings-manager";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -54,7 +54,8 @@ export class GrokAgent extends EventEmitter {
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
-    const savedModel = getSetting("model");
+    const manager = getSettingsManager();
+    const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-4-latest";
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();

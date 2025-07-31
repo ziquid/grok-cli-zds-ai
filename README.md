@@ -66,7 +66,7 @@ Create `~/.grok/user-settings.json`:
 
 ### Custom Base URL (Optional)
 
-You can configure a custom Grok API endpoint (choose one method):
+By default, the CLI uses `https://api.x.ai/v1` as the Grok API endpoint. You can configure a custom endpoint if needed (choose one method):
 
 **Method 1: Environment Variable**
 ```bash
@@ -75,7 +75,7 @@ export GROK_BASE_URL=https://your-custom-endpoint.com/v1
 
 **Method 2: Command Line Flag**
 ```bash
-grok --api-key your_api_key_here --baseurl https://your-custom-endpoint.com/v1
+grok --api-key your_api_key_here --base-url https://your-custom-endpoint.com/v1
 ```
 
 **Method 3: User Settings File**
@@ -84,6 +84,89 @@ Add to `~/.grok/user-settings.json`:
 {
   "apiKey": "your_api_key_here",
   "baseURL": "https://your-custom-endpoint.com/v1"
+}
+```
+
+## Configuration Files
+
+Grok CLI uses two types of configuration files to manage settings:
+
+### User-Level Settings (`~/.grok/user-settings.json`)
+
+This file stores **global settings** that apply across all projects. These settings rarely change and include:
+
+- **API Key**: Your Grok API key
+- **Base URL**: Custom API endpoint (if needed)
+- **Default Model**: Your preferred model (e.g., `grok-4-latest`)
+- **Available Models**: List of models you can use
+
+**Example:**
+```json
+{
+  "apiKey": "your_api_key_here",
+  "baseURL": "https://api.x.ai/v1",
+  "defaultModel": "grok-4-latest",
+  "models": [
+    "grok-4-latest",
+    "grok-3-latest",
+    "grok-3-fast",
+    "grok-3-mini-fast"
+  ]
+}
+```
+
+### Project-Level Settings (`.grok/settings.json`)
+
+This file stores **project-specific settings** in your current working directory. It includes:
+
+- **Current Model**: The model currently in use for this project
+- **MCP Servers**: Model Context Protocol server configurations
+
+**Example:**
+```json
+{
+  "model": "grok-3-fast",
+  "mcpServers": {
+    "linear": {
+      "name": "linear",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["@linear/mcp-server"]
+    }
+  }
+}
+```
+
+### How It Works
+
+1. **Global Defaults**: User-level settings provide your default preferences
+2. **Project Override**: Project-level settings override defaults for specific projects
+3. **Directory-Specific**: When you change directories, project settings are loaded automatically
+4. **Fallback Logic**: Project model → User default model → System default (`grok-4-latest`)
+
+This means you can have different models for different projects while maintaining consistent global settings like your API key.
+
+### Using Other API Providers
+
+**Important**: Grok CLI uses **OpenAI-compatible APIs**. You can use any provider that implements the OpenAI chat completions standard.
+
+**Popular Providers**:
+- **X.AI (Grok)**: `https://api.x.ai/v1` (default)
+- **OpenAI**: `https://api.openai.com/v1`
+- **OpenRouter**: `https://openrouter.ai/api/v1`
+- **Groq**: `https://api.groq.com/openai/v1`
+
+**Example with OpenRouter**:
+```json
+{
+  "apiKey": "your_openrouter_key",
+  "baseURL": "https://openrouter.ai/api/v1",
+  "defaultModel": "anthropic/claude-3.5-sonnet",
+  "models": [
+    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-4o",
+    "meta-llama/llama-3.1-70b-instruct"
+  ]
 }
 ```
 
@@ -143,11 +226,11 @@ Add to `~/.grok/user-settings.json`:
 ```json
 {
   "apiKey": "your_api_key_here",
-  "model": "grok-4-latest"
+  "defaultModel": "grok-4-latest"
 }
 ```
 
-Priority order: `--model` flag > `GROK_MODEL` environment variable > user settings > default (grok-4-latest)
+**Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-4-latest)
 
 ### Command Line Options
 

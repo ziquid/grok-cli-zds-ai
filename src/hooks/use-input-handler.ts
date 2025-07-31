@@ -1,9 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
-import { updateSetting } from "../utils/settings";
+
 import { filterCommandSuggestions } from "../ui/components/command-suggestions";
+import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -26,7 +27,6 @@ interface CommandSuggestion {
 
 interface ModelOption {
   model: string;
-  description: string;
 }
 
 export function useInputHandler({
@@ -62,15 +62,10 @@ export function useInputHandler({
     { command: "/exit", description: "Exit the application" },
   ];
 
-  const availableModels: ModelOption[] = [
-    {
-      model: "grok-4-latest",
-      description: "Latest Grok-4 model (most capable)",
-    },
-    { model: "grok-3-latest", description: "Latest Grok-3 model" },
-    { model: "grok-3-fast", description: "Fast Grok-3 variant" },
-    { model: "grok-3-mini-fast", description: "Fastest Grok-3 variant" },
-  ];
+  // Load models from configuration with fallback to defaults
+  const availableModels: ModelOption[] = useMemo(() => {
+    return loadModelConfig(); // Return directly, interface already matches
+  }, []);
 
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
@@ -102,23 +97,26 @@ export function useInputHandler({
 Built-in Commands:
   /clear      - Clear chat history
   /help       - Show this help
-  /models     - Switch Grok models
+  /models     - Switch between available models
   /exit       - Exit application
   exit, quit  - Exit application
-  
+
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
-  
+
 Keyboard Shortcuts:
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
   ls [path]   - List directory contents
-  pwd         - Show current directory  
+  pwd         - Show current directory
   cd <path>   - Change directory
   cat <file>  - View file contents
   mkdir <dir> - Create directory
   touch <file>- Create empty file
+
+Model Configuration:
+  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
 
 For complex operations, just describe what you want in natural language.
 Examples:
@@ -150,7 +148,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
-        updateSetting("model", modelArg);
+        updateCurrentModel(modelArg); // Update project current model
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -171,6 +169,7 @@ Available models: ${modelNames.join(", ")}`,
       setInput("");
       return true;
     }
+
 
     if (trimmedInput === "/commit-and-push") {
       const userEntry: ChatEntry = {
@@ -665,7 +664,7 @@ Respond with ONLY the commit message, no additional text.`;
       if (key.tab || key.return) {
         const selectedModel = availableModels[selectedModelIndex];
         agent.setModel(selectedModel.model);
-        updateSetting("model", selectedModel.model);
+        updateCurrentModel(selectedModel.model); // Update project current model
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${selectedModel.model}`,
