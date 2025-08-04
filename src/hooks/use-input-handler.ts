@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { useEnhancedInput, Key } from "./use-enhanced-input";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
@@ -42,8 +43,6 @@ export function useInputHandler({
   isStreaming,
   isConfirmationActive = false,
 }: UseInputHandlerProps) {
-  const [input, setInput] = useState("");
-  const [cursorPosition, setCursorPosition] = useState(0);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
@@ -53,7 +52,172 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
-  // Removed useApp().exit - using process.exit(0) instead for better terminal handling
+
+  const handleSpecialKey = (key: Key): boolean => {
+    // Don't handle input if confirmation dialog is active
+    if (isConfirmationActive) {
+      return true; // Prevent default handling
+    }
+
+    // Handle shift+tab to toggle auto-edit mode
+    if (key.shift && key.tab) {
+      const newAutoEditState = !autoEditEnabled;
+      setAutoEditEnabled(newAutoEditState);
+
+      const confirmationService = ConfirmationService.getInstance();
+      if (newAutoEditState) {
+        // Enable auto-edit: set all operations to be accepted
+        confirmationService.setSessionFlag("allOperations", true);
+      } else {
+        // Disable auto-edit: reset session flags
+        confirmationService.resetSession();
+      }
+      return true; // Handled
+    }
+
+    // Handle escape key for closing menus
+    if (key.escape) {
+      if (showCommandSuggestions) {
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return true;
+      }
+      if (showModelSelection) {
+        setShowModelSelection(false);
+        setSelectedModelIndex(0);
+        return true;
+      }
+      if (isProcessing || isStreaming) {
+        agent.abortCurrentOperation();
+        setIsProcessing(false);
+        setIsStreaming(false);
+        setTokenCount(0);
+        setProcessingTime(0);
+        processingStartTime.current = 0;
+        return true;
+      }
+      return false; // Let default escape handling work
+    }
+
+    // Handle command suggestions navigation
+    if (showCommandSuggestions) {
+      const filteredSuggestions = filterCommandSuggestions(
+        commandSuggestions,
+        input
+      );
+
+      if (filteredSuggestions.length === 0) {
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return false; // Continue processing
+      } else {
+        if (key.upArrow) {
+          setSelectedCommandIndex((prev) =>
+            prev === 0 ? filteredSuggestions.length - 1 : prev - 1
+          );
+          return true;
+        }
+        if (key.downArrow) {
+          setSelectedCommandIndex(
+            (prev) => (prev + 1) % filteredSuggestions.length
+          );
+          return true;
+        }
+        if (key.tab || key.return) {
+          const safeIndex = Math.min(
+            selectedCommandIndex,
+            filteredSuggestions.length - 1
+          );
+          const selectedCommand = filteredSuggestions[safeIndex];
+          const newInput = selectedCommand.command + " ";
+          setInput(newInput);
+          setCursorPosition(newInput.length);
+          setShowCommandSuggestions(false);
+          setSelectedCommandIndex(0);
+          return true;
+        }
+      }
+    }
+
+    // Handle model selection navigation
+    if (showModelSelection) {
+      if (key.upArrow) {
+        setSelectedModelIndex((prev) =>
+          prev === 0 ? availableModels.length - 1 : prev - 1
+        );
+        return true;
+      }
+      if (key.downArrow) {
+        setSelectedModelIndex((prev) => (prev + 1) % availableModels.length);
+        return true;
+      }
+      if (key.tab || key.return) {
+        const selectedModel = availableModels[selectedModelIndex];
+        agent.setModel(selectedModel.model);
+        updateCurrentModel(selectedModel.model);
+        const confirmEntry: ChatEntry = {
+          type: "assistant",
+          content: `✓ Switched to model: ${selectedModel.model}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, confirmEntry]);
+        setShowModelSelection(false);
+        setSelectedModelIndex(0);
+        return true;
+      }
+    }
+
+    return false; // Let default handling proceed
+  };
+
+  const handleInputSubmit = async (userInput: string) => {
+    if (userInput === "exit" || userInput === "quit") {
+      process.exit(0);
+      return;
+    }
+
+    if (userInput.trim()) {
+      const directCommandResult = await handleDirectCommand(userInput);
+      if (!directCommandResult) {
+        await processUserMessage(userInput);
+      }
+    }
+  };
+
+  const handleInputChange = (newInput: string) => {
+    // Update command suggestions based on input
+    if (newInput.startsWith("/")) {
+      setShowCommandSuggestions(true);
+      setSelectedCommandIndex(0);
+    } else {
+      setShowCommandSuggestions(false);
+      setSelectedCommandIndex(0);
+    }
+  };
+
+  const {
+    input,
+    cursorPosition,
+    setInput,
+    setCursorPosition,
+    clearInput,
+    resetHistory,
+    handleInput,
+  } = useEnhancedInput({
+    onSubmit: handleInputSubmit,
+    onSpecialKey: handleSpecialKey,
+    disabled: isConfirmationActive,
+  });
+
+  // Hook up the actual input handling
+  useInput((inputChar: string, key: Key) => {
+    handleInput(inputChar, key);
+  });
+
+  // Update command suggestions when input changes
+  useEffect(() => {
+    handleInputChange(input);
+  }, [input]);
 
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
@@ -86,8 +250,8 @@ export function useInputHandler({
       const confirmationService = ConfirmationService.getInstance();
       confirmationService.resetSession();
 
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
+      resetHistory();
       return true;
     }
 
@@ -106,7 +270,14 @@ Built-in Commands:
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
 
-Keyboard Shortcuts:
+Enhanced Input Features:
+  ↑/↓ Arrow   - Navigate command history
+  Ctrl+C      - Clear input (press twice to exit)
+  Ctrl+←/→    - Move by word
+  Ctrl+A/E    - Move to line start/end
+  Ctrl+W      - Delete word before cursor
+  Ctrl+K      - Delete to end of line
+  Ctrl+U      - Delete to start of line
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
@@ -128,8 +299,7 @@ Examples:
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
       return true;
     }
 
@@ -141,8 +311,7 @@ Examples:
     if (trimmedInput === "/models") {
       setShowModelSelection(true);
       setSelectedModelIndex(0);
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
       return true;
     }
 
@@ -170,8 +339,7 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
       return true;
     }
 
@@ -375,8 +543,7 @@ Respond with ONLY the commit message, no additional text.`;
 
       setIsProcessing(false);
       setIsStreaming(false);
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
       return true;
     }
 
@@ -433,8 +600,7 @@ Respond with ONLY the commit message, no additional text.`;
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
-      setInput("");
-      setCursorPosition(0);
+      clearInput();
       return true;
     }
 
@@ -450,8 +616,7 @@ Respond with ONLY the commit message, no additional text.`;
     setChatHistory((prev) => [...prev, userEntry]);
 
     setIsProcessing(true);
-    setInput("");
-    setCursorPosition(0);
+    clearInput();
 
     try {
       setIsStreaming(true);
@@ -571,177 +736,6 @@ Respond with ONLY the commit message, no additional text.`;
     processingStartTime.current = 0;
   };
 
-  useInput(async (inputChar: string, key: any) => {
-    // Don't handle input if confirmation dialog is active
-    if (isConfirmationActive) {
-      return;
-    }
-
-    if (key.ctrl && inputChar === "c") {
-      process.exit(0);
-      return;
-    }
-
-    // Handle shift+tab to toggle auto-edit mode
-    if (key.shift && key.tab) {
-      const newAutoEditState = !autoEditEnabled;
-      setAutoEditEnabled(newAutoEditState);
-
-      const confirmationService = ConfirmationService.getInstance();
-      if (newAutoEditState) {
-        // Enable auto-edit: set all operations to be accepted
-        confirmationService.setSessionFlag("allOperations", true);
-      } else {
-        // Disable auto-edit: reset session flags
-        confirmationService.resetSession();
-      }
-
-      return;
-    }
-
-    if (key.escape) {
-      if (showCommandSuggestions) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        return;
-      }
-      if (showModelSelection) {
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return;
-      }
-      if (isProcessing || isStreaming) {
-        agent.abortCurrentOperation();
-        setIsProcessing(false);
-        setIsStreaming(false);
-        setTokenCount(0);
-        setProcessingTime(0);
-        processingStartTime.current = 0;
-        return;
-      }
-    }
-
-    if (showCommandSuggestions) {
-      const filteredSuggestions = filterCommandSuggestions(
-        commandSuggestions,
-        input
-      );
-
-      if (filteredSuggestions.length === 0) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        // Continue processing the input instead of returning
-      } else {
-        if (key.upArrow) {
-          setSelectedCommandIndex((prev) =>
-            prev === 0 ? filteredSuggestions.length - 1 : prev - 1
-          );
-          return;
-        }
-        if (key.downArrow) {
-          setSelectedCommandIndex(
-            (prev) => (prev + 1) % filteredSuggestions.length
-          );
-          return;
-        }
-        if (key.tab || key.return) {
-          const safeIndex = Math.min(
-            selectedCommandIndex,
-            filteredSuggestions.length - 1
-          );
-          const selectedCommand = filteredSuggestions[safeIndex];
-          const newInput = selectedCommand.command + " ";
-          setInput(newInput);
-          setCursorPosition(newInput.length);
-          setShowCommandSuggestions(false);
-          setSelectedCommandIndex(0);
-          return;
-        }
-      }
-    }
-
-    if (showModelSelection) {
-      if (key.upArrow) {
-        setSelectedModelIndex((prev) =>
-          prev === 0 ? availableModels.length - 1 : prev - 1
-        );
-        return;
-      }
-      if (key.downArrow) {
-        setSelectedModelIndex((prev) => (prev + 1) % availableModels.length);
-        return;
-      }
-      if (key.tab || key.return) {
-        const selectedModel = availableModels[selectedModelIndex];
-        agent.setModel(selectedModel.model);
-        updateCurrentModel(selectedModel.model); // Update project current model
-        const confirmEntry: ChatEntry = {
-          type: "assistant",
-          content: `✓ Switched to model: ${selectedModel.model}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, confirmEntry]);
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return;
-      }
-    }
-
-    if (key.return) {
-      const userInput = input.trim();
-      if (userInput === "exit" || userInput === "quit") {
-        process.exit(0);
-        return;
-      }
-
-      if (userInput) {
-        const directCommandResult = await handleDirectCommand(userInput);
-        if (!directCommandResult) {
-          await processUserMessage(userInput);
-        }
-      }
-      return;
-    }
-
-    // Handle left and right arrow keys for cursor movement
-    if (key.leftArrow && !showCommandSuggestions && !showModelSelection) {
-      setCursorPosition(prev => Math.max(0, prev - 1));
-      return;
-    }
-
-    if (key.rightArrow && !showCommandSuggestions && !showModelSelection) {
-      setCursorPosition(prev => Math.min(input.length, prev + 1));
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      if (cursorPosition > 0) {
-        const newInput = input.slice(0, cursorPosition - 1) + input.slice(cursorPosition);
-        setInput(newInput);
-        setCursorPosition(prev => prev - 1);
-
-        if (!newInput.startsWith("/")) {
-          setShowCommandSuggestions(false);
-          setSelectedCommandIndex(0);
-        }
-      }
-      return;
-    }
-
-    if (inputChar && !key.ctrl && !key.meta) {
-      const newInput = input.slice(0, cursorPosition) + inputChar + input.slice(cursorPosition);
-      setInput(newInput);
-      setCursorPosition(prev => prev + 1);
-
-      if (newInput.startsWith("/")) {
-        setShowCommandSuggestions(true);
-        setSelectedCommandIndex(0);
-      } else {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-      }
-    }
-  });
 
   return {
     input,

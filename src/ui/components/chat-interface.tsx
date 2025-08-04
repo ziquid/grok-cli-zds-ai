@@ -177,8 +177,8 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       )}
 
       <Box flexDirection="column" marginBottom={1}>
-        <Text dimColor>
-          Type your request in natural language. Type 'exit' or Ctrl+C to quit.
+        <Text color="gray">
+          Type your request in natural language. Ctrl+C to clear, 'exit' to quit.
         </Text>
       </Box>
 
@@ -216,15 +216,15 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             isStreaming={isStreaming}
           />
 
-          <Box flexDirection="row">
-            <Text color="cyan">
-              {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
-              {autoEditEnabled ? "on" : "off"}
-            </Text>
-            <Box marginLeft={1}>
-              <Text dimColor>(shift + tab)</Text>
+          <Box flexDirection="row" marginTop={1}>
+            <Box marginRight={2}>
+              <Text color="cyan">
+                {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
+                {autoEditEnabled ? "on" : "off"}
+              </Text>
+              <Text color="gray" dimColor> (shift + tab)</Text>
             </Box>
-            <Box marginLeft={2}>
+            <Box marginRight={2}>
               <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
             </Box>
             <MCPStatus />

@@ -55,7 +55,12 @@ export class GrokAgent extends EventEmitter {
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
 
-  constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    model?: string,
+    maxToolRounds?: number
+  ) {
     super();
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
@@ -87,7 +92,11 @@ export class GrokAgent extends EventEmitter {
 You have access to these tools:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
-- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${this.morphEditor ? '\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)' : ''}
+- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
+        this.morphEditor
+          ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
+          : ""
+      }
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
@@ -143,26 +152,19 @@ Current working directory: ${process.cwd()}`,
   }
 
   private async initializeMCP(): Promise<void> {
-    try {
-      const config = loadMCPConfig();
-      if (config.servers.length > 0) {
-        console.log(
-          `Found ${config.servers.length} MCP server(s) - connecting now...`
-        );
-        await initializeMCPServers();
-        console.log(`Successfully connected to MCP servers`);
+    // Initialize MCP in the background without blocking
+    Promise.resolve().then(async () => {
+      try {
+        const config = loadMCPConfig();
+        if (config.servers.length > 0) {
+          await initializeMCPServers();
+        }
+      } catch (error) {
+        console.warn('MCP initialization failed:', error);
+      } finally {
+        this.mcpInitialized = true;
       }
-      this.mcpInitialized = true;
-    } catch (error) {
-      console.warn("Failed to initialize MCP servers:", error);
-      this.mcpInitialized = true; // Don't block if MCP fails
-    }
-  }
-
-  private async waitForMCPInitialization(): Promise<void> {
-    while (!this.mcpInitialized) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    });
   }
 
   private isGrokModel(): boolean {
@@ -171,9 +173,6 @@ Current working directory: ${process.cwd()}`,
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
-    // Wait for MCP initialization before processing
-    await this.waitForMCPInitialization();
-
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -625,7 +624,8 @@ Current working directory: ${process.cwd()}`,
           if (!this.morphEditor) {
             return {
               success: false,
-              error: "Morph Fast Apply not available. Please set MORPH_API_KEY environment variable to use this feature.",
+              error:
+                "Morph Fast Apply not available. Please set MORPH_API_KEY environment variable to use this feature.",
             };
           }
           return await this.morphEditor.editFile(
