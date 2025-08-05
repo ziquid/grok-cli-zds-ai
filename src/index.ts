@@ -14,8 +14,19 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 // Load environment variables
 dotenv.config();
 
-// Disable default SIGINT handling to let Ink handle Ctrl+C
-// We'll handle exit through the input system instead
+// Handle SIGINT (Ctrl+C) to ensure clean exit
+process.on("SIGINT", () => {
+  // Restore terminal to normal mode before exit
+  if (process.stdin.isTTY && process.stdin.setRawMode) {
+    try {
+      process.stdin.setRawMode(false);
+    } catch (e) {
+      // Ignore errors when setting raw mode
+    }
+  }
+  console.log("\nExiting...");
+  process.exit(0);
+});
 
 process.on("SIGTERM", () => {
   // Restore terminal to normal mode before exit

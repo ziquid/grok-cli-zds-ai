@@ -2,10 +2,12 @@ import * as fs from "fs-extra";
 import * as path from "path";
 import { ToolResult, EditorCommand } from "../types";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { PatchEditor } from "./patch-editor";
 
 export class TextEditorTool {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
+  private patchEditor = new PatchEditor();
 
   async view(
     filePath: string,
@@ -85,75 +87,125 @@ export class TextEditorTool {
 
       const content = await fs.readFile(resolvedPath, "utf-8");
 
-      if (!content.includes(oldStr)) {
-        if (oldStr.includes('\n')) {
-          const fuzzyResult = this.findFuzzyMatch(content, oldStr);
-          if (fuzzyResult) {
-            oldStr = fuzzyResult;
-          } else {
+      // Handle replaceAll flag with traditional approach for simple cases
+      if (replaceAll && content.includes(oldStr)) {
+        const occurrences = (content.match(new RegExp(oldStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+        
+        const sessionFlags = this.confirmationService.getSessionFlags();
+        if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+          const previewContent = content.split(oldStr).join(newStr);
+          const oldLines = content.split("\n");
+          const newLines = previewContent.split("\n");
+          const diffContent = this.generateDiff(oldLines, newLines, filePath);
+
+          const confirmationResult =
+            await this.confirmationService.requestConfirmation(
+              {
+                operation: `Edit file (${occurrences} occurrences)`,
+                filename: filePath,
+                showVSCodeOpen: false,
+                content: diffContent,
+              },
+              "file"
+            );
+
+          if (!confirmationResult.confirmed) {
             return {
               success: false,
-              error: `String not found in file. For multi-line replacements, consider using line-based editing.`,
+              error: confirmationResult.feedback || "File edit cancelled by user",
             };
           }
-        } else {
-          return {
-            success: false,
-            error: `String not found in file: "${oldStr}"`,
-          };
         }
-      }
 
-      const occurrences = (content.match(new RegExp(oldStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-      
-      const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-        const previewContent = replaceAll 
-          ? content.split(oldStr).join(newStr)
-          : content.replace(oldStr, newStr);
+        const newContent = content.split(oldStr).join(newStr);
+        await fs.writeFile(resolvedPath, newContent, "utf-8");
+
+        this.editHistory.push({
+          command: "str_replace",
+          path: filePath,
+          old_str: oldStr,
+          new_str: newStr,
+        });
+
         const oldLines = content.split("\n");
-        const newLines = previewContent.split("\n");
-        const diffContent = this.generateDiff(oldLines, newLines, filePath);
+        const newLines = newContent.split("\n");
+        const diff = this.generateDiff(oldLines, newLines, filePath);
 
-        const confirmationResult =
-          await this.confirmationService.requestConfirmation(
-            {
-              operation: `Edit file${replaceAll && occurrences > 1 ? ` (${occurrences} occurrences)` : ''}`,
-              filename: filePath,
-              showVSCodeOpen: false,
-              content: diffContent,
-            },
-            "file"
-          );
+        return {
+          success: true,
+          output: diff,
+        };
+      }
 
-        if (!confirmationResult.confirmed) {
-          return {
-            success: false,
-            error: confirmationResult.feedback || "File edit cancelled by user",
-          };
+      // For simple single-line cases, try basic fuzzy matching first
+      if (!oldStr.includes('\n') && oldStr.length < 100) {
+        // Try case-insensitive and whitespace-normalized matching
+        const normalizedOld = oldStr.trim().toLowerCase();
+        const lines = content.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+          const normalizedLine = lines[i].trim().toLowerCase();
+          if (normalizedLine.includes(normalizedOld) || this.isCloseMatch(normalizedLine, normalizedOld)) {
+            const newContent = content.replace(lines[i], lines[i].replace(oldStr, newStr));
+            
+            const sessionFlags = this.confirmationService.getSessionFlags();
+            if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+              const oldLines = content.split("\n");
+              const newLines = newContent.split("\n");
+              const diffContent = this.generateDiff(oldLines, newLines, filePath);
+
+              const confirmationResult = await this.confirmationService.requestConfirmation(
+                {
+                  operation: "Edit file (fuzzy match)",
+                  filename: filePath,
+                  showVSCodeOpen: false,
+                  content: diffContent,
+                },
+                "file"
+              );
+
+              if (!confirmationResult.confirmed) {
+                return {
+                  success: false,
+                  error: confirmationResult.feedback || "File edit cancelled by user",
+                };
+              }
+            }
+            
+            await fs.writeFile(resolvedPath, newContent, "utf-8");
+            
+            this.editHistory.push({
+              command: "str_replace",
+              path: filePath,
+              old_str: oldStr,
+              new_str: newStr,
+            });
+
+            const oldLines = content.split("\n");
+            const newLines = newContent.split("\n");
+            const diff = this.generateDiff(oldLines, newLines, filePath);
+
+            return {
+              success: true,
+              output: diff,
+            };
+          }
         }
       }
 
-      const newContent = replaceAll 
-        ? content.split(oldStr).join(newStr)
-        : content.replace(oldStr, newStr);
-      await fs.writeFile(resolvedPath, newContent, "utf-8");
+      // Use the new smart patching system for complex cases
+      const patchResult = await this.patchEditor.smartReplace(filePath, oldStr, newStr);
+      
+      if (patchResult.success) {
+        this.editHistory.push({
+          command: "str_replace",
+          path: filePath,
+          old_str: oldStr,
+          new_str: newStr,
+        });
+      }
 
-      this.editHistory.push({
-        command: "str_replace",
-        path: filePath,
-        old_str: oldStr,
-        new_str: newStr,
-      });
-
-      const oldLines = content.split("\n");
-      const newLines = newContent.split("\n");
-      const diff = this.generateDiff(oldLines, newLines, filePath);
-
-      return {
-        success: true,
-        output: diff,
-      };
+      return patchResult;
     } catch (error: any) {
       return {
         success: false,
@@ -222,6 +274,71 @@ export class TextEditorTool {
       return {
         success: false,
         error: `Error creating ${filePath}: ${error.message}`,
+      };
+    }
+  }
+
+  async contextualReplace(
+    filePath: string,
+    searchText: string,
+    replaceText: string,
+    contextLines: number = 3
+  ): Promise<ToolResult> {
+    try {
+      const sessionFlags = this.confirmationService.getSessionFlags();
+      
+      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+        // Preview the patch first
+        const previewResult = await this.patchEditor.createContextualPatch(
+          filePath,
+          searchText,
+          replaceText,
+          contextLines
+        );
+        
+        if (!previewResult.success) {
+          return previewResult;
+        }
+        
+        const confirmationResult = await this.confirmationService.requestConfirmation(
+          {
+            operation: "Contextual patch",
+            filename: filePath,
+            showVSCodeOpen: false,
+            content: previewResult.output || "Contextual replacement preview",
+          },
+          "file"
+        );
+
+        if (!confirmationResult.confirmed) {
+          return {
+            success: false,
+            error: confirmationResult.feedback || "Contextual replacement cancelled by user",
+          };
+        }
+      }
+
+      const result = await this.patchEditor.createContextualPatch(
+        filePath,
+        searchText,
+        replaceText,
+        contextLines
+      );
+      
+      if (result.success) {
+        this.editHistory.push({
+          command: "str_replace",
+          path: filePath,
+          old_str: searchText,
+          new_str: replaceText,
+        });
+      }
+
+      return result;
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `Error in contextual replace: ${error.message}`,
       };
     }
   }
@@ -407,78 +524,6 @@ export class TextEditorTool {
     }
   }
 
-  private findFuzzyMatch(content: string, searchStr: string): string | null {
-    const functionMatch = searchStr.match(/function\s+(\w+)/);
-    if (!functionMatch) return null;
-    
-    const functionName = functionMatch[1];
-    const contentLines = content.split('\n');
-    
-    let functionStart = -1;
-    for (let i = 0; i < contentLines.length; i++) {
-      if (contentLines[i].includes(`function ${functionName}`) && contentLines[i].includes('{')) {
-        functionStart = i;
-        break;
-      }
-    }
-    
-    if (functionStart === -1) return null;
-    
-    let braceCount = 0;
-    let functionEnd = functionStart;
-    
-    for (let i = functionStart; i < contentLines.length; i++) {
-      const line = contentLines[i];
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-      
-      if (braceCount === 0 && i > functionStart) {
-        functionEnd = i;
-        break;
-      }
-    }
-    
-    const actualFunction = contentLines.slice(functionStart, functionEnd + 1).join('\n');
-    
-    const searchNormalized = this.normalizeForComparison(searchStr);
-    const actualNormalized = this.normalizeForComparison(actualFunction);
-    
-    if (this.isSimilarStructure(searchNormalized, actualNormalized)) {
-      return actualFunction;
-    }
-    
-    return null;
-  }
-  
-  private normalizeForComparison(str: string): string {
-    return str
-      .replace(/["'`]/g, '"')
-      .replace(/\s+/g, ' ')
-      .replace(/{\s+/g, '{ ')
-      .replace(/\s+}/g, ' }')
-      .replace(/;\s*/g, ';')
-      .trim();
-  }
-  
-  private isSimilarStructure(search: string, actual: string): boolean {
-    const extractTokens = (str: string) => {
-      const tokens = str.match(/\b(function|console\.log|return|if|else|for|while)\b/g) || [];
-      return tokens;
-    };
-    
-    const searchTokens = extractTokens(search);
-    const actualTokens = extractTokens(actual);
-    
-    if (searchTokens.length !== actualTokens.length) return false;
-    
-    for (let i = 0; i < searchTokens.length; i++) {
-      if (searchTokens[i] !== actualTokens[i]) return false;
-    }
-    
-    return true;
-  }
 
   private generateDiff(
     oldLines: string[],
@@ -659,6 +704,22 @@ export class TextEditorTool {
     }
     
     return diff.trim();
+  }
+
+  private isCloseMatch(str1: string, str2: string): boolean {
+    // Simple heuristic for close matches without expensive computation
+    if (str1 === str2) return true;
+    if (Math.abs(str1.length - str2.length) > str2.length * 0.3) return false;
+    
+    // Count matching characters at the same positions
+    let matches = 0;
+    const minLength = Math.min(str1.length, str2.length);
+    
+    for (let i = 0; i < minLength; i++) {
+      if (str1[i] === str2[i]) matches++;
+    }
+    
+    return (matches / Math.max(str1.length, str2.length)) > 0.7;
   }
 
   getEditHistory(): EditorCommand[] {
