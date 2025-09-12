@@ -108,10 +108,9 @@ function ChatInterfaceWithAgent({
     setChatHistory([]);
   }, []);
 
-  // Process initial message if provided
+  // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
     if (initialMessage && agent) {
-      // First, immediately add the user message to chat history
       const userEntry: ChatEntry = {
         type: "user",
         content: initialMessage,
@@ -119,12 +118,119 @@ function ChatInterfaceWithAgent({
       };
       setChatHistory([userEntry]);
 
-      // Then process the message asynchronously
       const processInitialMessage = async () => {
         setIsProcessing(true);
-        const entries = await agent.processUserMessage(initialMessage);
-        setChatHistory(entries);
+        setIsStreaming(true);
+
+        try {
+          let streamingEntry: ChatEntry | null = null;
+          for await (const chunk of agent.processUserMessageStream(initialMessage)) {
+            switch (chunk.type) {
+              case "content":
+                if (chunk.content) {
+                  if (!streamingEntry) {
+                    const newStreamingEntry = {
+                      type: "assistant" as const,
+                      content: chunk.content,
+                      timestamp: new Date(),
+                      isStreaming: true,
+                    };
+                    setChatHistory((prev) => [...prev, newStreamingEntry]);
+                    streamingEntry = newStreamingEntry;
+                  } else {
+                    setChatHistory((prev) =>
+                      prev.map((entry, idx) =>
+                        idx === prev.length - 1 && entry.isStreaming
+                          ? { ...entry, content: entry.content + chunk.content }
+                          : entry
+                      )
+                    );
+                  }
+                }
+                break;
+              case "token_count":
+                if (chunk.tokenCount !== undefined) {
+                  setTokenCount(chunk.tokenCount);
+                }
+                break;
+              case "tool_calls":
+                if (chunk.toolCalls) {
+                  // Stop streaming for the current assistant message
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming
+                        ? {
+                            ...entry,
+                            isStreaming: false,
+                            toolCalls: chunk.toolCalls,
+                          }
+                        : entry
+                    )
+                  );
+                  streamingEntry = null;
+
+                  // Add individual tool call entries to show tools are being executed
+                  chunk.toolCalls.forEach((toolCall) => {
+                    const toolCallEntry: ChatEntry = {
+                      type: "tool_call",
+                      content: "Executing...",
+                      timestamp: new Date(),
+                      toolCall: toolCall,
+                    };
+                    setChatHistory((prev) => [...prev, toolCallEntry]);
+                  });
+                }
+                break;
+              case "tool_result":
+                if (chunk.toolCall && chunk.toolResult) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) => {
+                      if (entry.isStreaming) {
+                        return { ...entry, isStreaming: false };
+                      }
+                      if (
+                        entry.type === "tool_call" &&
+                        entry.toolCall?.id === chunk.toolCall?.id
+                      ) {
+                        return {
+                          ...entry,
+                          type: "tool_result",
+                          content: chunk.toolResult.success
+                            ? chunk.toolResult.output || "Success"
+                            : chunk.toolResult.error || "Error occurred",
+                          toolResult: chunk.toolResult,
+                        };
+                      }
+                      return entry;
+                    })
+                  );
+                  streamingEntry = null;
+                }
+                break;
+              case "done":
+                if (streamingEntry) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming ? { ...entry, isStreaming: false } : entry
+                    )
+                  );
+                }
+                setIsStreaming(false);
+                break;
+            }
+          }
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          setIsStreaming(false);
+        }
+
         setIsProcessing(false);
+        processingStartTime.current = 0;
       };
 
       processInitialMessage();

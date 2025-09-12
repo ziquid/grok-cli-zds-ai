@@ -48,6 +48,7 @@ export interface GrokResponse {
 export class GrokClient {
   private client: OpenAI;
   private currentModel: string = "grok-code-fast-1";
+  private defaultMaxTokens: number;
 
   constructor(apiKey: string, model?: string, baseURL?: string) {
     this.client = new OpenAI({
@@ -55,6 +56,8 @@ export class GrokClient {
       baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
       timeout: 360000,
     });
+    const envMax = Number(process.env.GROK_MAX_TOKENS);
+    this.defaultMaxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 1536;
     if (model) {
       this.currentModel = model;
     }
@@ -81,7 +84,7 @@ export class GrokClient {
         tools: tools || [],
         tool_choice: tools && tools.length > 0 ? "auto" : undefined,
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: this.defaultMaxTokens,
       };
 
       // Add search parameters if specified
@@ -111,7 +114,7 @@ export class GrokClient {
         tools: tools || [],
         tool_choice: tools && tools.length > 0 ? "auto" : undefined,
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: this.defaultMaxTokens,
         stream: true,
       };
 

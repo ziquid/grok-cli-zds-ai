@@ -172,6 +172,34 @@ Current working directory: ${process.cwd()}`,
     return currentModel.toLowerCase().includes("grok");
   }
 
+  // Heuristic: enable web search only when likely needed
+  private shouldUseSearchFor(message: string): boolean {
+    const q = message.toLowerCase();
+    const keywords = [
+      "today",
+      "latest",
+      "news",
+      "trending",
+      "breaking",
+      "current",
+      "now",
+      "recent",
+      "x.com",
+      "twitter",
+      "tweet",
+      "what happened",
+      "as of",
+      "update on",
+      "release notes",
+      "changelog",
+      "price",
+    ];
+    if (keywords.some((k) => q.includes(k))) return true;
+    // crude date pattern (e.g., 2024/2025) may imply recency
+    if (/(20\d{2})/.test(q)) return true;
+    return false;
+  }
+
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -192,7 +220,9 @@ Current working directory: ${process.cwd()}`,
         this.messages,
         tools,
         undefined,
-        this.isGrokModel() ? { search_parameters: { mode: "auto" } } : undefined
+        this.isGrokModel() && this.shouldUseSearchFor(message)
+          ? { search_parameters: { mode: "auto" } }
+          : { search_parameters: { mode: "off" } }
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -286,9 +316,9 @@ Current working directory: ${process.cwd()}`,
             this.messages,
             tools,
             undefined,
-            this.isGrokModel()
+            this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
-              : undefined
+              : { search_parameters: { mode: "off" } }
           );
         } else {
           // No more tool calls, add final response
@@ -389,6 +419,7 @@ Current working directory: ${process.cwd()}`,
     const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
     let totalOutputTokens = 0;
+    let lastTokenUpdate = 0;
 
     try {
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -409,9 +440,9 @@ Current working directory: ${process.cwd()}`,
           this.messages,
           tools,
           undefined,
-          this.isGrokModel()
+          this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
-            : undefined
+            : { search_parameters: { mode: "off" } }
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
@@ -468,12 +499,16 @@ Current working directory: ${process.cwd()}`,
             };
 
             // Emit token count update
-            yield {
-              type: "token_count",
-              tokenCount: inputTokens + totalOutputTokens,
-            };
-          }
+            const now = Date.now();
+            if (now - lastTokenUpdate > 250) {
+              lastTokenUpdate = now;
+              yield {
+                type: "token_count",
+                tokenCount: inputTokens + totalOutputTokens,
+              };
+            }
         }
+      }
 
         // Add assistant entry to history
         const assistantEntry: ChatEntry = {
@@ -548,6 +583,7 @@ Current working directory: ${process.cwd()}`,
           inputTokens = this.tokenCounter.countMessageTokens(
             this.messages as any
           );
+          // Final token update after tools processed
           yield {
             type: "token_count",
             tokenCount: inputTokens + totalOutputTokens,
