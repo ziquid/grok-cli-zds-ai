@@ -313,7 +313,7 @@ program
     "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
   .version("1.0.1")
-  .argument("[message]", "Initial message to send to Grok")
+  .argument("[message...]", "Initial message to send to Grok")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
@@ -383,9 +383,12 @@ program
 
       ensureUserSettingsDirectory();
 
-      render(
-        React.createElement(ChatInterface, { agent, initialMessage: message })
-      );
+      // Support variadic positional arguments for multi-word initial message
+      const initialMessage = Array.isArray(message)
+        ? message.join(" ")
+        : message;
+
+      render(React.createElement(ChatInterface, { agent, initialMessage }));
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
       process.exit(1);
