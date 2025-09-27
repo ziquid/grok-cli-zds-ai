@@ -15,9 +15,9 @@
   },
   "scripts": {
     "build": "bun run tsc",
-    "dev": "bun run src/index.ts",
+    "dev": "bun run build && bun run start",
     "start": "bun run dist/index.js",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "install:bun": "bun install"
   },
@@ -43,6 +43,7 @@
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "openai": "^5.10.1",
+    "prompts": "^2.4.2",
     "react": "^18.3.1",
     "ripgrep-node": "^1.0.0",
     "tiktoken": "^1.0.21"
@@ -50,6 +51,7 @@
   "devDependencies": {
     "@types/fs-extra": "^11.0.2",
     "@types/node": "^20.8.0",
+    "@types/prompts": "^2.4.9",
     "@types/react": "^18.3.3",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",

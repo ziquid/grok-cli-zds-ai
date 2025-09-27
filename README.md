@@ -296,7 +296,14 @@ Options:
 
 ### Custom Instructions
 
-You can provide custom instructions to tailor Grok's behavior to your project by creating a `.grok/GROK.md` file in your project directory:
+You can provide custom instructions to tailor Grok's behavior by creating `GROK.md` files in two locations:
+
+- **Global instructions** (apply to all projects): `~/.grok/GROK.md`
+- **Project-specific instructions** (apply only to the current project): `.grok/GROK.md` in your project directory
+
+Global instructions are loaded first, followed by project-specific instructions. If both exist, they are combined in that order.
+
+To create project-specific instructions:
 
 ```bash
 mkdir .grok

@@ -10,10 +10,11 @@ import { loadMCPConfig } from "../mcp/config";
 import {
   TextEditorTool,
   MorphEditorTool,
-  BashTool,
+  ZshTool,
   TodoTool,
   ConfirmationTool,
   SearchTool,
+  EnvTool
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
@@ -22,12 +23,12 @@ import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSettingsManager } from "../utils/settings-manager";
 
 export interface ChatEntry {
-  type: "user" | "assistant" | "tool_result" | "tool_call";
+  type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
   content: string;
   timestamp: Date;
   toolCalls?: GrokToolCall[];
   toolCall?: GrokToolCall;
-  toolResult?: { success: boolean; output?: string; error?: string };
+  toolResult?: { success: boolean; output?: string; error?: string; displayOutput?: string };
   isStreaming?: boolean;
 }
 
@@ -44,10 +45,11 @@ export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
   private morphEditor: MorphEditorTool | null;
-  private bash: BashTool;
+  private zsh: ZshTool;
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
+  private env: EnvTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -69,10 +71,11 @@ export class GrokAgent extends EventEmitter {
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
-    this.bash = new BashTool();
+    this.zsh = new ZshTool();
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
+    this.env = new EnvTool();
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
@@ -85,11 +88,12 @@ export class GrokAgent extends EventEmitter {
       : "";
 
     // Initialize with system message
-    this.messages.push({
-      role: "system",
-      content: `You are Grok CLI, an AI assistant that helps with file editing, coding tasks, and system operations.${customInstructionsSection}
+    const systemContent = `You are a clever, helpful AI assistant.
 
-You have access to these tools:
+${customInstructionsSection}
+
+As an AI assistant, you have access to these tools, which execute on the host machine, not your local sandbox!  These tools are powerful and can modify files, run commands, and access real-time information. Use them wisely and responsibly to achieve your goals.:
+
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
 - str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
@@ -97,10 +101,17 @@ You have access to these tools:
           ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
           : ""
       }
-- bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
+- zsh: Execute zsh commands (use for searching, file discovery, navigation, and system operations)
+- list_files: List files in a directory (equivalent to 'ls -la')
+- find_files: Find files by pattern (equivalent to 'find')
+- grep_files: Search for text patterns in files (equivalent to 'grep -r')
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
+- env_vars: View environment variables (get all, get specific, or search by pattern)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+- filesystem_tools: Filesystem operations (change directory and show current directory)
+    - chdir: Change the current working directory
+    - pwdir: Show the current working directory
 
 REAL-TIME INFORMATION:
 You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
@@ -114,8 +125,21 @@ IMPORTANT TOOL USAGE RULES:
 SEARCHING AND EXPLORATION:
 - Use search for fast, powerful text search across files or finding files by name (unified search tool)
 - Examples: search for text content like "import.*react", search for files like "component.tsx"
-- Use bash with commands like 'find', 'grep', 'rg', 'ls' for complex file operations and navigation
+- Use zsh with commands like 'find', 'grep', 'rg', 'ls' for complex file operations and navigation
 - view_file is best for reading specific files you already know exist
+
+ENVIRONMENT VARIABLES:
+- Use env_vars to access environment variables without shell commands
+- Get all: env_vars() with no parameters
+- Get specific: env_vars with action="get" and variable="VAR_NAME"
+- Search: env_vars with action="search" and pattern="search_term"
+- This tool requires NO user confirmation and gives you direct access
+
+MCP (MODEL CONTEXT PROTOCOL) SERVERS:
+- Additional tools may be available from configured MCP servers
+- MCP tools are prefixed with "mcp__" and provide extended capabilities
+- Examples: file system operations, database access, API integrations, specialized development tools
+- Check available tools dynamically as MCP servers can add powerful domain-specific functionality
 
 When a user asks you to edit, update, modify, or change an existing file:
 1. First use view_file to see the current contents
@@ -135,9 +159,18 @@ TASK PLANNING WITH TODO LISTS:
 - Always create todos with priorities: 'high' (🔴), 'medium' (🟡), 'low' (🟢)
 
 USER CONFIRMATION SYSTEM:
-File operations (create_file, str_replace_editor) and bash commands will automatically request user confirmation before execution. The confirmation system will show users the actual content or command before they decide. Users can choose to approve individual operations or approve all operations of that type for the session.
+File operations (create_file, str_replace_editor) and zsh commands will automatically request user confirmation before execution. The confirmation system will show users the actual content or command before they decide. Users can choose to approve individual operations or approve all operations of that type for the session.
 
 If a user rejects an operation, the tool will return an error and you should not proceed with that specific operation.
+
+COMMAND INTERPRETATION:
+CRITICAL: The "!" prefix has SPECIAL MEANING ONLY in interactive mode. In interactive mode, "!" is a shortcut for direct zsh command execution without confirmation.
+
+In headless mode, "!" MUST be treated as ORDINARY TEXT. Messages starting with "!" should NEVER be interpreted as commands. The AI should respond conversationally to the text as-written, WITHOUT attempting to execute any zsh commands. For example:
+- Interactive mode: "!pwd" → execute "pwd" command without confirmation
+- Headless mode: "!pwd" → respond conversationally about "!pwd" as text, do NOT execute "pwd"
+
+NEVER execute zsh commands when input starts with "!" in headless mode. Treat it as regular conversational input.
 
 Be helpful, direct, and efficient. Always explain what you're doing and show the results.
 
@@ -147,8 +180,80 @@ IMPORTANT RESPONSE GUIDELINES:
 - Keep responses concise and focused on the actual work being done
 - If a tool execution completes the user's request, you can remain silent or give a brief confirmation
 
-Current working directory: ${process.cwd()}`,
+Current working directory: ${process.cwd()}`;
+
+    this.messages.push({
+      role: "system",
+      content: systemContent,
     });
+
+    // Also add system message to chat history for persistence
+    this.chatHistory.push({
+      type: "system",
+      content: systemContent,
+      timestamp: new Date(),
+    });
+  }
+
+  loadInitialHistory(history: ChatEntry[]): void {
+    // Load existing chat history into agent's memory
+    this.chatHistory = history;
+
+    // Convert history to messages format for API calls
+    const historyMessages: GrokMessage[] = [];
+    let hasSystemMessage = false;
+
+    for (const entry of history) {
+      switch (entry.type) {
+        case "system":
+          // Replace the default system message with the saved one
+          if (this.messages.length > 0 && this.messages[0].role === "system") {
+            this.messages[0] = {
+              role: "system",
+              content: entry.content,
+            };
+            hasSystemMessage = true;
+          }
+          break;
+        case "user":
+          historyMessages.push({
+            role: "user",
+            content: entry.content,
+          });
+          break;
+        case "assistant":
+          const assistantMessage: GrokMessage = {
+            role: "assistant",
+            content: entry.content,
+          };
+          if (entry.toolCalls && entry.toolCalls.length > 0) {
+            assistantMessage.tool_calls = entry.toolCalls;
+          }
+          historyMessages.push(assistantMessage);
+          break;
+        case "tool_result":
+          if (entry.toolCall) {
+            historyMessages.push({
+              role: "tool",
+              content: entry.toolResult?.output || entry.toolResult?.error || "",
+              tool_call_id: entry.toolCall.id,
+            });
+          }
+          break;
+        // Skip tool_call entries as they are included with assistant
+      }
+    }
+
+    // Insert history messages after the system message
+    this.messages.splice(1, 0, ...historyMessages);
+
+    // Update token count in system message
+    const currentTokens = this.tokenCounter.countTokens(
+      this.messages.map(m => typeof m.content === 'string' ? m.content : '').join('')
+    );
+    if (this.messages.length > 0 && this.messages[0].role === 'system' && typeof this.messages[0].content === 'string') {
+      this.messages[0].content = this.messages[0].content.replace(/Current conversation token usage: .*/, `Current conversation token usage: ${currentTokens}`);
+    }
   }
 
   private async initializeMCP(): Promise<void> {
@@ -398,13 +503,7 @@ Current working directory: ${process.cwd()}`,
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
-    // Add user message to conversation
-    const userEntry: ChatEntry = {
-      type: "user",
-      content: message,
-      timestamp: new Date(),
-    };
-    this.chatHistory.push(userEntry);
+    // Add user message to API conversation (UI components handle chat history display)
     this.messages.push({ role: "user", content: message });
 
     // Calculate input tokens
@@ -432,6 +531,11 @@ Current working directory: ${process.cwd()}`,
           };
           yield { type: "done" };
           return;
+        }
+
+        // Update system message with current token count
+        if (this.messages.length > 0 && this.messages[0].role === 'system' && typeof this.messages[0].content === 'string') {
+          this.messages[0].content = this.messages[0].content.replace(/Current conversation token usage: .*/, `Current conversation token usage: ${inputTokens}`);
         }
 
         // Stream response and accumulate
@@ -639,11 +743,12 @@ Current working directory: ${process.cwd()}`,
 
       switch (toolCall.function.name) {
         case "view_file":
-          const range: [number, number] | undefined =
-            args.start_line && args.end_line
-              ? [args.start_line, args.end_line]
-              : undefined;
-          return await this.textEditor.view(args.path, range);
+        case "Read":
+          { let range: [number, number] | undefined;
+          range = args.start_line && args.end_line
+            ? [args.start_line, args.end_line]
+            : undefined;
+          return await this.textEditor.view(args.path, range); }
 
         case "create_file":
           return await this.textEditor.create(args.path, args.content);
@@ -670,8 +775,17 @@ Current working directory: ${process.cwd()}`,
             args.code_edit
           );
 
-        case "bash":
-          return await this.bash.execute(args.command);
+        case "zsh":
+          return await this.zsh.execute(args.command);
+
+        case "list_files":
+          return await this.zsh.listFiles(args.directory);
+
+        case "find_files":
+          return await this.zsh.findFiles(args.pattern, args.directory);
+
+        case "grep_files":
+          return await this.zsh.grep(args.pattern, args.files);
 
         case "create_todo_list":
           return await this.todoTool.createTodoList(args.todos);
@@ -691,6 +805,21 @@ Current working directory: ${process.cwd()}`,
             fileTypes: args.file_types,
             includeHidden: args.include_hidden,
           });
+
+        case "env_vars":
+          if (args.action === "get" && args.variable) {
+            return await this.env.get(args.variable);
+          } else if (args.action === "search" && args.pattern) {
+            return await this.env.search(args.pattern);
+          } else {
+            return await this.env.getAll();
+          }
+
+        case "chdir":
+          return this.zsh.chdir(args.directory);
+
+        case "pwdir":
+          return this.zsh.pwdir();
 
         default:
           // Check if this is an MCP tool
@@ -753,12 +882,9 @@ Current working directory: ${process.cwd()}`,
     return [...this.chatHistory];
   }
 
-  getCurrentDirectory(): string {
-    return this.bash.getCurrentDirectory();
-  }
 
-  async executeBashCommand(command: string): Promise<ToolResult> {
-    return await this.bash.execute(command);
+  async executeBashCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
+    return await this.zsh.execute(command, 30000, skipConfirmation);
   }
 
   getCurrentModel(): string {

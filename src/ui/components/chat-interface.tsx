@@ -15,24 +15,29 @@ import {
 } from "../../utils/confirmation-service";
 import ApiKeyInput from "./api-key-input";
 import cfonts from "cfonts";
+import { ChatHistoryManager } from "../../utils/chat-history-manager";
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;
   initialMessage?: string;
+  fresh?: boolean;
 }
 
 // Main chat component that handles input when agent is available
 function ChatInterfaceWithAgent({
   agent,
   initialMessage,
+  fresh,
 }: {
   agent: GrokAgent;
   initialMessage?: string;
+  fresh?: boolean;
 }) {
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
   const [tokenCount, setTokenCount] = useState(0);
+  const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [confirmationOptions, setConfirmationOptions] =
     useState<ConfirmationOptions | null>(null);
@@ -58,11 +63,13 @@ function ChatInterfaceWithAgent({
     setIsProcessing,
     setIsStreaming,
     setTokenCount,
+    setTotalTokenUsage,
     setProcessingTime,
     processingStartTime,
     isProcessing,
     isStreaming,
     isConfirmationActive: !!confirmationOptions,
+    totalTokenUsage,
   });
 
   useEffect(() => {
@@ -105,7 +112,18 @@ function ChatInterfaceWithAgent({
 
     console.log(" "); // Spacing after logo
 
-    setChatHistory([]);
+    // Load chat history from file (unless fresh session is requested)
+    const historyManager = ChatHistoryManager.getInstance();
+    if (!fresh) {
+      const loadedHistory = historyManager.loadHistory();
+      setChatHistory(loadedHistory);
+      agent.loadInitialHistory(loadedHistory);
+    } else {
+      // Clear existing history file for fresh session
+      historyManager.clearHistory();
+      // Reset confirmation service session flags
+      confirmationService.resetSession();
+    }
   }, []);
 
   // Process initial message if provided (streaming for faster feedback)
@@ -116,7 +134,7 @@ function ChatInterfaceWithAgent({
         content: initialMessage,
         timestamp: new Date(),
       };
-      setChatHistory([userEntry]);
+      setChatHistory((prev) => [...prev, userEntry]);
 
       const processInitialMessage = async () => {
         setIsProcessing(true);
@@ -196,7 +214,7 @@ function ChatInterfaceWithAgent({
                           ...entry,
                           type: "tool_result",
                           content: chunk.toolResult.success
-                            ? chunk.toolResult.output || "Success"
+                            ? (chunk.toolResult.displayOutput || chunk.toolResult.output || "Success")
                             : chunk.toolResult.error || "Error occurred",
                           toolResult: chunk.toolResult,
                         };
@@ -216,6 +234,7 @@ function ChatInterfaceWithAgent({
                   );
                 }
                 setIsStreaming(false);
+                setTotalTokenUsage(prev => prev + tokenCount);
                 break;
             }
           }
@@ -271,6 +290,16 @@ function ChatInterfaceWithAgent({
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);
 
+  // Save chat history to file when it changes (but not during streaming/processing)
+  useEffect(() => {
+    if (chatHistory.length > 0 && !isProcessing && !isStreaming) {
+      const historyManager = ChatHistoryManager.getInstance();
+      // Filter out streaming entries before saving
+      const historyToSave = chatHistory.filter(entry => !entry.isStreaming);
+      historyManager.saveHistory(historyToSave);
+    }
+  }, [chatHistory, isProcessing, isStreaming]);
+
   const handleConfirmation = (dontAskAgain?: boolean) => {
     confirmationService.confirmOperation(true, dontAskAgain);
     setConfirmationOptions(null);
@@ -289,7 +318,7 @@ function ChatInterfaceWithAgent({
   };
 
   return (
-    <Box flexDirection="column" paddingX={2}>
+    <Box flexDirection="column" paddingX={0}>
       {/* Show tips only when no chat history and no confirmation dialog */}
       {chatHistory.length === 0 && !confirmationOptions && (
         <Box flexDirection="column" marginBottom={2}>
@@ -393,6 +422,7 @@ function ChatInterfaceWithAgent({
 export default function ChatInterface({
   agent,
   initialMessage,
+  fresh,
 }: ChatInterfaceProps) {
   const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
     agent || null
@@ -410,6 +440,7 @@ export default function ChatInterface({
     <ChatInterfaceWithAgent
       agent={currentAgent}
       initialMessage={initialMessage}
+      fresh={fresh}
     />
   );
 }

@@ -27,7 +27,7 @@ export class ConfirmationService extends EventEmitter {
   // Session flags for different operation types
   private sessionFlags = {
     fileOperations: false,
-    bashCommands: false,
+    zshCommands: false,
     allOperations: false,
   };
 
@@ -44,13 +44,13 @@ export class ConfirmationService extends EventEmitter {
 
   async requestConfirmation(
     options: ConfirmationOptions,
-    operationType: "file" | "bash" = "file"
+    operationType: "file" | "zsh" = "file"
   ): Promise<ConfirmationResult> {
     // Check session flags
     if (
       this.sessionFlags.allOperations ||
       (operationType === "file" && this.sessionFlags.fileOperations) ||
-      (operationType === "bash" && this.sessionFlags.bashCommands)
+      (operationType === "zsh" && this.sessionFlags.zshCommands)
     ) {
       return { confirmed: true };
     }
@@ -81,8 +81,8 @@ export class ConfirmationService extends EventEmitter {
       // Set the appropriate session flag based on operation type
       if (operationType === "file") {
         this.sessionFlags.fileOperations = true;
-      } else if (operationType === "bash") {
-        this.sessionFlags.bashCommands = true;
+      } else if (operationType === "zsh") {
+        this.sessionFlags.zshCommands = true;
       }
       // Could also set allOperations for global skip
     }
@@ -131,7 +131,7 @@ export class ConfirmationService extends EventEmitter {
   resetSession(): void {
     this.sessionFlags = {
       fileOperations: false,
-      bashCommands: false,
+      zshCommands: false,
       allOperations: false,
     };
   }
@@ -141,7 +141,7 @@ export class ConfirmationService extends EventEmitter {
   }
 
   setSessionFlag(
-    flagType: "fileOperations" | "bashCommands" | "allOperations",
+    flagType: "fileOperations" | "zshCommands" | "allOperations",
     value: boolean
   ) {
     this.sessionFlags[flagType] = value;

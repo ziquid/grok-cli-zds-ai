@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import React from "react";
 import { render } from "ink";
@@ -8,6 +8,7 @@ import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
 import { getSettingsManager } from "./utils/settings-manager";
 import { ConfirmationService } from "./utils/confirmation-service";
+import { ChatHistoryManager } from "./utils/chat-history-manager";
 import { createMCPCommand } from "./commands/mcp";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
@@ -64,10 +65,9 @@ function loadBaseURL(): string {
   return manager.getBaseURL();
 }
 
-// Save command line settings to user settings file
+// Save command line API key to user settings file (baseURL is not saved - it's for override only)
 async function saveCommandLineSettings(
-  apiKey?: string,
-  baseURL?: string
+  apiKey?: string
 ): Promise<void> {
   try {
     const manager = getSettingsManager();
@@ -76,10 +76,6 @@ async function saveCommandLineSettings(
     if (apiKey) {
       manager.updateUserSetting("apiKey", apiKey);
       console.log("✅ API key saved to ~/.grok/user-settings.json");
-    }
-    if (baseURL) {
-      manager.updateUserSetting("baseURL", baseURL);
-      console.log("✅ Base URL saved to ~/.grok/user-settings.json");
     }
   } catch (error) {
     console.warn(
@@ -234,7 +230,8 @@ async function processPromptHeadless(
   apiKey: string,
   baseURL?: string,
   model?: string,
-  maxToolRounds?: number
+  maxToolRounds?: number,
+  fresh?: boolean
 ): Promise<void> {
   try {
     const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
@@ -243,66 +240,38 @@ async function processPromptHeadless(
     const confirmationService = ConfirmationService.getInstance();
     confirmationService.setSessionFlag("allOperations", true);
 
+    // Load existing chat history unless fresh session
+    if (!fresh) {
+      const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+      const historyManager = ChatHistoryManager.getInstance();
+      const existingHistory = historyManager.loadHistory();
+      agent.loadInitialHistory(existingHistory);
+    }
+
     // Process the user message
     const chatEntries = await agent.processUserMessage(prompt);
 
-    // Convert chat entries to OpenAI compatible message objects
-    const messages: ChatCompletionMessageParam[] = [];
-
-    for (const entry of chatEntries) {
-      switch (entry.type) {
-        case "user":
-          messages.push({
-            role: "user",
-            content: entry.content,
-          });
-          break;
-
-        case "assistant":
-          const assistantMessage: ChatCompletionMessageParam = {
-            role: "assistant",
-            content: entry.content,
-          };
-
-          // Add tool calls if present
-          if (entry.toolCalls && entry.toolCalls.length > 0) {
-            assistantMessage.tool_calls = entry.toolCalls.map((toolCall) => ({
-              id: toolCall.id,
-              type: "function",
-              function: {
-                name: toolCall.function.name,
-                arguments: toolCall.function.arguments,
-              },
-            }));
-          }
-
-          messages.push(assistantMessage);
-          break;
-
-        case "tool_result":
-          if (entry.toolCall) {
-            messages.push({
-              role: "tool",
-              tool_call_id: entry.toolCall.id,
-              content: entry.content,
-            });
-          }
-          break;
+    // Find the final assistant response (last assistant message)
+    let finalResponse = "";
+    for (let i = chatEntries.length - 1; i >= 0; i--) {
+      const entry = chatEntries[i];
+      if (entry.type === "assistant" && entry.content.trim()) {
+        finalResponse = entry.content;
+        break;
       }
     }
 
-    // Output each message as a separate JSON object
-    for (const message of messages) {
-      console.log(JSON.stringify(message));
-    }
+    // Save updated chat history
+    const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+    const historyManager = ChatHistoryManager.getInstance();
+    const currentHistory = agent.getChatHistory();
+    historyManager.saveHistory(currentHistory);
+
+    // Output the final assistant response content
+    console.log(finalResponse);
   } catch (error: any) {
-    // Output error in OpenAI compatible format
-    console.log(
-      JSON.stringify({
-        role: "assistant",
-        content: `Error: ${error.message}`,
-      })
-    );
+    // Output error as plain text
+    console.log(`Error: ${error.message}`);
     process.exit(1);
   }
 }
@@ -325,13 +294,29 @@ program
     "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
-    "-p, --prompt <prompt>",
-    "process a single prompt and exit (headless mode)"
+    "-p, --prompt [prompt]",
+    "process a single prompt and exit (headless mode). If no prompt provided, reads from stdin"
   )
   .option(
     "--max-tool-rounds <rounds>",
     "maximum number of tool execution rounds (default: 400)",
     "400"
+  )
+  .option(
+    "--fresh",
+    "start with a fresh session (don't load previous chat history)"
+  )
+  .option(
+    "--auto-approve",
+    "auto-approve all operations without confirmation prompts"
+  )
+  .option(
+    "-c, --context <file>",
+    "path to context persistence file (default: ~/.grok/chat-history.json)"
+  )
+  .option(
+    '--no-ink',
+    'disable Ink UI and use plain console input/output'
   )
   .action(async (message, options) => {
     if (options.directory) {
@@ -360,35 +345,187 @@ program
         process.exit(1);
       }
 
-      // Save API key and base URL to user settings if provided via command line
-      if (options.apiKey || options.baseUrl) {
-        await saveCommandLineSettings(options.apiKey, options.baseUrl);
+      // Save API key to user settings if provided via command line (baseURL is override only)
+      if (options.apiKey) {
+        await saveCommandLineSettings(options.apiKey);
+      }
+
+      // Common initialization for both modes
+      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+
+      // Configure confirmation service if auto-approve is enabled
+      if (options.autoApprove) {
+        const confirmationService = ConfirmationService.getInstance();
+        confirmationService.setSessionFlag("allOperations", true);
+      }
+
+      ensureUserSettingsDirectory();
+
+      // Set custom context file path if provided
+      if (options.context) {
+        const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+        ChatHistoryManager.setCustomHistoryPath(options.context);
       }
 
       // Headless mode: process prompt and exit
-      if (options.prompt) {
+      if (options.prompt !== undefined) {
+        let prompt = options.prompt;
+
+        // If prompt is empty or just whitespace, read from stdin
+        if (!prompt || !prompt.trim()) {
+          const stdinData = await new Promise<string>((resolve, reject) => {
+            let data = '';
+            process.stdin.on('data', (chunk) => {
+              data += chunk;
+            });
+            process.stdin.on('end', () => {
+              resolve(data);
+            });
+            process.stdin.on('error', (err) => {
+              reject(err);
+            });
+          });
+          prompt = stdinData.trim();
+        }
+
+        if (!prompt) {
+          console.error("Error: No prompt provided via argument or stdin");
+          process.exit(1);
+        }
+
         await processPromptHeadless(
-          options.prompt,
+          prompt,
           apiKey,
           baseURL,
           model,
-          maxToolRounds
+          maxToolRounds,
+          options.fresh
         );
         return;
       }
 
       // Interactive mode: launch UI
-      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
-      console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
-      ensureUserSettingsDirectory();
+      // Clear terminal screen if fresh session is requested
+      if (options.fresh) {
+        process.stdout.write('\x1b[2J\x1b[0f');
+      }
+
+      console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
       // Support variadic positional arguments for multi-word initial message
       const initialMessage = Array.isArray(message)
         ? message.join(" ")
         : message;
 
-      render(React.createElement(ChatInterface, { agent, initialMessage }));
+      if (!options.ink) {
+        // Plain console mode
+        const prompts = await import('prompts');
+
+        // Process initial message if provided
+        if (initialMessage) {
+          console.log(`> ${initialMessage}`);
+
+          try {
+
+            for await (const chunk of agent.processUserMessageStream(initialMessage)) {
+              switch (chunk.type) {
+                case 'content':
+                  if (chunk.content) {
+                    process.stdout.write(chunk.content);
+                  }
+                  break;
+                case 'tool_calls':
+                  if (chunk.toolCalls) {
+                    chunk.toolCalls.forEach(toolCall => {
+                      console.log(`\n🔧 ${toolCall.function.name}...`);
+                    });
+                  }
+                  break;
+                case 'tool_result':
+                  // Tool results are usually not shown to user, just processed
+                  break;
+                case 'done':
+                  console.log(); // Add newline after response
+                  break;
+              }
+            }
+          } catch (error) {
+            console.log('DEBUG: Error in streaming:', error);
+          }
+        }
+
+        // Interactive loop
+        while (true) {
+          try {
+            // Write our own prompt without symbols
+            process.stdout.write('> ');
+
+            const result = await prompts.default({
+              type: 'text',
+              name: 'input',
+              message: '',
+              initial: ''
+            }, {
+              onCancel: () => process.exit(0)
+            });
+
+            if (result.input === undefined) {
+              break;
+            }
+
+            if (!result.input) {
+              if (process.stdin.isTTY) {
+                // Blank line: treat as 'continue'
+                result.input = 'continue';
+              } else {
+                continue;
+              }
+            }
+
+            const input = result.input.trim();
+            if (input === 'exit' || input === 'quit') {
+              console.log('👋 Goodbye!');
+              process.exit(0);
+            }
+
+            if (input) {
+              for await (const chunk of agent.processUserMessageStream(input)) {
+                switch (chunk.type) {
+                  case 'content':
+                    if (chunk.content) {
+                      process.stdout.write(chunk.content);
+                    }
+                    break;
+                  case 'tool_calls':
+                    if (chunk.toolCalls) {
+                      chunk.toolCalls.forEach(toolCall => {
+                        console.log(`\n🔧 ${toolCall.function.name}...`);
+                      });
+                    }
+                    break;
+                  case 'tool_result':
+                    // Tool results are usually not shown to user, just processed
+                    break;
+                  case 'done':
+                    console.log(); // Add newline after response
+                    break;
+                }
+              }
+            }
+          } catch (error) {
+            // Handle Ctrl+C or other interruptions
+            console.log('\n👋 Goodbye!');
+            process.exit(0);
+          }
+        }
+      }
+
+      render(React.createElement(ChatInterface, {
+        agent,
+        initialMessage,
+        fresh: options.fresh
+      }));
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
       process.exit(1);
@@ -445,19 +582,16 @@ gitCommand
         process.exit(1);
       }
 
-      // Save API key and base URL to user settings if provided via command line
-      if (options.apiKey || options.baseUrl) {
-        await saveCommandLineSettings(options.apiKey, options.baseUrl);
+      // Save API key to user settings if provided via command line (baseURL is override only)
+      if (options.apiKey) {
+        await saveCommandLineSettings(options.apiKey);
       }
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
     } catch (error: any) {
-      console.error("❌ Error during git commit-and-push:", error.message);
+      console.error("❌ Error during commit and push:", error.message);
       process.exit(1);
     }
   });
 
-// MCP command
-program.addCommand(createMCPCommand());
-
-program.parse();
+program.parse(process.argv);

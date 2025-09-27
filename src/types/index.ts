@@ -3,6 +3,7 @@ export interface ToolResult {
   output?: string;
   error?: string;
   data?: any;
+  displayOutput?: string; // Optional user-facing display text (if different from output)
 }
 
 export interface Tool {

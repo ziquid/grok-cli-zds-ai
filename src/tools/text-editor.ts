@@ -2,6 +2,7 @@ import * as fs from "fs-extra";
 import * as path from "path";
 import { ToolResult, EditorCommand } from "../types";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { expandHomeDir } from "../utils/path-utils";
 
 export class TextEditorTool {
   private editHistory: EditorCommand[] = [];
@@ -12,7 +13,8 @@ export class TextEditorTool {
     viewRange?: [number, number]
   ): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       if (await fs.pathExists(resolvedPath)) {
         const stats = await fs.stat(resolvedPath);
@@ -42,16 +44,16 @@ export class TextEditorTool {
         }
 
         const totalLines = lines.length;
-        const displayLines = totalLines > 10 ? lines.slice(0, 10) : lines;
+        const displayLines = lines; // Show all lines
         const numberedLines = displayLines
           .map((line, idx) => `${idx + 1}: ${line}`)
           .join("\n");
-        const additionalLinesMessage =
-          totalLines > 10 ? `\n... +${totalLines - 10} lines` : "";
+        const additionalLinesMessage = ""; // No truncation message
 
         return {
           success: true,
           output: `Contents of ${filePath}:\n${numberedLines}${additionalLinesMessage}`,
+          displayOutput: `Read ${filePath} (${totalLines} lines)`, // User sees only this
         };
       } else {
         return {
@@ -74,7 +76,8 @@ export class TextEditorTool {
     replaceAll: boolean = false
   ): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       if (!(await fs.pathExists(resolvedPath))) {
         return {
@@ -164,7 +167,8 @@ export class TextEditorTool {
 
   async create(filePath: string, content: string): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       // Check if user has already accepted file operations for this session
       const sessionFlags = this.confirmationService.getSessionFlags();

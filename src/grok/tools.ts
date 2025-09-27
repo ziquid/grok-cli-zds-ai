@@ -85,17 +85,76 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "bash",
-      description: "Execute a bash command",
+      name: "zsh",
+      description: "Execute a zsh command",
       parameters: {
         type: "object",
         properties: {
           command: {
             type: "string",
-            description: "The bash command to execute",
+            description: "The zsh command to execute",
           },
         },
         required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_files",
+      description: "List files in a directory (equivalent to 'ls -la')",
+      parameters: {
+        type: "object",
+        properties: {
+          directory: {
+            type: "string",
+            description: "Directory to list files from (default: current directory)",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_files",
+      description: "Find files by pattern (equivalent to 'find')",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: {
+            type: "string",
+            description: "File name pattern to search for",
+          },
+          directory: {
+            type: "string",
+            description: "Directory to search in (default: current directory)",
+          },
+        },
+        required: ["pattern"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "grep_files",
+      description: "Search for text patterns in files (equivalent to 'grep -r')",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: {
+            type: "string",
+            description: "Text pattern to search for",
+          },
+          files: {
+            type: "string",
+            description: "Files or directory to search in (default: current directory)",
+          },
+        },
+        required: ["pattern"],
       },
     },
   },
@@ -156,6 +215,34 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "env_vars",
+      description:
+        "View environment variables - get all, get specific variable, or search by pattern",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["get_all", "get", "search"],
+            description:
+              "Action to perform: 'get_all' for all variables, 'get' for specific variable, 'search' for pattern search (default: 'get_all')",
+          },
+          variable: {
+            type: "string",
+            description: "Name of specific environment variable to get (required when action='get')",
+          },
+          pattern: {
+            type: "string",
+            description: "Pattern to search for in variable names or values (required when action='search')",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -238,6 +325,35 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           },
         },
         required: ["updates"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "chdir",
+      description: "Change the current working directory",
+      parameters: {
+        type: "object",
+        properties: {
+          directory: {
+            type: "string",
+            description: "Directory path to change to",
+          },
+        },
+        required: ["directory"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pwdir",
+      description: "Show the current working directory",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
       },
     },
   },

@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { ChatHistoryManager } from "../utils/chat-history-manager";
 import { useEnhancedInput, Key } from "./use-enhanced-input";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions";
@@ -14,11 +15,13 @@ interface UseInputHandlerProps {
   setIsProcessing: (processing: boolean) => void;
   setIsStreaming: (streaming: boolean) => void;
   setTokenCount: (count: number) => void;
+  setTotalTokenUsage: (updater: number | ((prev: number) => number)) => void;
   setProcessingTime: (time: number) => void;
   processingStartTime: React.MutableRefObject<number>;
   isProcessing: boolean;
   isStreaming: boolean;
   isConfirmationActive?: boolean;
+  totalTokenUsage: number;
 }
 
 interface CommandSuggestion {
@@ -37,11 +40,13 @@ export function useInputHandler({
   setIsProcessing,
   setIsStreaming,
   setTokenCount,
+  setTotalTokenUsage,
   setProcessingTime,
   processingStartTime,
   isProcessing,
   isStreaming,
   isConfirmationActive = false,
+  totalTokenUsage,
 }: UseInputHandlerProps) {
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
@@ -52,6 +57,42 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
+
+  const lastEscapeTime = useRef(0);
+
+  const handleEscape = () => {
+    const now = Date.now();
+    if (now - lastEscapeTime.current < 500) {
+      // Double ESC: clear input
+      setInput("");
+      setCursorPosition(0);
+      lastEscapeTime.current = 0;
+      return;
+    }
+    lastEscapeTime.current = now;
+
+    // Single ESC: cancel current action or close menus
+    if (showCommandSuggestions) {
+      setShowCommandSuggestions(false);
+      setSelectedCommandIndex(0);
+      return;
+    }
+    if (showModelSelection) {
+      setShowModelSelection(false);
+      setSelectedModelIndex(0);
+      return;
+    }
+    if (isProcessing || isStreaming) {
+      agent.abortCurrentOperation();
+      setIsProcessing(false);
+      setIsStreaming(false);
+      setTokenCount(0);
+      setProcessingTime(0);
+      processingStartTime.current = 0;
+      return;
+    }
+    // Otherwise, just return to input (no-op)
+  };
 
   const handleSpecialKey = (key: Key): boolean => {
     // Don't handle input if confirmation dialog is active
@@ -73,30 +114,6 @@ export function useInputHandler({
         confirmationService.resetSession();
       }
       return true; // Handled
-    }
-
-    // Handle escape key for closing menus
-    if (key.escape) {
-      if (showCommandSuggestions) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        return true;
-      }
-      if (showModelSelection) {
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return true;
-      }
-      if (isProcessing || isStreaming) {
-        agent.abortCurrentOperation();
-        setIsProcessing(false);
-        setIsStreaming(false);
-        setTokenCount(0);
-        setProcessingTime(0);
-        processingStartTime.current = 0;
-        return true;
-      }
-      return false; // Let default escape handling work
     }
 
     // Handle command suggestions navigation
@@ -206,12 +223,22 @@ export function useInputHandler({
   } = useEnhancedInput({
     onSubmit: handleInputSubmit,
     onSpecialKey: handleSpecialKey,
+    onEscape: handleEscape,
+    onCtrlC: handleEscape,
     disabled: isConfirmationActive,
   });
 
   // Hook up the actual input handling
   useInput((inputChar: string, key: Key) => {
     handleInput(inputChar, key);
+  });
+
+  // Additional input handler specifically for abort operations (always active)
+  useInput((inputChar: string, key: Key) => {
+    // Handle ESC and Ctrl+C during streaming/processing (bypass normal input handling)
+    if ((isProcessing || isStreaming) && (key.escape || (key.ctrl && inputChar === "c") || inputChar === "\x03")) {
+      handleEscape();
+    }
   });
 
   // Update command suggestions when input changes
@@ -222,6 +249,7 @@ export function useInputHandler({
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
+    { command: "/context", description: "Show context usage info" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
@@ -235,9 +263,31 @@ export function useInputHandler({
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
 
+    if (trimmedInput.startsWith("!")) {
+      const command = trimmedInput.substring(1).trim();
+      if (command) {
+        const result = await agent.executeBashCommand(command);
+        const resultEntry: ChatEntry = {
+          type: "assistant",
+          content: result.success
+            ? result.output || "Command executed successfully"
+            : `Error: ${result.error}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, resultEntry]);
+        clearInput();
+        return true;
+      }
+      return false; // Empty command after !
+    }
+
     if (trimmedInput === "/clear") {
       // Reset chat history
       setChatHistory([]);
+
+      // Clear persisted history
+      const historyManager = ChatHistoryManager.getInstance();
+      historyManager.clearHistory();
 
       // Reset processing states
       setIsProcessing(false);
@@ -261,11 +311,15 @@ export function useInputHandler({
         content: `Grok CLI Help:
 
 Built-in Commands:
-  /clear      - Clear chat history
+  /clear      - Clear chat history (current session + persisted)
+  /context    - Show context usage info
   /help       - Show this help
   /models     - Switch between available models
   /exit       - Exit application
   exit, quit  - Exit application
+
+CLI Options:
+  --fresh     - Start with a fresh session (don't load previous history)
 
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
@@ -273,14 +327,18 @@ Git Commands:
 Enhanced Input Features:
   ↑/↓ Arrow   - Navigate command history
   Ctrl+C      - Clear input (press twice to exit)
+  Ctrl+D      - Exit on blank line
   Ctrl+←/→    - Move by word
   Ctrl+A/E    - Move to line start/end
   Ctrl+W      - Delete word before cursor
   Ctrl+K      - Delete to end of line
   Ctrl+U      - Delete to start of line
+  ESC         - Cancel current action / close menus
+  ESC (twice) - Clear input line
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
+  !command    - Execute any shell command directly
   ls [path]   - List directory contents
   pwd         - Show current directory
   cd <path>   - Change directory
@@ -290,6 +348,10 @@ Direct Commands (executed immediately):
 
 Model Configuration:
   Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
+
+History Persistence:
+  Chat history is automatically saved and restored between sessions.
+  Use /clear to reset both current and persisted history.
 
 For complex operations, just describe what you want in natural language.
 Examples:
@@ -343,6 +405,23 @@ Available models: ${modelNames.join(", ")}`,
       return true;
     }
 
+    if (trimmedInput === "/context") {
+      const currentUsage = totalTokenUsage;
+      const maxContext = 128000;
+      const usagePercent = ((currentUsage / maxContext) * 100).toFixed(2);
+
+      const contextEntry: ChatEntry = {
+        type: "assistant",
+        content: `Context Usage:
+- Current: ${currentUsage} tokens
+- Maximum: ${maxContext} tokens
+- Usage: ${usagePercent}%`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, contextEntry]);
+      clearInput();
+      return true;
+    }
 
     if (trimmedInput === "/commit-and-push") {
       const userEntry: ChatEntry = {
@@ -604,6 +683,51 @@ Respond with ONLY the commit message, no additional text.`;
       return true;
     }
 
+    // Handle direct bash commands with ! prefix (no confirmation required)
+    if (trimmedInput.startsWith("!")) {
+      const command = trimmedInput.substring(1).trim();
+      if (command) {
+        const userEntry: ChatEntry = {
+          type: "user",
+          content: trimmedInput,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, userEntry]);
+
+        try {
+          const result = await agent.executeBashCommand(command, true); // skip confirmation
+
+          const commandEntry: ChatEntry = {
+            type: "tool_result",
+            content: result.success
+              ? result.output || "Command completed"
+              : result.error || "Command failed",
+            timestamp: new Date(),
+            toolCall: {
+              id: `bang_command_${Date.now()}`,
+              type: "function",
+              function: {
+                name: "bash",
+                arguments: JSON.stringify({ command: command }),
+              },
+            },
+            toolResult: result,
+          };
+          setChatHistory((prev) => [...prev, commandEntry]);
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error executing command: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+        }
+
+        clearInput();
+        return true;
+      }
+    }
+
     return false;
   };
 
@@ -698,7 +822,7 @@ Respond with ONLY the commit message, no additional text.`;
                       ...entry,
                       type: "tool_result",
                       content: chunk.toolResult.success
-                        ? chunk.toolResult.output || "Success"
+                        ? (chunk.toolResult.displayOutput || chunk.toolResult.output || "Success")
                         : chunk.toolResult.error || "Error occurred",
                       toolResult: chunk.toolResult,
                     };
@@ -719,6 +843,7 @@ Respond with ONLY the commit message, no additional text.`;
               );
             }
             setIsStreaming(false);
+            setTotalTokenUsage(prev => prev + chunk.tokenCount);
             break;
         }
       }

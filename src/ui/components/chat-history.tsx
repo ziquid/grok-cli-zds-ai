@@ -102,6 +102,8 @@ const MemoizedChatEntry = React.memo(
               return "Bash";
             case "search":
               return "Search";
+            case "env_vars":
+              return "Environment";
             case "create_todo_list":
               return "Created Todo";
             case "update_todo_list":
@@ -196,6 +198,21 @@ const MemoizedChatEntry = React.memo(
                 {renderDiff(entry.content, filePath)}
               </Box>
             )}
+          </Box>
+        );
+
+      case "system":
+        return (
+          <Box key={index} flexDirection="column" marginTop={1}>
+            <Box>
+              <Text color="blue">🔧 System: </Text>
+              <Box flexDirection="column" marginLeft={2}>
+                <Text color="blue" dimColor>
+                  {entry.content.split('\n').slice(0, 3).join('\n')}
+                  {entry.content.split('\n').length > 3 ? '\n...' : ''}
+                </Text>
+              </Box>
+            </Box>
           </Box>
         );
 
