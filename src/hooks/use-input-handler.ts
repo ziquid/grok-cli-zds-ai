@@ -48,6 +48,8 @@ export function useInputHandler({
   isConfirmationActive = false,
   totalTokenUsage,
 }: UseInputHandlerProps) {
+  // Track current token count for accumulation
+  const currentTokenCount = useRef(0);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
@@ -250,6 +252,7 @@ export function useInputHandler({
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/context", description: "Show context usage info" },
+    { command: "/introspect", description: "Show available tools" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
@@ -266,7 +269,7 @@ export function useInputHandler({
     if (trimmedInput.startsWith("!")) {
       const command = trimmedInput.substring(1).trim();
       if (command) {
-        const result = await agent.executeBashCommand(command);
+        const result = await agent.executeCommand(command);
         const resultEntry: ChatEntry = {
           type: "assistant",
           content: result.success
@@ -305,6 +308,21 @@ export function useInputHandler({
       return true;
     }
 
+    if (trimmedInput.startsWith("/introspect")) {
+      const parts = trimmedInput.split(" ");
+      const target = parts[1] || "help";
+
+      const toolResult = await agent["introspect"].introspect(target);
+      const introspectEntry: ChatEntry = {
+        type: "assistant",
+        content: toolResult.success ? toolResult.output! : toolResult.error!,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, introspectEntry]);
+      clearInput();
+      return true;
+    }
+
     if (trimmedInput === "/help") {
       const helpEntry: ChatEntry = {
         type: "assistant",
@@ -314,6 +332,7 @@ Built-in Commands:
   /clear      - Clear chat history (current session + persisted)
   /context    - Show context usage info
   /help       - Show this help
+  /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
   /exit       - Exit application
   exit, quit  - Exit application
@@ -406,16 +425,11 @@ Available models: ${modelNames.join(", ")}`,
     }
 
     if (trimmedInput === "/context") {
-      const currentUsage = totalTokenUsage;
-      const maxContext = 128000;
-      const usagePercent = ((currentUsage / maxContext) * 100).toFixed(2);
-
+      // Redirect to /introspect context for consistency
+      const toolResult = await agent["introspect"].introspect("context");
       const contextEntry: ChatEntry = {
         type: "assistant",
-        content: `Context Usage:
-- Current: ${currentUsage} tokens
-- Maximum: ${maxContext} tokens
-- Usage: ${usagePercent}%`,
+        content: toolResult.success ? toolResult.output! : toolResult.error!,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, contextEntry]);
@@ -436,7 +450,7 @@ Available models: ${modelNames.join(", ")}`,
 
       try {
         // First check if there are any changes at all
-        const initialStatusResult = await agent.executeBashCommand(
+        const initialStatusResult = await agent.executeCommand(
           "git status --porcelain"
         );
 
@@ -457,7 +471,7 @@ Available models: ${modelNames.join(", ")}`,
         }
 
         // Add all changes
-        const addResult = await agent.executeBashCommand("git add .");
+        const addResult = await agent.executeCommand("git add .");
 
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
@@ -492,7 +506,7 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, addEntry]);
 
         // Get staged changes for commit message generation
-        const diffResult = await agent.executeBashCommand("git diff --cached");
+        const diffResult = await agent.executeCommand("git diff --cached");
 
         // Generate commit message using AI
         const commitPrompt = `Generate a concise, professional git commit message for these changes:
@@ -559,7 +573,7 @@ Respond with ONLY the commit message, no additional text.`;
           .trim()
           .replace(/^["']|["']$/g, "");
         const commitCommand = `git commit -m "${cleanCommitMessage}"`;
-        const commitResult = await agent.executeBashCommand(commitCommand);
+        const commitResult = await agent.executeCommand(commitCommand);
 
         const commitEntry: ChatEntry = {
           type: "tool_result",
@@ -582,7 +596,7 @@ Respond with ONLY the commit message, no additional text.`;
         // If commit was successful, push to remote
         if (commitResult.success) {
           // First try regular push, if it fails try with upstream setup
-          let pushResult = await agent.executeBashCommand("git push");
+          let pushResult = await agent.executeCommand("git push");
           let pushCommand = "git push";
 
           if (
@@ -590,7 +604,7 @@ Respond with ONLY the commit message, no additional text.`;
             pushResult.error?.includes("no upstream branch")
           ) {
             pushCommand = "git push -u origin HEAD";
-            pushResult = await agent.executeBashCommand(pushCommand);
+            pushResult = await agent.executeCommand(pushCommand);
           }
 
           const pushEntry: ChatEntry = {
@@ -651,7 +665,7 @@ Respond with ONLY the commit message, no additional text.`;
       setChatHistory((prev) => [...prev, userEntry]);
 
       try {
-        const result = await agent.executeBashCommand(trimmedInput);
+        const result = await agent.executeCommand(trimmedInput);
 
         const commandEntry: ChatEntry = {
           type: "tool_result",
@@ -695,7 +709,7 @@ Respond with ONLY the commit message, no additional text.`;
         setChatHistory((prev) => [...prev, userEntry]);
 
         try {
-          const result = await agent.executeBashCommand(command, true); // skip confirmation
+          const result = await agent.executeCommand(command, true); // skip confirmation
 
           const commandEntry: ChatEntry = {
             type: "tool_result",
@@ -773,6 +787,7 @@ Respond with ONLY the commit message, no additional text.`;
 
           case "token_count":
             if (chunk.tokenCount !== undefined) {
+              currentTokenCount.current = chunk.tokenCount;
               setTokenCount(chunk.tokenCount);
             }
             break;
@@ -822,7 +837,7 @@ Respond with ONLY the commit message, no additional text.`;
                       ...entry,
                       type: "tool_result",
                       content: chunk.toolResult.success
-                        ? (chunk.toolResult.displayOutput || chunk.toolResult.output || "Success")
+                        ? `displayOutput: ${chunk.toolResult.displayOutput || "No displayOutput"}\n\n${chunk.toolResult.output || "No output" || "Success"}`
                         : chunk.toolResult.error || "Error occurred",
                       toolResult: chunk.toolResult,
                     };
@@ -843,7 +858,9 @@ Respond with ONLY the commit message, no additional text.`;
               );
             }
             setIsStreaming(false);
-            setTotalTokenUsage(prev => prev + chunk.tokenCount);
+            // Use the tokenCount ref that was set during streaming
+            setTotalTokenUsage(prev => prev + currentTokenCount.current);
+            currentTokenCount.current = 0; // Reset for next request
             break;
         }
       }

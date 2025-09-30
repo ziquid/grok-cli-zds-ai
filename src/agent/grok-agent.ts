@@ -14,7 +14,8 @@ import {
   TodoTool,
   ConfirmationTool,
   SearchTool,
-  EnvTool
+  EnvTool,
+  IntrospectTool
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
@@ -50,6 +51,7 @@ export class GrokAgent extends EventEmitter {
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
   private env: EnvTool;
+  private introspect: IntrospectTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -62,7 +64,8 @@ export class GrokAgent extends EventEmitter {
     baseURL?: string,
     model?: string,
     maxToolRounds?: number,
-    debugLogFile?: string
+    debugLogFile?: string,
+    startupHookOutput?: string
   ) {
     super();
     const manager = getSettingsManager();
@@ -77,6 +80,8 @@ export class GrokAgent extends EventEmitter {
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.env = new EnvTool();
+    this.introspect = new IntrospectTool();
+    this.introspect.setAgent(this); // Give introspect access to agent for tool class info
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
@@ -88,39 +93,55 @@ export class GrokAgent extends EventEmitter {
       ? `${customInstructions}`
       : "";
 
-    // Initialize with system message
-    const systemContent = `You are a clever, helpful AI assistant.
+    // System message will be set after async initialization
+    this.messages.push({
+      role: "system",
+      content: "Initializing...", // Temporary, will be replaced in initialize()
+    });
 
+    // Also add to chat history for persistence
+    this.chatHistory.push({
+      type: "system",
+      content: "Initializing...",
+      timestamp: new Date(),
+    });
+
+    // Store startup hook output for later use
+    this.startupHookOutput = startupHookOutput;
+    this.customInstructions = customInstructions;
+  }
+
+  private startupHookOutput?: string;
+  private customInstructions?: string;
+
+  /**
+   * Initialize the agent with dynamic system prompt
+   * Must be called after construction
+   */
+  async initialize(): Promise<void> {
+    // Add startup hook output if provided
+    const startupHookSection = this.startupHookOutput
+      ? `\nSTARTUP HOOK OUTPUT:\n${this.startupHookOutput}\n`
+      : "";
+
+    const customInstructionsSection = this.customInstructions
+      ? `${this.customInstructions}`
+      : "";
+
+    // Generate dynamic tool list using introspect tool
+    const toolsResult = await this.introspect.introspect("tools");
+    const toolsSection = toolsResult.success ? toolsResult.output : "Tools: Unknown";
+
+    // Build the system message
+    const systemContent = `You are a clever, helpful AI assistant.
+${startupHookSection}
 ${customInstructionsSection}
 
 IMPORTANT: You are NOT in a sandbox! You have full access to real tools that execute directly on the user's actual machine.
 You can read, write, and modify real files, execute real commands, and make actual changes to the system.
 All tool calls are executed in the real environment, not simulated.
 
-You have access to these tools, which execute on the host machine:
-
-EnvTool:
-  getAllEnv (Get all environment variables)
-  getEnv (Get a specific environment variable)
-  searchEnv (Search environment variables by pattern)
-SearchTool:
-  universalSearch (Unified search tool for finding text content or files (similar to Cursor's search))
-TextEditorTool:
-  createNewFile (Create a new file with specified content)
-  insertLines (Insert text at a specific line in a file)
-  replaceLines (Replace a range of lines in a file)
-  strReplace (Replace specific text in a file. Use this for single line edits only)
-  undoEdit (Undo the last edit operation)
-  viewFile (View contents of a file or list directory contents)
-TodoTool:
-  createTodoList (Create a new todo list for planning and tracking tasks)
-  updateTodoList (Update existing todos in the todo list)
-  viewTodoList (View the current todo list)
-ZshTool:
-  chdir (Change the current working directory)
-  execute (Execute a zsh command)
-  listFiles (List files in a directory (equivalent to 'ls -la'))
-  pwdir (Show the current working directory)
+${toolsSection}
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use createNewFile on files that already exist - this will overwrite them completely
@@ -154,17 +175,18 @@ IMPORTANT RESPONSE GUIDELINES:
 
 Current working directory: ${process.cwd()}`;
 
-    this.messages.push({
+    // Replace the temporary system message
+    this.messages[0] = {
       role: "system",
       content: systemContent,
-    });
+    };
 
-    // Also add system message to chat history for persistence
-    this.chatHistory.push({
+    // Also update chat history
+    this.chatHistory[0] = {
       type: "system",
       content: systemContent,
       timestamp: new Date(),
-    });
+    };
   }
 
   loadInitialHistory(history: ChatEntry[]): void {
@@ -828,6 +850,9 @@ Current working directory: ${process.cwd()}`;
         case "searchEnv":
           return await this.env.searchEnv(args.pattern);
 
+        case "introspect":
+          return await this.introspect.introspect(args.target);
+
         case "insertLines":
           return await this.textEditor.insertLines(args.path, args.insert_line, args.new_str);
 
@@ -907,12 +932,20 @@ Current working directory: ${process.cwd()}`;
     return [...this.chatHistory];
   }
 
+  setChatHistory(history: ChatEntry[]): void {
+    // UI chatHistory already includes system prompts, so just replace entirely
+    this.chatHistory = [...history];
+  }
+
   getMessages(): any[] {
     return [...this.messages];
   }
 
+  getCurrentTokenCount(): number {
+    return this.tokenCounter.countMessageTokens(this.messages as any);
+  }
 
-  async executeBashCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
+  async executeCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
     return await this.zsh.execute(command, 30000, skipConfirmation);
   }
 

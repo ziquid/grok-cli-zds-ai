@@ -49,7 +49,8 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
     setIsSubmitting(true);
     try {
       const apiKey = input.trim();
-      const agent = new GrokAgent(apiKey);
+      const { createGrokAgent } = await import('../../utils/startup-hook');
+      const agent = await createGrokAgent(apiKey, undefined, undefined, undefined, undefined, false);
       
       // Set environment variable for current process
       process.env.GROK_API_KEY = apiKey;

@@ -107,13 +107,26 @@ function ChatInterfaceWithAgent({
       const loadedHistory = historyManager.loadHistory();
       setChatHistory(loadedHistory);
       agent.loadInitialHistory(loadedHistory);
+      // Initialize token count from loaded history
+      setTotalTokenUsage(agent.getCurrentTokenCount());
     } else {
       // Clear existing history file for fresh session
       historyManager.clearHistory();
       // Reset confirmation service session flags
       confirmationService.resetSession();
     }
+
+    // Initialize UI chatHistory with agent's complete history (including system prompts)
+    // This ensures system prompts are preserved when syncing back
+    setChatHistory(agent.getChatHistory());
   }, []);
+
+  // Sync chatHistory back to agent whenever it changes (critical for saving on Ctrl+C)
+  useEffect(() => {
+    if (chatHistory.length > 0) {
+      agent.setChatHistory(chatHistory);
+    }
+  }, [chatHistory, agent]);
 
   // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
@@ -203,7 +216,7 @@ function ChatInterfaceWithAgent({
                           ...entry,
                           type: "tool_result",
                           content: chunk.toolResult.success
-                            ? (chunk.toolResult.displayOutput || chunk.toolResult.output || "Success")
+                            ? `displayOutput: ${chunk.toolResult.displayOutput || "No displayOutput"}\n\n${chunk.toolResult.output || "No output" || "Success"}`
                             : chunk.toolResult.error || "Error occurred",
                           toolResult: chunk.toolResult,
                         };

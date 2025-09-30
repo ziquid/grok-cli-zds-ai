@@ -307,6 +307,24 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "introspect",
+      description: "Introspect available tools and system information",
+      parameters: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            description: "What to introspect. Available: 'tools' - list all available tools (internal and MCP), 'env' - show ZDS_AI_AGENT_* environment variables, 'context' - show context/token usage, 'all' - show all introspection data",
+            enum: ["tools", "env", "context", "all"],
+          },
+        },
+        required: ["target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "insertLines",
       description: "Insert text at a specific line in a file",
       parameters: {

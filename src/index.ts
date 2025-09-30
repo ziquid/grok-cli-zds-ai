@@ -153,83 +153,23 @@ function loadModel(): string | undefined {
 // Show all available tools (internal and MCP)
 async function showAllTools(debugLogFile?: string): Promise<void> {
   try {
-    // Import the tools module
-    const { getAllGrokTools, GROK_TOOLS, getMCPManager } = await import('./grok/tools');
-
     // Ensure MCP servers are initialized
+    const { getMCPManager } = await import('./grok/tools');
     const mcpManager = getMCPManager();
     await mcpManager.ensureServersInitialized();
 
-    // Get all tools (internal + MCP)
-    const allTools = await getAllGrokTools();
-
-    // Separate internal tools from MCP tools
-    const internalTools = GROK_TOOLS;
-    const mcpTools = allTools.filter(tool => tool.function.name.startsWith('mcp__'));
-
-    // Show internal tools organized by discovered tool classes
-    console.log("Internal Tools:");
-
-    // Create a temporary agent to get dynamic tool class info
+    // Create a temporary agent and use introspect tool (no startup hook needed for listing tools)
     const { GrokAgent } = await import('./agent/grok-agent');
     const tempAgent = new GrokAgent("dummy");
-    const toolClassInfo = tempAgent.getToolClassInfo();
+    await tempAgent.initialize();
+    const result = await tempAgent["introspect"].introspect("tools");
 
-    // Create a mapping from tool names to descriptions
-    const toolDescriptions = new Map<string, string>();
-    internalTools.forEach(tool => {
-      toolDescriptions.set(tool.function.name, tool.function.description);
-    });
-
-    // Sort classes and display their discovered methods
-    const sortedClasses = toolClassInfo.sort((a, b) => a.className.localeCompare(b.className));
-    sortedClasses.forEach(({ className, methods }) => {
-      if (methods.length > 0) {
-        console.log(`  ${className}:`);
-        methods.sort().forEach(methodName => {
-          const description = toolDescriptions.get(methodName) || 'No description available';
-          console.log(`    ${methodName} (${description})`);
-        });
-      }
-    });
-
-    console.log(); // Empty line
-
-    // Show MCP tools grouped by server with headers
-    if (mcpTools.length > 0) {
-      const toolsByServer = new Map<string, string[]>();
-
-      mcpTools.forEach(tool => {
-        // Extract server name from tool name (format: mcp__serverName__toolName)
-        const parts = tool.function.name.split('__');
-        if (parts.length >= 3 && parts[0] === 'mcp') {
-          const serverName = parts[1];
-          const toolName = parts.slice(2).join('__');
-
-          if (!toolsByServer.has(serverName)) {
-            toolsByServer.set(serverName, []);
-          }
-          toolsByServer.get(serverName)!.push(toolName);
-        }
-      });
-
-      // Sort servers alphabetically
-      const sortedServers = Array.from(toolsByServer.keys()).sort();
-
-      sortedServers.forEach(serverName => {
-        console.log(`MCP Tools (${serverName}):`);
-        const tools = toolsByServer.get(serverName)!.sort();
-        tools.forEach(toolName => {
-          console.log(`${toolName} (mcp:${serverName})`);
-        });
-        console.log(); // Empty line between servers
-      });
+    if (result.success) {
+      console.log(result.output);
+    } else {
+      console.error("Error:", result.error);
+      process.exit(1);
     }
-
-    if (internalTools.length === 0 && mcpTools.length === 0) {
-      console.log("No tools available.");
-    }
-
   } catch (error) {
     console.error("Error listing tools:", error instanceof Error ? error.message : "Unknown error");
     process.exit(1);
@@ -245,7 +185,8 @@ async function handleCommitAndPushHeadless(
   debugLogFile?: string
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    const { createGrokAgent } = await import('./utils/startup-hook');
+    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode (auto-approve all operations)
@@ -256,7 +197,7 @@ async function handleCommitAndPushHeadless(
     console.log("> /commit-and-push\n");
 
     // First check if there are any changes at all
-    const initialStatusResult = await agent.executeBashCommand(
+    const initialStatusResult = await agent.executeCommand(
       "git status --porcelain"
     );
 
@@ -268,7 +209,7 @@ async function handleCommitAndPushHeadless(
     console.log("✅ git status: Changes detected");
 
     // Add all changes
-    const addResult = await agent.executeBashCommand("git add .");
+    const addResult = await agent.executeCommand("git add .");
 
     if (!addResult.success) {
       console.log(
@@ -280,7 +221,7 @@ async function handleCommitAndPushHeadless(
     console.log("✅ git add: Changes staged");
 
     // Get staged changes for commit message generation
-    const diffResult = await agent.executeBashCommand("git diff --cached");
+    const diffResult = await agent.executeCommand("git diff --cached");
 
     // Generate commit message using AI
     const commitPrompt = `Generate a concise, professional git commit message for these changes:
@@ -318,7 +259,7 @@ Respond with ONLY the commit message, no additional text.`;
 
     // Execute the commit
     const commitCommand = `git commit -m "${cleanCommitMessage}"`;
-    const commitResult = await agent.executeBashCommand(commitCommand);
+    const commitResult = await agent.executeCommand(commitCommand);
 
     if (commitResult.success) {
       console.log(
@@ -329,14 +270,14 @@ Respond with ONLY the commit message, no additional text.`;
 
       // If commit was successful, push to remote
       // First try regular push, if it fails try with upstream setup
-      let pushResult = await agent.executeBashCommand("git push");
+      let pushResult = await agent.executeCommand("git push");
 
       if (
         !pushResult.success &&
         pushResult.error?.includes("no upstream branch")
       ) {
         console.log("🔄 Setting upstream and pushing...");
-        pushResult = await agent.executeBashCommand("git push -u origin HEAD");
+        pushResult = await agent.executeCommand("git push -u origin HEAD");
       }
 
       if (pushResult.success) {
@@ -372,7 +313,8 @@ async function processPromptHeadless(
   autoApproveCommands?: string[]
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    const { createGrokAgent } = await import('./utils/startup-hook');
+    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode
@@ -517,27 +459,8 @@ program
         process.exit(1);
       }
 
-      // Save API key to user settings if provided via command line (baseURL is override only)
-      if (options.apiKey) {
-        await saveCommandLineSettings(options.apiKey);
-      }
-
-      // Common initialization for both modes
-      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog);
-      currentAgent = agent; // Store reference for cleanup
-
-      // Configure confirmation service if auto-approve is enabled
-      const confirmationService = ConfirmationService.getInstance();
-      if (options.autoApprove) {
-        confirmationService.setSessionFlag("allOperations", true);
-      } else if (options.autoApproveCommands) {
-        // Parse comma-separated commands and set them as approved
-        const commands = options.autoApproveCommands
-          .split(',')
-          .map(cmd => cmd.trim())
-          .filter(cmd => cmd.length > 0);
-        confirmationService.setApprovedCommands(commands);
-      }
+      // Note: API key from --api-key flag is NOT saved to user settings
+      // It's only used for this session. Use the interactive prompt to save it permanently.
 
       ensureUserSettingsDirectory();
 
@@ -597,9 +520,27 @@ program
 
       // Interactive mode: launch UI
 
-      // Clear terminal screen if fresh session is requested
-      if (options.fresh) {
-        process.stdout.write('\x1b[2J\x1b[0f');
+      // Create agent for interactive mode only
+      const { createGrokAgent } = await import('./utils/startup-hook');
+      // Run startup hook for fresh sessions or when history doesn't exist
+      const { ChatHistoryManager } = await import('./utils/chat-history-manager');
+      const historyManager = ChatHistoryManager.getInstance();
+      const hasHistory = !options.fresh && historyManager.loadHistory().length > 0;
+      const runStartupHook = !hasHistory; // Only run hook for new sessions
+      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook);
+      currentAgent = agent; // Store reference for cleanup
+
+      // Configure confirmation service if auto-approve is enabled
+      const confirmationService = ConfirmationService.getInstance();
+      if (options.autoApprove) {
+        confirmationService.setSessionFlag("allOperations", true);
+      } else if (options.autoApproveCommands) {
+        // Parse comma-separated commands and set them as approved
+        const commands = options.autoApproveCommands
+          .split(',')
+          .map(cmd => cmd.trim())
+          .filter(cmd => cmd.length > 0);
+        confirmationService.setApprovedCommands(commands);
       }
 
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
@@ -712,6 +653,9 @@ program
         }
       }
 
+      // Clear terminal screen for ink mode
+      process.stdout.write('\x1b[2J\x1b[0f');
+
       render(React.createElement(ChatInterface, {
         agent,
         initialMessage,
@@ -779,10 +723,8 @@ gitCommand
         process.exit(1);
       }
 
-      // Save API key to user settings if provided via command line (baseURL is override only)
-      if (options.apiKey) {
-        await saveCommandLineSettings(options.apiKey);
-      }
+      // Note: API key from --api-key flag is NOT saved to user settings
+      // It's only used for this session. Use the interactive prompt to save it permanently.
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog);
     } catch (error: any) {

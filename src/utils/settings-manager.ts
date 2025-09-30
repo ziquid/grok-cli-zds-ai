@@ -11,6 +11,8 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  startupHook?: string; // Command to run at startup, output added to system prompt
+  mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
 /**
@@ -297,6 +299,13 @@ export class SettingsManager {
 
     // Then check user settings
     return this.getUserSetting("apiKey");
+  }
+
+  /**
+   * Get startup hook command from user settings
+   */
+  public getStartupHook(): string | undefined {
+    return this.getUserSetting("startupHook");
   }
 
   /**
