@@ -1,6 +1,6 @@
 {
   "name": "@vibe-kit/grok-cli",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
   "type": "module",
   "main": "dist/index.js",
