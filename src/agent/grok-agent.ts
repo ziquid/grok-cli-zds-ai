@@ -24,9 +24,9 @@ import { getSettingsManager } from "../utils/settings-manager";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
-  content: string;
+  content?: string;
   timestamp: Date;
-  toolCalls?: GrokToolCall[];
+  tool_calls?: GrokToolCall[];
   toolCall?: GrokToolCall;
   toolResult?: { success: boolean; output?: string; error?: string; displayOutput?: string };
   isStreaming?: boolean;
@@ -35,7 +35,7 @@ export interface ChatEntry {
 export interface StreamingChunk {
   type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
   content?: string;
-  toolCalls?: GrokToolCall[];
+  tool_calls?: GrokToolCall[];
   toolCall?: GrokToolCall;
   toolResult?: ToolResult;
   tokenCount?: number;
@@ -61,7 +61,8 @@ export class GrokAgent extends EventEmitter {
     apiKey: string,
     baseURL?: string,
     model?: string,
-    maxToolRounds?: number
+    maxToolRounds?: number,
+    debugLogFile?: string
   ) {
     super();
     const manager = getSettingsManager();
@@ -79,12 +80,12 @@ export class GrokAgent extends EventEmitter {
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
-    this.initializeMCP();
+    this.initializeMCP(debugLogFile);
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
     const customInstructionsSection = customInstructions
-      ? `\n\nCUSTOM INSTRUCTIONS:\n${customInstructions}\n\nThe above custom instructions should be followed alongside the standard instructions below.`
+      ? `${customInstructions}`
       : "";
 
     // Initialize with system message
@@ -92,47 +93,50 @@ export class GrokAgent extends EventEmitter {
 
 ${customInstructionsSection}
 
-As an AI assistant, you have access to these tools, which execute on the host machine, not your local sandbox!  These tools are powerful and can modify files, run commands, and access real-time information. Use them wisely and responsibly to achieve your goals.:
+IMPORTANT: You are NOT in a sandbox! You have full access to real tools that execute directly on the user's actual machine.
+You can read, write, and modify real files, execute real commands, and make actual changes to the system.
+All tool calls are executed in the real environment, not simulated.
 
-- view_file: View file contents or directory listings
-- create_file: Create new files with content (ONLY use this for files that don't exist yet)
-- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
-        this.morphEditor
-          ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
-          : ""
-      }
-- zsh: Execute zsh commands (use for searching, file discovery, navigation, and system operations)
-- list_files: List files in a directory (equivalent to 'ls -la')
-- find_files: Find files by pattern (equivalent to 'find')
-- grep_files: Search for text patterns in files (equivalent to 'grep -r')
-- search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
-- env_vars: View environment variables (get all, get specific, or search by pattern)
-- create_todo_list: Create a visual todo list for planning and tracking tasks
-- update_todo_list: Update existing todos in your todo list
-- filesystem_tools: Filesystem operations (change directory and show current directory)
-    - chdir: Change the current working directory
-    - pwdir: Show the current working directory
+You have access to these tools, which execute on the host machine:
 
-REAL-TIME INFORMATION:
-You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
+EnvTool:
+  getAllEnv (Get all environment variables)
+  getEnv (Get a specific environment variable)
+  searchEnv (Search environment variables by pattern)
+SearchTool:
+  universalSearch (Unified search tool for finding text content or files (similar to Cursor's search))
+TextEditorTool:
+  createNewFile (Create a new file with specified content)
+  insertLines (Insert text at a specific line in a file)
+  replaceLines (Replace a range of lines in a file)
+  strReplace (Replace specific text in a file. Use this for single line edits only)
+  undoEdit (Undo the last edit operation)
+  viewFile (View contents of a file or list directory contents)
+TodoTool:
+  createTodoList (Create a new todo list for planning and tracking tasks)
+  updateTodoList (Update existing todos in the todo list)
+  viewTodoList (View the current todo list)
+ZshTool:
+  chdir (Change the current working directory)
+  execute (Execute a zsh command)
+  listFiles (List files in a directory (equivalent to 'ls -la'))
+  pwdir (Show the current working directory)
 
 IMPORTANT TOOL USAGE RULES:
-- NEVER use create_file on files that already exist - this will overwrite them completely
-- ALWAYS use str_replace_editor to modify existing files, even for small changes
-- Before editing a file, use view_file to see its current contents
-- Use create_file ONLY when creating entirely new files that don't exist
+- NEVER use createNewFile on files that already exist - this will overwrite them completely
+- Before editing a file, use viewFile to see its current contents
+- Use createNewFile ONLY when creating entirely new files that don't exist
 
 SEARCHING AND EXPLORATION:
-- Use search for fast, powerful text search across files or finding files by name (unified search tool)
-- Examples: search for text content like "import.*react", search for files like "component.tsx"
-- Use zsh with commands like 'find', 'grep', 'rg', 'ls' for complex file operations and navigation
-- view_file is best for reading specific files you already know exist
+- Use universalSearch for fast, powerful text search across files or finding files by name (unified search tool)
+- Examples: universalSearch for text content like "import.*react", universalSearch for files like "component.tsx"
+- viewFile is best for reading specific files you already know exist
 
 ENVIRONMENT VARIABLES:
-- Use env_vars to access environment variables without shell commands
-- Get all: env_vars() with no parameters
-- Get specific: env_vars with action="get" and variable="VAR_NAME"
-- Search: env_vars with action="search" and pattern="search_term"
+- Use getAllEnv, getEnv, and searchEnv to access environment variables without shell commands
+- Get all: getAllEnv() with no parameters
+- Get specific: getEnv with variable="VAR_NAME"
+- Search: searchEnv with pattern="search_term"
 - This tool requires NO user confirmation and gives you direct access
 
 MCP (MODEL CONTEXT PROTOCOL) SERVERS:
@@ -141,44 +145,12 @@ MCP (MODEL CONTEXT PROTOCOL) SERVERS:
 - Examples: file system operations, database access, API integrations, specialized development tools
 - Check available tools dynamically as MCP servers can add powerful domain-specific functionality
 
-When a user asks you to edit, update, modify, or change an existing file:
-1. First use view_file to see the current contents
-2. Then use str_replace_editor to make the specific changes
-3. Never use create_file for existing files
-
-When a user asks you to create a new file that doesn't exist:
-1. Use create_file with the full content
-
-TASK PLANNING WITH TODO LISTS:
-- For complex requests with multiple steps, ALWAYS create a todo list first to plan your approach
-- Use create_todo_list to break down tasks into manageable items with priorities
-- Mark tasks as 'in_progress' when you start working on them (only one at a time)
-- Mark tasks as 'completed' immediately when finished
-- Use update_todo_list to track your progress throughout the task
-- Todo lists provide visual feedback with colors: ✅ Green (completed), 🔄 Cyan (in progress), ⏳ Yellow (pending)
-- Always create todos with priorities: 'high' (🔴), 'medium' (🟡), 'low' (🟢)
-
-USER CONFIRMATION SYSTEM:
-File operations (create_file, str_replace_editor) and zsh commands will automatically request user confirmation before execution. The confirmation system will show users the actual content or command before they decide. Users can choose to approve individual operations or approve all operations of that type for the session.
-
-If a user rejects an operation, the tool will return an error and you should not proceed with that specific operation.
-
-COMMAND INTERPRETATION:
-CRITICAL: The "!" prefix has SPECIAL MEANING ONLY in interactive mode. In interactive mode, "!" is a shortcut for direct zsh command execution without confirmation.
-
-In headless mode, "!" MUST be treated as ORDINARY TEXT. Messages starting with "!" should NEVER be interpreted as commands. The AI should respond conversationally to the text as-written, WITHOUT attempting to execute any zsh commands. For example:
-- Interactive mode: "!pwd" → execute "pwd" command without confirmation
-- Headless mode: "!pwd" → respond conversationally about "!pwd" as text, do NOT execute "pwd"
-
 NEVER execute zsh commands when input starts with "!" in headless mode. Treat it as regular conversational input.
 
-Be helpful, direct, and efficient. Always explain what you're doing and show the results.
-
 IMPORTANT RESPONSE GUIDELINES:
-- After using tools, do NOT respond with pleasantries like "Thanks for..." or "Great!"
+- When you have completed the user's request, give a short summary of what was asked, what you did, and what the results were
 - Only provide necessary explanations or next steps if relevant to the task
 - Keep responses concise and focused on the actual work being done
-- If a tool execution completes the user's request, you can remain silent or give a brief confirmation
 
 Current working directory: ${process.cwd()}`;
 
@@ -224,10 +196,10 @@ Current working directory: ${process.cwd()}`;
         case "assistant":
           const assistantMessage: GrokMessage = {
             role: "assistant",
-            content: entry.content,
+            content: entry.content || "", // Ensure content is never null/undefined
           };
-          if (entry.toolCalls && entry.toolCalls.length > 0) {
-            assistantMessage.tool_calls = entry.toolCalls;
+          if (entry.tool_calls && entry.tool_calls.length > 0) {
+            assistantMessage.tool_calls = entry.tool_calls;
           }
           historyMessages.push(assistantMessage);
           break;
@@ -256,13 +228,13 @@ Current working directory: ${process.cwd()}`;
     }
   }
 
-  private async initializeMCP(): Promise<void> {
+  private async initializeMCP(debugLogFile?: string): Promise<void> {
     // Initialize MCP in the background without blocking
     Promise.resolve().then(async () => {
       try {
         const config = loadMCPConfig();
         if (config.servers.length > 0) {
-          await initializeMCPServers();
+          await initializeMCPServers(debugLogFile);
         }
       } catch (error) {
         console.warn("MCP initialization failed:", error);
@@ -318,6 +290,7 @@ Current working directory: ${process.cwd()}`;
     const newEntries: ChatEntry[] = [userEntry];
     const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
+    let consecutiveNonToolResponses = 0;
 
     try {
       const tools = await getAllGrokTools();
@@ -344,13 +317,14 @@ Current working directory: ${process.cwd()}`;
           assistantMessage.tool_calls.length > 0
         ) {
           toolRounds++;
+          consecutiveNonToolResponses = 0; // Reset counter when AI makes tool calls
 
           // Add assistant message with tool calls
           const assistantEntry: ChatEntry = {
             type: "assistant",
-            content: assistantMessage.content || "Using tools to help you...",
+            content: assistantMessage.content,
             timestamp: new Date(),
-            toolCalls: assistantMessage.tool_calls,
+            tool_calls: assistantMessage.tool_calls,
           };
           this.chatHistory.push(assistantEntry);
           newEntries.push(assistantEntry);
@@ -358,7 +332,7 @@ Current working directory: ${process.cwd()}`;
           // Add assistant message to conversation
           this.messages.push({
             role: "assistant",
-            content: assistantMessage.content || "",
+            content: assistantMessage.content || "", // Ensure content is never null/undefined
             tool_calls: assistantMessage.tool_calls,
           } as any);
 
@@ -426,21 +400,71 @@ Current working directory: ${process.cwd()}`;
               : { search_parameters: { mode: "off" } }
           );
         } else {
-          // No more tool calls, add final response
-          const finalEntry: ChatEntry = {
-            type: "assistant",
-            content:
-              assistantMessage.content ||
-              "I understand, but I don't have a specific response.",
-            timestamp: new Date(),
-          };
-          this.chatHistory.push(finalEntry);
-          this.messages.push({
-            role: "assistant",
-            content: assistantMessage.content || "",
-          });
-          newEntries.push(finalEntry);
-          break; // Exit the loop
+          // No tool calls in this response - only add it if there's actual content
+          const trimmedContent = assistantMessage.content?.trim();
+          if (trimmedContent) {
+            const responseEntry: ChatEntry = {
+              type: "assistant",
+              content: trimmedContent,
+              timestamp: new Date(),
+            };
+            this.chatHistory.push(responseEntry);
+            this.messages.push({
+              role: "assistant",
+              content: trimmedContent,
+            });
+            newEntries.push(responseEntry);
+          }
+
+          // If the AI provided a substantial response (>50 chars), consider task potentially complete
+          // But give it one more chance to reassess and continue if needed
+          if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
+            // Get one more response to see if AI wants to continue working
+            currentResponse = await this.grokClient.chat(
+              this.messages,
+              tools,
+              undefined,
+              this.isGrokModel() && this.shouldUseSearchFor(message)
+                ? { search_parameters: { mode: "auto" } }
+                : { search_parameters: { mode: "off" } }
+            );
+
+            // If this followup response also has no tool calls, then we're done
+            const followupMessage = currentResponse.choices[0]?.message;
+            if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
+              // Add the final followup response if it has content
+              if (followupMessage?.content && followupMessage.content.trim()) {
+                const finalEntry: ChatEntry = {
+                  type: "assistant",
+                  content: followupMessage.content,
+                  timestamp: new Date(),
+                };
+                this.chatHistory.push(finalEntry);
+                this.messages.push({
+                  role: "assistant",
+                  content: followupMessage.content,
+                });
+                newEntries.push(finalEntry);
+              }
+              break; // Now we can exit - AI had two chances and chose not to continue
+            }
+            // If followup response has tool calls, continue the loop to execute them
+          } else {
+            // Short/empty response, give AI another chance immediately
+            currentResponse = await this.grokClient.chat(
+              this.messages,
+              tools,
+              undefined,
+              this.isGrokModel() && this.shouldUseSearchFor(message)
+                ? { search_parameters: { mode: "auto" } }
+                : { search_parameters: { mode: "off" } }
+            );
+
+            const followupMessage = currentResponse.choices[0]?.message;
+            if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
+              break; // AI doesn't want to continue
+            }
+          }
         }
       }
 
@@ -480,7 +504,15 @@ Current working directory: ${process.cwd()}`;
             }
           }
         } else if (typeof acc[key] === "string" && typeof value === "string") {
-          (acc[key] as string) += value;
+          // Don't concatenate certain properties that should remain separate
+          const nonConcatenableProps = ['id', 'type', 'name'];
+          if (nonConcatenableProps.includes(key)) {
+            // For non-concatenable properties, keep the new value
+            acc[key] = value;
+          } else {
+            // For content and other text properties, concatenate
+            (acc[key] as string) += value;
+          }
         } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
           const accArray = acc[key] as any[];
           for (let i = 0; i < value.length; i++) {
@@ -503,7 +535,13 @@ Current working directory: ${process.cwd()}`;
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
-    // Add user message to API conversation (UI components handle chat history display)
+    // Add user message to both API conversation and chat history
+    const userEntry: ChatEntry = {
+      type: "user",
+      content: message,
+      timestamp: new Date(),
+    };
+    this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
 
     // Calculate input tokens
@@ -519,6 +557,7 @@ Current working directory: ${process.cwd()}`;
     let toolRounds = 0;
     let totalOutputTokens = 0;
     let lastTokenUpdate = 0;
+    let consecutiveNonToolResponses = 0;
 
     try {
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -550,7 +589,7 @@ Current working directory: ${process.cwd()}`;
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
-        let toolCallsYielded = false;
+        let tool_calls_yielded = false;
 
         for await (const chunk of stream) {
           // Check for cancellation in the streaming loop
@@ -569,7 +608,7 @@ Current working directory: ${process.cwd()}`;
           accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
 
           // Check for tool calls - yield when we have complete tool calls with function names
-          if (!toolCallsYielded && accumulatedMessage.tool_calls?.length > 0) {
+          if (!tool_calls_yielded && accumulatedMessage.tool_calls?.length > 0) {
             // Check if we have at least one complete tool call with a function name
             const hasCompleteTool = accumulatedMessage.tool_calls.some(
               (tc: any) => tc.function?.name
@@ -577,9 +616,9 @@ Current working directory: ${process.cwd()}`;
             if (hasCompleteTool) {
               yield {
                 type: "tool_calls",
-                toolCalls: accumulatedMessage.tool_calls,
+                tool_calls: accumulatedMessage.tool_calls,
               };
-              toolCallsYielded = true;
+              tool_calls_yielded = true;
             }
           }
 
@@ -614,19 +653,10 @@ Current working directory: ${process.cwd()}`;
         }
       }
 
-        // Add assistant entry to history
-        const assistantEntry: ChatEntry = {
-          type: "assistant",
-          content: accumulatedMessage.content || "Using tools to help you...",
-          timestamp: new Date(),
-          toolCalls: accumulatedMessage.tool_calls || undefined,
-        };
-        this.chatHistory.push(assistantEntry);
-
-        // Add accumulated message to conversation
+        // Add accumulated message to conversation for API context
         this.messages.push({
           role: "assistant",
-          content: accumulatedMessage.content || "",
+          content: accumulatedMessage.content || "", // Ensure content is never null/undefined
           tool_calls: accumulatedMessage.tool_calls,
         } as any);
 
@@ -635,10 +665,10 @@ Current working directory: ${process.cwd()}`;
           toolRounds++;
 
           // Only yield tool_calls if we haven't already yielded them during streaming
-          if (!toolCallsYielded) {
+          if (!tool_calls_yielded) {
             yield {
               type: "tool_calls",
-              toolCalls: accumulatedMessage.tool_calls,
+              tool_calls: accumulatedMessage.tool_calls,
             };
           }
 
@@ -655,17 +685,6 @@ Current working directory: ${process.cwd()}`;
             }
 
             const result = await this.executeTool(toolCall);
-
-            const toolResultEntry: ChatEntry = {
-              type: "tool_result",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error occurred",
-              timestamp: new Date(),
-              toolCall: toolCall,
-              toolResult: result,
-            };
-            this.chatHistory.push(toolResultEntry);
 
             yield {
               type: "tool_result",
@@ -742,18 +761,17 @@ Current working directory: ${process.cwd()}`;
       const args = JSON.parse(toolCall.function.arguments);
 
       switch (toolCall.function.name) {
-        case "view_file":
-        case "Read":
+        case "viewFile":
           { let range: [number, number] | undefined;
           range = args.start_line && args.end_line
             ? [args.start_line, args.end_line]
             : undefined;
-          return await this.textEditor.view(args.path, range); }
+          return await this.textEditor.viewFile(args.path, range); }
 
-        case "create_file":
-          return await this.textEditor.create(args.path, args.content);
+        case "createNewFile":
+          return await this.textEditor.createNewFile(args.path, args.content);
 
-        case "str_replace_editor":
+        case "strReplace":
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
@@ -761,7 +779,7 @@ Current working directory: ${process.cwd()}`;
             args.replace_all
           );
 
-        case "edit_file":
+        case "editFile":
           if (!this.morphEditor) {
             return {
               success: false,
@@ -775,26 +793,21 @@ Current working directory: ${process.cwd()}`;
             args.code_edit
           );
 
-        case "zsh":
+        case "execute":
           return await this.zsh.execute(args.command);
 
-        case "list_files":
+        case "listFiles":
           return await this.zsh.listFiles(args.directory);
 
-        case "find_files":
-          return await this.zsh.findFiles(args.pattern, args.directory);
 
-        case "grep_files":
-          return await this.zsh.grep(args.pattern, args.files);
-
-        case "create_todo_list":
+        case "createTodoList":
           return await this.todoTool.createTodoList(args.todos);
 
-        case "update_todo_list":
+        case "updateTodoList":
           return await this.todoTool.updateTodoList(args.updates);
 
-        case "search":
-          return await this.search.search(args.query, {
+        case "universalSearch":
+          return await this.search.universalSearch(args.query, {
             searchType: args.search_type,
             includePattern: args.include_pattern,
             excludePattern: args.exclude_pattern,
@@ -806,14 +819,26 @@ Current working directory: ${process.cwd()}`;
             includeHidden: args.include_hidden,
           });
 
-        case "env_vars":
-          if (args.action === "get" && args.variable) {
-            return await this.env.get(args.variable);
-          } else if (args.action === "search" && args.pattern) {
-            return await this.env.search(args.pattern);
-          } else {
-            return await this.env.getAll();
-          }
+        case "getEnv":
+          return await this.env.getEnv(args.variable);
+
+        case "getAllEnv":
+          return await this.env.getAllEnv();
+
+        case "searchEnv":
+          return await this.env.searchEnv(args.pattern);
+
+        case "insertLines":
+          return await this.textEditor.insertLines(args.path, args.insert_line, args.new_str);
+
+        case "replaceLines":
+          return await this.textEditor.replaceLines(args.path, args.start_line, args.end_line, args.new_str);
+
+        case "undoEdit":
+          return await this.textEditor.undoEdit();
+
+        case "viewTodoList":
+          return await this.todoTool.viewTodoList();
 
         case "chdir":
           return this.zsh.chdir(args.directory);
@@ -882,6 +907,10 @@ Current working directory: ${process.cwd()}`;
     return [...this.chatHistory];
   }
 
+  getMessages(): any[] {
+    return [...this.messages];
+  }
+
 
   async executeBashCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
     return await this.zsh.execute(command, 30000, skipConfirmation);
@@ -902,5 +931,44 @@ Current working directory: ${process.cwd()}`;
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  /**
+   * Get all tool instances and their class names for display purposes
+   */
+  getToolClassInfo(): Array<{ className: string; methods: string[] }> {
+    const toolInstances = this.getToolInstances();
+
+    return toolInstances.map(({ instance, className }) => ({
+      className,
+      methods: instance.getHandledToolNames ? instance.getHandledToolNames() : []
+    }));
+  }
+
+  /**
+   * Get all tool instances via reflection
+   */
+  private getToolInstances(): Array<{ instance: any; className: string }> {
+    const instances: Array<{ instance: any; className: string }> = [];
+
+    // Use reflection to find all tool instance properties
+    const propertyNames = Object.getOwnPropertyNames(this);
+
+    for (const propName of propertyNames) {
+      const propValue = (this as any)[propName];
+
+      // Check if this property is a tool instance (has getHandledToolNames method)
+      if (propValue &&
+          typeof propValue === 'object' &&
+          typeof propValue.getHandledToolNames === 'function') {
+
+        instances.push({
+          instance: propValue,
+          className: propValue.constructor.name
+        });
+      }
+    }
+
+    return instances;
   }
 }
