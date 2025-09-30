@@ -3,6 +3,7 @@ import { ToolResult } from "../types";
 import { ConfirmationService } from "../utils/confirmation-service";
 import * as fs from "fs-extra";
 import * as path from "path";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
 
 export interface SearchResult {
   file: string;
@@ -28,14 +29,14 @@ export interface UnifiedSearchResult {
   score?: number;
 }
 
-export class SearchTool {
+export class SearchTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
   private currentDirectory: string = process.cwd();
 
   /**
    * Unified search method that can search for text content or find files
    */
-  async search(
+  async universalSearch(
     query: string,
     options: {
       searchType?: "text" | "files" | "both";
@@ -56,7 +57,7 @@ export class SearchTool {
 
       // Search for text content if requested
       if (searchType === "text" || searchType === "both") {
-        const textResults = await this.executeRipgrep(query, options);
+        const textResults = await this._executeRipgrep(query, options);
         results.push(
           ...textResults.map((r) => ({
             type: "text" as const,
@@ -71,7 +72,7 @@ export class SearchTool {
 
       // Search for files if requested
       if (searchType === "files" || searchType === "both") {
-        const fileResults = await this.findFilesByPattern(query, options);
+        const fileResults = await this._findFilesByPattern(query, options);
         results.push(
           ...fileResults.map((r) => ({
             type: "file" as const,
@@ -109,7 +110,7 @@ export class SearchTool {
   /**
    * Execute ripgrep command with specified options
    */
-  private async executeRipgrep(
+  private async _executeRipgrep(
     query: string,
     options: {
       includePattern?: string;
@@ -256,7 +257,7 @@ export class SearchTool {
   /**
    * Find files by pattern using a simple file walking approach
    */
-  private async findFilesByPattern(
+  private async _findFilesByPattern(
     pattern: string,
     options: {
       maxResults?: number;
@@ -439,5 +440,9 @@ export class SearchTool {
    */
   getCurrentDirectory(): string {
     return this.currentDirectory;
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

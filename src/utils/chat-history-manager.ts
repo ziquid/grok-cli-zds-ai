@@ -56,7 +56,7 @@ export class ChatHistoryManager {
       return parsed
         .map((entry: any) => {
           try {
-            if (!entry.type || !entry.content || !entry.timestamp) {
+            if (!entry.type || !entry.timestamp) {
               console.warn("Skipping invalid chat entry:", entry);
               return null;
             }
@@ -94,12 +94,62 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Clear chat history file
+   * Save raw messages log to file (OpenAI format messages)
+   */
+  saveMessages(messages: any[]): void {
+    try {
+      const messagesFilePath = this.historyFilePath.replace('.json', '.messages.json');
+      fs.writeFileSync(messagesFilePath, JSON.stringify(messages, null, 2));
+    } catch (error) {
+      console.warn("Failed to save messages log:", error);
+    }
+  }
+
+  /**
+   * Create a backup of the current chat history and messages files
+   */
+  backupHistory(): string | null {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupSuffix = `.backup-${timestamp}.json`;
+
+      let backupPath: string | null = null;
+
+      // Backup main history file
+      if (fs.existsSync(this.historyFilePath)) {
+        backupPath = this.historyFilePath.replace('.json', backupSuffix);
+        fs.copyFileSync(this.historyFilePath, backupPath);
+      }
+
+      // Backup messages file
+      const messagesFilePath = this.historyFilePath.replace('.json', '.messages.json');
+      if (fs.existsSync(messagesFilePath)) {
+        const messagesBackupPath = messagesFilePath.replace('.json', backupSuffix);
+        fs.copyFileSync(messagesFilePath, messagesBackupPath);
+      }
+
+      return backupPath;
+    } catch (error) {
+      console.warn("Failed to backup chat history:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear chat history file and messages file with automatic backup
    */
   clearHistory(): void {
     try {
+      // First, create a backup
+      const backupPath = this.backupHistory();
+
+      // Then clear the files
       if (fs.existsSync(this.historyFilePath)) {
         fs.unlinkSync(this.historyFilePath);
+      }
+      const messagesFilePath = this.historyFilePath.replace('.json', '.messages.json');
+      if (fs.existsSync(messagesFilePath)) {
+        fs.unlinkSync(messagesFilePath);
       }
     } catch (error) {
       console.warn("Failed to clear chat history:", error);

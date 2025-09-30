@@ -763,7 +763,7 @@ Respond with ONLY the commit message, no additional text.`;
                 setChatHistory((prev) =>
                   prev.map((entry, idx) =>
                     idx === prev.length - 1 && entry.isStreaming
-                      ? { ...entry, content: entry.content + chunk.content }
+                      ? { ...entry, content: (entry.content || "") + chunk.content }
                       : entry
                   )
                 );
@@ -778,7 +778,7 @@ Respond with ONLY the commit message, no additional text.`;
             break;
 
           case "tool_calls":
-            if (chunk.toolCalls) {
+            if (chunk.tool_calls) {
               // Stop streaming for the current assistant message
               setChatHistory((prev) =>
                 prev.map((entry) =>
@@ -786,7 +786,7 @@ Respond with ONLY the commit message, no additional text.`;
                     ? {
                         ...entry,
                         isStreaming: false,
-                        toolCalls: chunk.toolCalls,
+                        tool_calls: chunk.tool_calls,
                       }
                     : entry
                 )
@@ -794,7 +794,7 @@ Respond with ONLY the commit message, no additional text.`;
               streamingEntry = null;
 
               // Add individual tool call entries to show tools are being executed
-              chunk.toolCalls.forEach((toolCall) => {
+              chunk.tool_calls.forEach((toolCall) => {
                 const toolCallEntry: ChatEntry = {
                   type: "tool_call",
                   content: "Executing...",

@@ -73,17 +73,6 @@ function ChatInterfaceWithAgent({
   });
 
   useEffect(() => {
-    // Only clear console on non-Windows platforms or if not PowerShell
-    // Windows PowerShell can have issues with console.clear() causing flickering
-    const isWindows = process.platform === "win32";
-    const isPowerShell =
-      process.env.ComSpec?.toLowerCase().includes("powershell") ||
-      process.env.PSModulePath !== undefined;
-
-    if (!isWindows || !isPowerShell) {
-      console.clear();
-    }
-
     // Add top padding
     console.log("    ");
 
@@ -159,7 +148,7 @@ function ChatInterfaceWithAgent({
                     setChatHistory((prev) =>
                       prev.map((entry, idx) =>
                         idx === prev.length - 1 && entry.isStreaming
-                          ? { ...entry, content: entry.content + chunk.content }
+                          ? { ...entry, content: (entry.content || "") + chunk.content }
                           : entry
                       )
                     );
@@ -172,7 +161,7 @@ function ChatInterfaceWithAgent({
                 }
                 break;
               case "tool_calls":
-                if (chunk.toolCalls) {
+                if (chunk.tool_calls) {
                   // Stop streaming for the current assistant message
                   setChatHistory((prev) =>
                     prev.map((entry) =>
@@ -180,7 +169,7 @@ function ChatInterfaceWithAgent({
                         ? {
                             ...entry,
                             isStreaming: false,
-                            toolCalls: chunk.toolCalls,
+                            tool_calls: chunk.tool_calls,
                           }
                         : entry
                     )
@@ -188,7 +177,7 @@ function ChatInterfaceWithAgent({
                   streamingEntry = null;
 
                   // Add individual tool call entries to show tools are being executed
-                  chunk.toolCalls.forEach((toolCall) => {
+                  chunk.tool_calls.forEach((toolCall) => {
                     const toolCallEntry: ChatEntry = {
                       type: "tool_call",
                       content: "Executing...",
@@ -297,6 +286,9 @@ function ChatInterfaceWithAgent({
       // Filter out streaming entries before saving
       const historyToSave = chatHistory.filter(entry => !entry.isStreaming);
       historyManager.saveHistory(historyToSave);
+      // Also save the raw messages
+      const messages = agent.getMessages();
+      historyManager.saveMessages(messages);
     }
   }, [chatHistory, isProcessing, isStreaming]);
 

@@ -1,4 +1,5 @@
 import { ToolResult } from '../types';
+import { ToolDiscovery, getHandledToolNames } from './tool-discovery';
 
 interface TodoItem {
   id: string;
@@ -7,7 +8,7 @@ interface TodoItem {
   priority: 'high' | 'medium' | 'low';
 }
 
-export class TodoTool {
+export class TodoTool implements ToolDiscovery {
   private todos: TodoItem[] = [];
 
   formatTodoList(): string {
@@ -150,5 +151,9 @@ export class TodoTool {
       success: true,
       output: this.formatTodoList()
     };
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

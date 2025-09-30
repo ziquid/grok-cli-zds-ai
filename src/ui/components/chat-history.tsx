@@ -53,7 +53,7 @@ const MemoizedChatEntry = React.memo(
           <Box key={index} flexDirection="column" marginTop={1}>
             <Box>
               <Text color="gray">
-                {">"} {entry.content}
+                {">"} {entry.content || ""}
               </Text>
             </Box>
           </Box>
@@ -65,12 +65,12 @@ const MemoizedChatEntry = React.memo(
             <Box flexDirection="row" alignItems="flex-start">
               <Text color="white">⏺ </Text>
               <Box flexDirection="column" flexGrow={1}>
-                {entry.toolCalls ? (
+                {entry.tool_calls ? (
                   // If there are tool calls, just show plain text
-                  <Text color="white">{entry.content.trim()}</Text>
+                  <Text color="white">{(entry.content || "").trim()}</Text>
                 ) : (
                   // If no tool calls, render as markdown
-                  <MarkdownRenderer content={entry.content.trim()} />
+                  <MarkdownRenderer content={(entry.content || "").trim()} />
                 )}
                 {entry.isStreaming && <Text color="cyan">█</Text>}
               </Box>
@@ -183,19 +183,19 @@ const MemoizedChatEntry = React.memo(
                 <Box flexDirection="column">
                   <Text color="gray">⎿ File contents:</Text>
                   <Box marginLeft={2} flexDirection="column">
-                    {renderFileContent(entry.content)}
+                    {renderFileContent(entry.content || "")}
                   </Box>
                 </Box>
               ) : shouldShowDiff ? (
                 // For diff results, show only the summary line, not the raw content
-                <Text color="gray">⎿ {entry.content.split("\n")[0]}</Text>
+                <Text color="gray">⎿ {(entry.content || "").split("\n")[0]}</Text>
               ) : (
-                <Text color="gray">⎿ {formatToolContent(entry.content, toolName)}</Text>
+                <Text color="gray">⎿ {formatToolContent(entry.content || "", toolName)}</Text>
               )}
             </Box>
             {shouldShowDiff && !isExecuting && (
               <Box marginLeft={4} flexDirection="column">
-                {renderDiff(entry.content, filePath)}
+                {renderDiff(entry.content || "", filePath)}
               </Box>
             )}
           </Box>
@@ -208,8 +208,8 @@ const MemoizedChatEntry = React.memo(
               <Text color="blue">🔧 System: </Text>
               <Box flexDirection="column" marginLeft={2}>
                 <Text color="blue" dimColor>
-                  {entry.content.split('\n').slice(0, 3).join('\n')}
-                  {entry.content.split('\n').length > 3 ? '\n...' : ''}
+                  {(entry.content || "").split('\n').slice(0, 3).join('\n')}
+                  {(entry.content || "").split('\n').length > 3 ? '\n...' : ''}
                 </Text>
               </Box>
             </Box>

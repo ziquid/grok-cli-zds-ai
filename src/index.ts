@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+// No global output suppression - let UI render normally
+
 import React from "react";
 import { render } from "ink";
 import { program } from "commander";
@@ -15,11 +17,28 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 // Load environment variables
 dotenv.config();
 
-// Disable default SIGINT handling to let Ink handle Ctrl+C
-// We'll handle exit through the input system instead
+// No global output suppression functions needed
 
-process.on("SIGTERM", () => {
-  // Restore terminal to normal mode before exit
+// Global reference to current agent for cleanup
+let currentAgent: any = null;
+
+// Terminal restoration function
+function restoreTerminal() {
+  // Save chat history and messages if we have an active agent
+  if (currentAgent) {
+    try {
+      const { ChatHistoryManager } = require("./utils/chat-history-manager");
+      const historyManager = ChatHistoryManager.getInstance();
+      const currentHistory = currentAgent.getChatHistory();
+      const currentMessages = currentAgent.getMessages();
+      historyManager.saveHistory(currentHistory);
+      historyManager.saveMessages(currentMessages);
+    } catch (error) {
+      // Silently ignore errors during emergency cleanup
+    }
+  }
+
+  // Restore terminal to normal mode
   if (process.stdin.isTTY && process.stdin.setRawMode) {
     try {
       process.stdin.setRawMode(false);
@@ -27,19 +46,47 @@ process.on("SIGTERM", () => {
       // Ignore errors when setting raw mode
     }
   }
+
+  // Restore cursor and clear any special terminal modes
+  if (process.stdout.isTTY) {
+    try {
+      process.stdout.write('\x1b[?25h'); // Show cursor
+      process.stdout.write('\x1b[0m');   // Reset all formatting
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+}
+
+// Handle SIGINT (Ctrl+C) to restore terminal properly
+process.on("SIGINT", () => {
+  restoreTerminal();
+  console.log("\n");
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  restoreTerminal();
   console.log("\nGracefully shutting down...");
   process.exit(0);
 });
 
 // Handle uncaught exceptions to prevent hanging
 process.on("uncaughtException", (error) => {
+  restoreTerminal();
   console.error("Uncaught exception:", error);
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
+  restoreTerminal();
   console.error("Unhandled rejection at:", promise, "reason:", reason);
   process.exit(1);
+});
+
+// Cleanup on normal exit
+process.on("exit", () => {
+  restoreTerminal();
 });
 
 // Ensure user settings are initialized
@@ -103,15 +150,103 @@ function loadModel(): string | undefined {
   return model;
 }
 
+// Show all available tools (internal and MCP)
+async function showAllTools(debugLogFile?: string): Promise<void> {
+  try {
+    // Import the tools module
+    const { getAllGrokTools, GROK_TOOLS, getMCPManager } = await import('./grok/tools');
+
+    // Ensure MCP servers are initialized
+    const mcpManager = getMCPManager();
+    await mcpManager.ensureServersInitialized();
+
+    // Get all tools (internal + MCP)
+    const allTools = await getAllGrokTools();
+
+    // Separate internal tools from MCP tools
+    const internalTools = GROK_TOOLS;
+    const mcpTools = allTools.filter(tool => tool.function.name.startsWith('mcp__'));
+
+    // Show internal tools organized by discovered tool classes
+    console.log("Internal Tools:");
+
+    // Create a temporary agent to get dynamic tool class info
+    const { GrokAgent } = await import('./agent/grok-agent');
+    const tempAgent = new GrokAgent("dummy");
+    const toolClassInfo = tempAgent.getToolClassInfo();
+
+    // Create a mapping from tool names to descriptions
+    const toolDescriptions = new Map<string, string>();
+    internalTools.forEach(tool => {
+      toolDescriptions.set(tool.function.name, tool.function.description);
+    });
+
+    // Sort classes and display their discovered methods
+    const sortedClasses = toolClassInfo.sort((a, b) => a.className.localeCompare(b.className));
+    sortedClasses.forEach(({ className, methods }) => {
+      if (methods.length > 0) {
+        console.log(`  ${className}:`);
+        methods.sort().forEach(methodName => {
+          const description = toolDescriptions.get(methodName) || 'No description available';
+          console.log(`    ${methodName} (${description})`);
+        });
+      }
+    });
+
+    console.log(); // Empty line
+
+    // Show MCP tools grouped by server with headers
+    if (mcpTools.length > 0) {
+      const toolsByServer = new Map<string, string[]>();
+
+      mcpTools.forEach(tool => {
+        // Extract server name from tool name (format: mcp__serverName__toolName)
+        const parts = tool.function.name.split('__');
+        if (parts.length >= 3 && parts[0] === 'mcp') {
+          const serverName = parts[1];
+          const toolName = parts.slice(2).join('__');
+
+          if (!toolsByServer.has(serverName)) {
+            toolsByServer.set(serverName, []);
+          }
+          toolsByServer.get(serverName)!.push(toolName);
+        }
+      });
+
+      // Sort servers alphabetically
+      const sortedServers = Array.from(toolsByServer.keys()).sort();
+
+      sortedServers.forEach(serverName => {
+        console.log(`MCP Tools (${serverName}):`);
+        const tools = toolsByServer.get(serverName)!.sort();
+        tools.forEach(toolName => {
+          console.log(`${toolName} (mcp:${serverName})`);
+        });
+        console.log(); // Empty line between servers
+      });
+    }
+
+    if (internalTools.length === 0 && mcpTools.length === 0) {
+      console.log("No tools available.");
+    }
+
+  } catch (error) {
+    console.error("Error listing tools:", error instanceof Error ? error.message : "Unknown error");
+    process.exit(1);
+  }
+}
+
 // Handle commit-and-push command in headless mode
 async function handleCommitAndPushHeadless(
   apiKey: string,
   baseURL?: string,
   model?: string,
-  maxToolRounds?: number
+  maxToolRounds?: number,
+  debugLogFile?: string
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -231,14 +366,27 @@ async function processPromptHeadless(
   baseURL?: string,
   model?: string,
   maxToolRounds?: number,
-  fresh?: boolean
+  fresh?: boolean,
+  debugLogFile?: string,
+  autoApprove?: boolean,
+  autoApproveCommands?: string[]
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    currentAgent = agent; // Store reference for cleanup
 
-    // Configure confirmation service for headless mode (auto-approve all operations)
+    // Configure confirmation service for headless mode
     const confirmationService = ConfirmationService.getInstance();
-    confirmationService.setSessionFlag("allOperations", true);
+    if (autoApprove) {
+      confirmationService.setSessionFlag("allOperations", true);
+    } else if (autoApproveCommands && autoApproveCommands.length > 0) {
+      confirmationService.setApprovedCommands(autoApproveCommands);
+    } else {
+      // If no approval settings provided, fail with helpful error
+      throw new Error(
+        "Headless mode requires explicit approval settings. Use --auto-approve for all operations or --auto-approve-commands for specific commands."
+      );
+    }
 
     // Load existing chat history unless fresh session
     if (!fresh) {
@@ -251,24 +399,28 @@ async function processPromptHeadless(
     // Process the user message
     const chatEntries = await agent.processUserMessage(prompt);
 
-    // Find the final assistant response (last assistant message)
-    let finalResponse = "";
-    for (let i = chatEntries.length - 1; i >= 0; i--) {
-      const entry = chatEntries[i];
+    // Collect all assistant responses with content (excluding the user prompt entry)
+    const assistantResponses: string[] = [];
+    for (const entry of chatEntries) {
       if (entry.type === "assistant" && entry.content.trim()) {
-        finalResponse = entry.content;
-        break;
+        assistantResponses.push(entry.content);
       }
     }
 
-    // Save updated chat history
+    // Save updated chat history and messages
     const { ChatHistoryManager } = await import("./utils/chat-history-manager");
     const historyManager = ChatHistoryManager.getInstance();
     const currentHistory = agent.getChatHistory();
+    const currentMessages = agent.getMessages();
     historyManager.saveHistory(currentHistory);
+    historyManager.saveMessages(currentMessages);
 
-    // Output the final assistant response content
-    console.log(finalResponse);
+    // Output all assistant responses
+    if (assistantResponses.length > 0) {
+      console.log(assistantResponses.join('\n'));
+    } else {
+      console.log("I understand, but I don't have a specific response.");
+    }
   } catch (error: any) {
     // Output error as plain text
     console.log(`Error: ${error.message}`);
@@ -311,12 +463,24 @@ program
     "auto-approve all operations without confirmation prompts"
   )
   .option(
+    "--auto-approve-commands <commands>",
+    "comma-separated list of commands to auto-approve (e.g., 'chdir,list_files,pwd')"
+  )
+  .option(
     "-c, --context <file>",
     "path to context persistence file (default: ~/.grok/chat-history.json)"
   )
   .option(
     '--no-ink',
     'disable Ink UI and use plain console input/output'
+  )
+  .option(
+    "--debug-log <file>",
+    "redirect MCP server debug output to log file instead of suppressing"
+  )
+  .option(
+    "--show-all-tools",
+    "list all available tools (internal and MCP) and exit"
   )
   .action(async (message, options) => {
     if (options.directory) {
@@ -331,12 +495,20 @@ program
       }
     }
 
+    // Handle --show-all-tools flag
+    if (options.showAllTools) {
+      await showAllTools(options.debugLog);
+      process.exit(0);
+    }
+
     try {
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
+
+      // Debug log will be passed to MCP servers during initialization
 
       if (!apiKey) {
         console.error(
@@ -351,12 +523,20 @@ program
       }
 
       // Common initialization for both modes
-      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog);
+      currentAgent = agent; // Store reference for cleanup
 
       // Configure confirmation service if auto-approve is enabled
+      const confirmationService = ConfirmationService.getInstance();
       if (options.autoApprove) {
-        const confirmationService = ConfirmationService.getInstance();
         confirmationService.setSessionFlag("allOperations", true);
+      } else if (options.autoApproveCommands) {
+        // Parse comma-separated commands and set them as approved
+        const commands = options.autoApproveCommands
+          .split(',')
+          .map(cmd => cmd.trim())
+          .filter(cmd => cmd.length > 0);
+        confirmationService.setApprovedCommands(commands);
       }
 
       ensureUserSettingsDirectory();
@@ -393,13 +573,24 @@ program
           process.exit(1);
         }
 
+        // Parse approved commands for headless mode
+        const approvedCommands = options.autoApproveCommands
+          ? options.autoApproveCommands
+              .split(',')
+              .map(cmd => cmd.trim())
+              .filter(cmd => cmd.length > 0)
+          : [];
+
         await processPromptHeadless(
           prompt,
           apiKey,
           baseURL,
           model,
           maxToolRounds,
-          options.fresh
+          options.fresh,
+          options.debugLog,
+          options.autoApprove,
+          approvedCommands
         );
         return;
       }
@@ -436,8 +627,8 @@ program
                   }
                   break;
                 case 'tool_calls':
-                  if (chunk.toolCalls) {
-                    chunk.toolCalls.forEach(toolCall => {
+                  if (chunk.tool_calls) {
+                    chunk.tool_calls.forEach(toolCall => {
                       console.log(`\n🔧 ${toolCall.function.name}...`);
                     });
                   }
@@ -498,8 +689,8 @@ program
                     }
                     break;
                   case 'tool_calls':
-                    if (chunk.toolCalls) {
-                      chunk.toolCalls.forEach(toolCall => {
+                    if (chunk.tool_calls) {
+                      chunk.tool_calls.forEach(toolCall => {
                         console.log(`\n🔧 ${toolCall.function.name}...`);
                       });
                     }
@@ -555,6 +746,10 @@ gitCommand
     "maximum number of tool execution rounds (default: 400)",
     "400"
   )
+  .option(
+    "--debug-log <file>",
+    "redirect MCP server debug output to log file instead of suppressing"
+  )
   .action(async (options) => {
     if (options.directory) {
       try {
@@ -575,6 +770,8 @@ gitCommand
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
+      // Debug log will be passed to MCP servers during initialization
+
       if (!apiKey) {
         console.error(
           "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
@@ -587,7 +784,7 @@ gitCommand
         await saveCommandLineSettings(options.apiKey);
       }
 
-      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
+      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog);
     } catch (error: any) {
       console.error("❌ Error during commit and push:", error.message);
       process.exit(1);

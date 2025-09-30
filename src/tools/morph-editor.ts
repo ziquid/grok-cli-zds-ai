@@ -3,8 +3,9 @@ import * as path from "path";
 import axios from "axios";
 import { ToolResult } from "../types";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
 
-export class MorphEditorTool {
+export class MorphEditorTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
   private morphApiKey: string;
   private morphBaseUrl: string = "https://api.morphllm.com/v1";
@@ -389,5 +390,9 @@ export class MorphEditorTool {
 
   getApiKey(): string {
     return this.morphApiKey;
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

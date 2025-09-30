@@ -1,10 +1,11 @@
 import { ToolResult } from "../types";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
 
-export class EnvTool {
+export class EnvTool implements ToolDiscovery {
   /**
    * Get all environment variables
    */
-  async getAll(): Promise<ToolResult> {
+  async getAllEnv(): Promise<ToolResult> {
     try {
       const envVars = process.env;
       const envList = Object.entries(envVars)
@@ -30,7 +31,7 @@ export class EnvTool {
   /**
    * Get a specific environment variable by name
    */
-  async get(varName: string): Promise<ToolResult> {
+  async getEnv(varName: string): Promise<ToolResult> {
     try {
       const value = process.env[varName];
 
@@ -57,7 +58,7 @@ export class EnvTool {
   /**
    * Search environment variables by pattern (case-insensitive)
    */
-  async search(pattern: string): Promise<ToolResult> {
+  async searchEnv(pattern: string): Promise<ToolResult> {
     try {
       const envVars = process.env;
       const regex = new RegExp(pattern, 'i');
@@ -89,5 +90,9 @@ export class EnvTool {
         error: `Error searching environment variables: ${error.message}`
       };
     }
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

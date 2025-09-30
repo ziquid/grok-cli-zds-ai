@@ -23,6 +23,11 @@ export class MCPManager extends EventEmitter {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, MCPTransport> = new Map();
   private tools: Map<string, MCPTool> = new Map();
+  private debugLogFile?: string;
+
+  setDebugLogFile(debugLogFile: string): void {
+    this.debugLogFile = debugLogFile;
+  }
 
   async addServer(config: MCPServerConfig): Promise<void> {
     try {
@@ -39,6 +44,14 @@ export class MCPManager extends EventEmitter {
 
       if (!transportConfig) {
         throw new Error('Transport configuration is required');
+      }
+
+      // Add debug log file to transport config if available
+      if (this.debugLogFile && transportConfig.type === 'stdio') {
+        transportConfig = {
+          ...transportConfig,
+          debugLogFile: `${this.debugLogFile}.${config.name}.log`
+        };
       }
 
       // Create transport

@@ -85,6 +85,7 @@ export class GrokClient {
         tool_choice: tools && tools.length > 0 ? "auto" : undefined,
         temperature: 0.7,
         max_tokens: this.defaultMaxTokens,
+	think: false
       };
 
       // Add search parameters if specified

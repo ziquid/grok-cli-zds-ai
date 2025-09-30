@@ -21,7 +21,7 @@ export class Agent {
     
     if (trimmedInput.startsWith('view ')) {
       const args = this.parseViewCommand(trimmedInput);
-      return this.textEditor.view(args.path, args.range);
+      return this.textEditor.viewFile(args.path, args.range);
     }
     
     if (trimmedInput.startsWith('str_replace ')) {
@@ -37,7 +37,7 @@ export class Agent {
       if (!args) {
         return { success: false, error: 'Invalid create command format' };
       }
-      return this.textEditor.create(args.path, args.content);
+      return this.textEditor.createNewFile(args.path, args.content);
     }
     
     if (trimmedInput.startsWith('insert ')) {
@@ -45,7 +45,7 @@ export class Agent {
       if (!args) {
         return { success: false, error: 'Invalid insert command format' };
       }
-      return this.textEditor.insert(args.path, args.line, args.content);
+      return this.textEditor.insertLines(args.path, args.line, args.content);
     }
     
     if (trimmedInput === 'undo_edit') {

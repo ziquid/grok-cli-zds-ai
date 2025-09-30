@@ -3,10 +3,11 @@ import { promisify } from 'util';
 import { ToolResult } from '../types';
 import { ConfirmationService } from '../utils/confirmation-service';
 import { expandHomeDir } from '../utils/path-utils';
+import { ToolDiscovery, getHandledToolNames } from './tool-discovery';
 
 const execAsync = promisify(exec);
 
-export class ZshTool {
+export class ZshTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
 
 
@@ -61,9 +62,22 @@ export class ZshTool {
         output: output.trim() || 'Command executed successfully (no output)'
       };
     } catch (error: any) {
+      // Capture stdout and stderr even from failed commands
+      let errorOutput = `Command failed: ${error.message}`;
+
+      if (error.stdout || error.stderr) {
+        errorOutput += '\n\n';
+        if (error.stdout) {
+          errorOutput += `STDOUT:\n${error.stdout}`;
+        }
+        if (error.stderr) {
+          errorOutput += `${error.stdout ? '\n\n' : ''}STDERR:\n${error.stderr}`;
+        }
+      }
+
       return {
         success: false,
-        error: `Command failed: ${error.message}`
+        error: errorOutput
       };
     }
   }
@@ -76,15 +90,8 @@ export class ZshTool {
     return this.execute(`ls -la ${directory}`);
   }
 
-  async findFiles(pattern: string, directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`find ${directory} -name "${pattern}" -type f`);
-  }
 
-  async grep(pattern: string, files: string = '.'): Promise<ToolResult> {
-    return this.execute(`grep -r "${pattern}" ${files}`);
-  }
-
-  chdir(path: string): ToolResult {
+  async chdir(path: string): Promise<ToolResult> {
     try {
       const resolvedPath = expandHomeDir(path);
       process.chdir(resolvedPath);
@@ -100,11 +107,15 @@ export class ZshTool {
     }
   }
 
-  pwdir(): ToolResult {
+  async pwdir(): Promise<ToolResult> {
     return {
       success: true,
       output: process.cwd()
     };
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }
 

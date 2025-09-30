@@ -3,12 +3,13 @@ import * as path from "path";
 import { ToolResult, EditorCommand } from "../types";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { expandHomeDir } from "../utils/path-utils";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
 
-export class TextEditorTool {
+export class TextEditorTool implements ToolDiscovery {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
 
-  async view(
+  async viewFile(
     filePath: string,
     viewRange?: [number, number]
   ): Promise<ToolResult> {
@@ -165,7 +166,7 @@ export class TextEditorTool {
     }
   }
 
-  async create(filePath: string, content: string): Promise<ToolResult> {
+  async createNewFile(filePath: string, content: string): Promise<ToolResult> {
     try {
       const expandedPath = expandHomeDir(filePath);
       const resolvedPath = path.resolve(expandedPath);
@@ -318,7 +319,7 @@ export class TextEditorTool {
     }
   }
 
-  async insert(
+  async insertLines(
     filePath: string,
     insertLine: number,
     content: string
@@ -667,5 +668,9 @@ export class TextEditorTool {
 
   getEditHistory(): EditorCommand[] {
     return [...this.editHistory];
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

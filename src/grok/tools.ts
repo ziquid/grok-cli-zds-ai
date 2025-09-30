@@ -6,7 +6,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "view_file",
+      name: "viewFile",
       description: "View contents of a file or list directory contents",
       parameters: {
         type: "object",
@@ -32,7 +32,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "create_file",
+      name: "createNewFile",
       description: "Create a new file with specified content",
       parameters: {
         type: "object",
@@ -53,7 +53,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "str_replace_editor",
+      name: "strReplace",
       description: "Replace specific text in a file. Use this for single line edits only",
       parameters: {
         type: "object",
@@ -85,7 +85,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "zsh",
+      name: "execute",
       description: "Execute a zsh command",
       parameters: {
         type: "object",
@@ -102,7 +102,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "list_files",
+      name: "listFiles",
       description: "List files in a directory (equivalent to 'ls -la')",
       parameters: {
         type: "object",
@@ -119,49 +119,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "find_files",
-      description: "Find files by pattern (equivalent to 'find')",
-      parameters: {
-        type: "object",
-        properties: {
-          pattern: {
-            type: "string",
-            description: "File name pattern to search for",
-          },
-          directory: {
-            type: "string",
-            description: "Directory to search in (default: current directory)",
-          },
-        },
-        required: ["pattern"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "grep_files",
-      description: "Search for text patterns in files (equivalent to 'grep -r')",
-      parameters: {
-        type: "object",
-        properties: {
-          pattern: {
-            type: "string",
-            description: "Text pattern to search for",
-          },
-          files: {
-            type: "string",
-            description: "Files or directory to search in (default: current directory)",
-          },
-        },
-        required: ["pattern"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "search",
+      name: "universalSearch",
       description:
         "Unified search tool for finding text content or files (similar to Cursor's search)",
       parameters: {
@@ -221,35 +179,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "env_vars",
-      description:
-        "View environment variables - get all, get specific variable, or search by pattern",
-      parameters: {
-        type: "object",
-        properties: {
-          action: {
-            type: "string",
-            enum: ["get_all", "get", "search"],
-            description:
-              "Action to perform: 'get_all' for all variables, 'get' for specific variable, 'search' for pattern search (default: 'get_all')",
-          },
-          variable: {
-            type: "string",
-            description: "Name of specific environment variable to get (required when action='get')",
-          },
-          pattern: {
-            type: "string",
-            description: "Pattern to search for in variable names or values (required when action='search')",
-          },
-        },
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_todo_list",
+      name: "createTodoList",
       description: "Create a new todo list for planning and tracking tasks",
       parameters: {
         type: "object",
@@ -290,7 +220,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "update_todo_list",
+      name: "updateTodoList",
       description: "Update existing todos in the todo list",
       parameters: {
         type: "object",
@@ -331,6 +261,130 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "getEnv",
+      description: "Get a specific environment variable",
+      parameters: {
+        type: "object",
+        properties: {
+          variable: {
+            type: "string",
+            description: "Name of environment variable to get",
+          },
+        },
+        required: ["variable"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getAllEnv",
+      description: "Get all environment variables",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchEnv",
+      description: "Search environment variables by pattern",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: {
+            type: "string",
+            description: "Pattern to search for in variable names or values",
+          },
+        },
+        required: ["pattern"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "insertLines",
+      description: "Insert text at a specific line in a file",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Path to the file to edit",
+          },
+          insert_line: {
+            type: "number",
+            description: "Line number to insert at",
+          },
+          new_str: {
+            type: "string",
+            description: "Text to insert",
+          },
+        },
+        required: ["path", "insert_line", "new_str"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "replaceLines",
+      description: "Replace a range of lines in a file",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Path to the file to edit",
+          },
+          start_line: {
+            type: "number",
+            description: "Starting line number",
+          },
+          end_line: {
+            type: "number",
+            description: "Ending line number",
+          },
+          new_str: {
+            type: "string",
+            description: "Replacement text",
+          },
+        },
+        required: ["path", "start_line", "end_line", "new_str"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "undoEdit",
+      description: "Undo the last edit operation",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "viewTodoList",
+      description: "View the current todo list",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "chdir",
       description: "Change the current working directory",
       parameters: {
@@ -363,7 +417,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
 const MORPH_EDIT_TOOL: GrokTool = {
   type: "function",
   function: {
-    name: "edit_file",
+    name: "editFile",
     description: "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nMake edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
     parameters: {
       type: "object",
@@ -411,47 +465,21 @@ export function getMCPManager(): MCPManager {
   return mcpManager;
 }
 
-export async function initializeMCPServers(): Promise<void> {
+export async function initializeMCPServers(debugLogFile?: string): Promise<void> {
   const manager = getMCPManager();
   const config = loadMCPConfig();
-  
-  // Store original stderr.write
-  const originalStderrWrite = process.stderr.write;
-  
-  // Temporarily suppress stderr to hide verbose MCP connection logs
-  process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-    // Filter out mcp-remote verbose logs
-    const chunkStr = chunk.toString();
-    if (chunkStr.includes('[') && (
-        chunkStr.includes('Using existing client port') ||
-        chunkStr.includes('Connecting to remote server') ||
-        chunkStr.includes('Using transport strategy') ||
-        chunkStr.includes('Connected to remote server') ||
-        chunkStr.includes('Local STDIO server running') ||
-        chunkStr.includes('Proxy established successfully') ||
-        chunkStr.includes('Local→Remote') ||
-        chunkStr.includes('Remote→Local')
-      )) {
-      // Suppress these verbose logs
-      if (callback) callback();
-      return true;
+
+  // Pass debug log file to manager for per-server stream redirection
+  if (debugLogFile) {
+    manager.setDebugLogFile(debugLogFile);
+  }
+
+  for (const serverConfig of config.servers) {
+    try {
+      await manager.addServer(serverConfig);
+    } catch (error) {
+      console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
     }
-    
-    // Allow other stderr output
-    return originalStderrWrite.call(this, chunk, encoding, callback);
-  };
-  
-  try {
-    for (const serverConfig of config.servers) {
-      try {
-        await manager.addServer(serverConfig);
-      } catch (error) {
-        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
-      }
-    }
-  } finally {
-    // Restore original stderr.write
-    process.stderr.write = originalStderrWrite;
   }
 }
 
