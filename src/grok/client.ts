@@ -93,6 +93,13 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
+      // Log tools being sent to API
+      const toolNames = (tools || []).map(t => t.function.name);
+      const mcpTools = toolNames.filter(name => name.startsWith('mcp__'));
+      const fs = require('fs');
+      const logEntry = `${new Date().toISOString()} - API CALL: ${toolNames.length} tools (${mcpTools.length} MCP: ${mcpTools.join(', ')})\n`;
+      fs.appendFileSync('/tmp/grok-api-tools.log', logEntry);
+
       const response =
         await this.client.chat.completions.create(requestPayload);
 

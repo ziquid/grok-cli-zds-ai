@@ -286,6 +286,7 @@ Respond with ONLY the commit message, no additional text.`;
             pushResult.output?.split("\n")[0] || "Push successful"
           }`
         );
+        process.exit(0);
       } else {
         console.log(`❌ git push: ${pushResult.error || "Push failed"}`);
         process.exit(1);
@@ -363,6 +364,9 @@ async function processPromptHeadless(
     } else {
       console.log("I understand, but I don't have a specific response.");
     }
+
+    // Exit cleanly after processing
+    process.exit(0);
   } catch (error: any) {
     // Output error as plain text
     console.log(`Error: ${error.message}`);
@@ -478,13 +482,19 @@ program
         if (!prompt || !prompt.trim()) {
           const stdinData = await new Promise<string>((resolve, reject) => {
             let data = '';
+            const timeout = setTimeout(() => {
+              reject(new Error('Timeout waiting for stdin (5 seconds)'));
+            }, 5000);
+
             process.stdin.on('data', (chunk) => {
               data += chunk;
             });
             process.stdin.on('end', () => {
+              clearTimeout(timeout);
               resolve(data);
             });
             process.stdin.on('error', (err) => {
+              clearTimeout(timeout);
               reject(err);
             });
           });

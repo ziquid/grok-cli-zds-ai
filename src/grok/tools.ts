@@ -518,12 +518,16 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
 
 export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   if (!mcpManager) {
+    const fs = require('fs');
+    fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
     return baseTools;
   }
-  
+
   const mcpTools = mcpManager.getTools();
+  const fs = require('fs');
+  fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
-  
+
   return [...baseTools, ...grokMCPTools];
 }
 

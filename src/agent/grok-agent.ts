@@ -58,6 +58,7 @@ export class GrokAgent extends EventEmitter {
   private abortController: AbortController | null = null;
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
+  private firstMessageProcessed: boolean = false;
 
   constructor(
     apiKey: string,
@@ -315,10 +316,14 @@ Current working directory: ${process.cwd()}`;
     let consecutiveNonToolResponses = 0;
 
     try {
-      const tools = await getAllGrokTools();
+      // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
+      // For subsequent messages, fetch once and cache for the entire message processing
+      const shouldRefreshTools = !this.firstMessageProcessed;
+      const tools = shouldRefreshTools ? null : await getAllGrokTools();
+
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        tools,
+        shouldRefreshTools ? await getAllGrokTools() : tools!,
         undefined,
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
@@ -415,7 +420,7 @@ Current working directory: ${process.cwd()}`;
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            tools,
+            shouldRefreshTools ? await getAllGrokTools() : tools!,
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -444,7 +449,7 @@ Current working directory: ${process.cwd()}`;
             // Get one more response to see if AI wants to continue working
             currentResponse = await this.grokClient.chat(
               this.messages,
-              tools,
+              shouldRefreshTools ? await getAllGrokTools() : tools!,
               undefined,
               this.isGrokModel() && this.shouldUseSearchFor(message)
                 ? { search_parameters: { mode: "auto" } }
@@ -475,7 +480,7 @@ Current working directory: ${process.cwd()}`;
             // Short/empty response, give AI another chance immediately
             currentResponse = await this.grokClient.chat(
               this.messages,
-              tools,
+              shouldRefreshTools ? await getAllGrokTools() : tools!,
               undefined,
               this.isGrokModel() && this.shouldUseSearchFor(message)
                 ? { search_parameters: { mode: "auto" } }
@@ -501,6 +506,9 @@ Current working directory: ${process.cwd()}`;
         newEntries.push(warningEntry);
       }
 
+      // Mark first message as processed so subsequent messages use cached tools
+      this.firstMessageProcessed = true;
+
       return newEntries;
     } catch (error: any) {
       const errorEntry: ChatEntry = {
@@ -509,6 +517,10 @@ Current working directory: ${process.cwd()}`;
         timestamp: new Date(),
       };
       this.chatHistory.push(errorEntry);
+
+      // Mark first message as processed even on error
+      this.firstMessageProcessed = true;
+
       return [userEntry, errorEntry];
     }
   }
@@ -582,6 +594,11 @@ Current working directory: ${process.cwd()}`;
     let consecutiveNonToolResponses = 0;
 
     try {
+      // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
+      // For subsequent messages, fetch once and cache for the entire message processing
+      const shouldRefreshTools = !this.firstMessageProcessed;
+      const tools = shouldRefreshTools ? null : await getAllGrokTools();
+
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         // Check if operation was cancelled
@@ -600,10 +617,9 @@ Current working directory: ${process.cwd()}`;
         }
 
         // Stream response and accumulate
-        const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          tools,
+          shouldRefreshTools ? await getAllGrokTools() : tools!,
           undefined,
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
@@ -749,6 +765,9 @@ Current working directory: ${process.cwd()}`;
         };
       }
 
+      // Mark first message as processed so subsequent messages use cached tools
+      this.firstMessageProcessed = true;
+
       yield { type: "done" };
     } catch (error: any) {
       // Check if this was a cancellation
@@ -771,6 +790,10 @@ Current working directory: ${process.cwd()}`;
         type: "content",
         content: errorEntry.content,
       };
+
+      // Mark first message as processed even on error
+      this.firstMessageProcessed = true;
+
       yield { type: "done" };
     } finally {
       // Clean up abort controller
