@@ -21,10 +21,29 @@ export class IntrospectTool implements ToolDiscovery {
 
 Usage:
   /introspect tools             - Show all available tools (internal and MCP)
-  /introspect tool:TOOL_NAME    - Show schema for specific tool (e.g., tool:mcp__tavily__tavily-search)
+  /introspect tool:TOOL_NAME    - Show schema for specific tool
   /introspect env               - Show ZDS_AI_AGENT_* environment variables
   /introspect context           - Show context/token usage
-  /introspect all               - Show tools, environment variables, and context`,
+  /introspect all               - Show tools, environment variables, and context
+
+Examples:
+  # Discover what MCP tools are available
+  introspect("tools")
+
+  # Learn how to use a specific MCP tool (shows parameters, types, descriptions)
+  introspect("tool:mcp__tavily__tavily-search")
+
+  # Look up an internal tool's parameters
+  introspect("tool:viewFile")
+
+  # Check context/token usage
+  introspect("context")
+
+Workflow for using unknown MCP tools:
+  1. Call introspect("tools") to see all available tools
+  2. Find the MCP tool you need (e.g., mcp__tavily__tavily-search)
+  3. Call introspect("tool:mcp__tavily__tavily-search") to see its parameters
+  4. Use the tool with the parameters you learned about`,
           displayOutput: "Introspect help"
         };
       }
