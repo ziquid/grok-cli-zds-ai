@@ -443,54 +443,32 @@ Current working directory: ${process.cwd()}`;
             newEntries.push(responseEntry);
           }
 
-          // If the AI provided a substantial response (>50 chars), consider task potentially complete
-          // But give it one more chance to reassess and continue if needed
+          // TODO: HACK - This is a temporary fix to prevent duplicate responses.
+          // We need a proper way for the bot to signal task completion, such as:
+          // - A special tool call like "taskComplete()"
+          // - A finish_reason indicator in the API response
+          // - A structured response format that explicitly marks completion
+          // For now, we break immediately after a substantial response to avoid
+          // the cascade of duplicate responses caused by "give it one more chance" logic.
+
+          // If the AI provided a substantial response (>50 chars), task is complete
           if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
-            // Get one more response to see if AI wants to continue working
-            currentResponse = await this.grokClient.chat(
-              this.messages,
-              shouldRefreshTools ? await getAllGrokTools() : tools!,
-              undefined,
-              this.isGrokModel() && this.shouldUseSearchFor(message)
-                ? { search_parameters: { mode: "auto" } }
-                : { search_parameters: { mode: "off" } }
-            );
+            break; // Task complete - bot gave a full response
+          }
 
-            // If this followup response also has no tool calls, then we're done
-            const followupMessage = currentResponse.choices[0]?.message;
-            if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
-              // Add the final followup response if it has content
-              if (followupMessage?.content && followupMessage.content.trim()) {
-                const finalEntry: ChatEntry = {
-                  type: "assistant",
-                  content: followupMessage.content,
-                  timestamp: new Date(),
-                };
-                this.chatHistory.push(finalEntry);
-                this.messages.push({
-                  role: "assistant",
-                  content: followupMessage.content,
-                });
-                newEntries.push(finalEntry);
-              }
-              break; // Now we can exit - AI had two chances and chose not to continue
-            }
-            // If followup response has tool calls, continue the loop to execute them
-          } else {
-            // Short/empty response, give AI another chance immediately
-            currentResponse = await this.grokClient.chat(
-              this.messages,
-              shouldRefreshTools ? await getAllGrokTools() : tools!,
-              undefined,
-              this.isGrokModel() && this.shouldUseSearchFor(message)
-                ? { search_parameters: { mode: "auto" } }
-                : { search_parameters: { mode: "off" } }
-            );
+          // Short/empty response, give AI another chance
+          currentResponse = await this.grokClient.chat(
+            this.messages,
+            shouldRefreshTools ? await getAllGrokTools() : tools!,
+            undefined,
+            this.isGrokModel() && this.shouldUseSearchFor(message)
+              ? { search_parameters: { mode: "auto" } }
+              : { search_parameters: { mode: "off" } }
+          );
 
-            const followupMessage = currentResponse.choices[0]?.message;
-            if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
-              break; // AI doesn't want to continue
-            }
+          const followupMessage = currentResponse.choices[0]?.message;
+          if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
+            break; // AI doesn't want to continue
           }
         }
       }

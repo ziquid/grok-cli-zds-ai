@@ -20,11 +20,66 @@ export class IntrospectTool implements ToolDiscovery {
           output: `/introspect - Introspect available tools and environment
 
 Usage:
-  /introspect tools   - Show all available tools (internal and MCP)
-  /introspect env     - Show ZDS_AI_AGENT_* environment variables
-  /introspect context - Show context/token usage
-  /introspect all     - Show tools, environment variables, and context`,
+  /introspect tools             - Show all available tools (internal and MCP)
+  /introspect tool:TOOL_NAME    - Show schema for specific tool (e.g., tool:mcp__tavily__tavily-search)
+  /introspect env               - Show ZDS_AI_AGENT_* environment variables
+  /introspect context           - Show context/token usage
+  /introspect all               - Show tools, environment variables, and context`,
           displayOutput: "Introspect help"
+        };
+      }
+
+      // Handle tool:TOOL_NAME format for specific tool schema lookup
+      if (target.startsWith("tool:")) {
+        const toolName = target.substring(5); // Remove "tool:" prefix
+        const allTools = await getAllGrokTools();
+        const tool = allTools.find(t => t.function.name === toolName);
+
+        if (!tool) {
+          return {
+            success: false,
+            error: `Tool not found: ${toolName}`
+          };
+        }
+
+        // Format the tool schema in a readable way
+        let output = `Tool: ${tool.function.name}\n`;
+        output += `Description: ${tool.function.description}\n\n`;
+        output += `Parameters:\n`;
+
+        const params = tool.function.parameters;
+        if (params && params.properties) {
+          const required = params.required || [];
+          const properties = params.properties;
+
+          Object.keys(properties).sort().forEach(paramName => {
+            const param = properties[paramName];
+            const isRequired = required.includes(paramName);
+            const requiredLabel = isRequired ? " (required)" : " (optional)";
+
+            output += `  ${paramName}${requiredLabel}\n`;
+            output += `    Type: ${param.type || 'unknown'}\n`;
+            if (param.description) {
+              output += `    Description: ${param.description}\n`;
+            }
+            if (param.enum) {
+              output += `    Allowed values: ${param.enum.join(', ')}\n`;
+            }
+            if (param.items) {
+              output += `    Items: ${JSON.stringify(param.items)}\n`;
+            }
+            if (param.default !== undefined) {
+              output += `    Default: ${param.default}\n`;
+            }
+          });
+        } else {
+          output += "  No parameters\n";
+        }
+
+        return {
+          success: true,
+          output,
+          displayOutput: `Schema for ${toolName}`
         };
       }
 
