@@ -15,13 +15,16 @@ import {
   ConfirmationTool,
   SearchTool,
   EnvTool,
-  IntrospectTool
+  IntrospectTool,
+  ClearCacheTool,
+  CharacterTool
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSettingsManager } from "../utils/settings-manager";
+import { executeHook } from "../utils/hook-executor";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
@@ -52,6 +55,8 @@ export class GrokAgent extends EventEmitter {
   private search: SearchTool;
   private env: EnvTool;
   private introspect: IntrospectTool;
+  private clearCacheTool: ClearCacheTool;
+  private characterTool: CharacterTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -59,6 +64,15 @@ export class GrokAgent extends EventEmitter {
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
   private firstMessageProcessed: boolean = false;
+  private contextWarningAt80: boolean = false;
+  private contextWarningAt90: boolean = false;
+  private persona: string = "";
+  private personaColor: string = "white";
+  private mood: string = "";
+  private moodColor: string = "white";
+  private activeTask: string = "";
+  private activeTaskAction: string = "";
+  private activeTaskColor: string = "white";
 
   constructor(
     apiKey: string,
@@ -82,7 +96,12 @@ export class GrokAgent extends EventEmitter {
     this.search = new SearchTool();
     this.env = new EnvTool();
     this.introspect = new IntrospectTool();
+    this.clearCacheTool = new ClearCacheTool();
+    this.characterTool = new CharacterTool();
+    this.textEditor.setAgent(this); // Give text editor access to agent for context awareness
     this.introspect.setAgent(this); // Give introspect access to agent for tool class info
+    this.clearCacheTool.setAgent(this); // Give clearCache access to agent
+    this.characterTool.setAgent(this); // Give character tool access to agent
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
@@ -309,6 +328,7 @@ Current working directory: ${process.cwd()}`;
     };
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
+    await this.emitContextChange();
 
     const newEntries: ChatEntry[] = [userEntry];
     const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
@@ -415,6 +435,7 @@ Current working directory: ${process.cwd()}`;
                 : result.error || "Error",
               tool_call_id: toolCall.id,
             });
+            await this.emitContextChange();
           }
 
           // Get next response - this might contain more tool calls
@@ -555,6 +576,7 @@ Current working directory: ${process.cwd()}`;
     };
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
+    await this.emitContextChange();
 
     // Calculate input tokens
     let inputTokens = this.tokenCounter.countMessageTokens(
@@ -675,6 +697,7 @@ Current working directory: ${process.cwd()}`;
           content: accumulatedMessage.content || "", // Ensure content is never null/undefined
           tool_calls: accumulatedMessage.tool_calls,
         } as any);
+        await this.emitContextChange();
 
         // Handle tool calls if present
         if (accumulatedMessage.tool_calls?.length > 0) {
@@ -854,6 +877,24 @@ Current working directory: ${process.cwd()}`;
         case "introspect":
           return await this.introspect.introspect(args.target);
 
+        case "clearCache":
+          return await this.clearCacheTool.clearCache(args.confirmationCode);
+
+        case "setPersona":
+          return await this.characterTool.setPersona(args.persona, args.color);
+
+        case "setMood":
+          return await this.characterTool.setMood(args.mood, args.color);
+
+        case "startActiveTask":
+          return await this.characterTool.startActiveTask(args.activeTask, args.action, args.color);
+
+        case "transitionActiveTaskStatus":
+          return await this.characterTool.transitionActiveTaskStatus(args.action, args.color);
+
+        case "stopActiveTask":
+          return await this.characterTool.stopActiveTask(args.reason, args.documentationFile, args.color);
+
         case "insertLines":
           return await this.textEditor.insertLines(args.path, args.insert_line, args.new_str);
 
@@ -946,6 +987,359 @@ Current working directory: ${process.cwd()}`;
     return this.tokenCounter.countMessageTokens(this.messages as any);
   }
 
+  getMaxContextSize(): number {
+    // TODO: Make this model-specific when different models have different context windows
+    // For now, return the standard Grok context window size
+    return 128000;
+  }
+
+  getContextUsagePercent(): number {
+    const current = this.getCurrentTokenCount();
+    const max = this.getMaxContextSize();
+    return (current / max) * 100;
+  }
+
+  getPersona(): string {
+    return this.persona;
+  }
+
+  getPersonaColor(): string {
+    return this.personaColor;
+  }
+
+  getMood(): string {
+    return this.mood;
+  }
+
+  getMoodColor(): string {
+    return this.moodColor;
+  }
+
+  getActiveTask(): string {
+    return this.activeTask;
+  }
+
+  getActiveTaskAction(): string {
+    return this.activeTaskAction;
+  }
+
+  getActiveTaskColor(): string {
+    return this.activeTaskColor;
+  }
+
+  setPersona(persona: string, color?: string): void {
+    const oldPersona = this.persona;
+    const oldColor = this.personaColor;
+    this.persona = persona;
+    this.personaColor = color || "white";
+
+    // Add system message for recordkeeping
+    if (oldPersona) {
+      const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
+      const newColorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
+      this.messages.push({
+        role: 'system',
+        content: `User changed the persona from "${oldPersona}"${oldColorStr} to "${this.persona}"${newColorStr}`
+      });
+    } else {
+      const colorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
+      this.messages.push({
+        role: 'system',
+        content: `User set the persona to "${this.persona}"${colorStr}`
+      });
+    }
+
+    this.emit('personaChange', {
+      persona: this.persona,
+      color: this.personaColor
+    });
+  }
+
+  setMood(mood: string, color?: string): void {
+    const oldMood = this.mood;
+    const oldColor = this.moodColor;
+    this.mood = mood;
+    this.moodColor = color || "white";
+
+    // Add system message for recordkeeping
+    if (oldMood) {
+      const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
+      const newColorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
+      this.messages.push({
+        role: 'system',
+        content: `Assistant changed the mood from "${oldMood}"${oldColorStr} to "${this.mood}"${newColorStr}`
+      });
+    } else {
+      const colorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
+      this.messages.push({
+        role: 'system',
+        content: `Assistant set the mood to "${this.mood}"${colorStr}`
+      });
+    }
+
+    this.emit('moodChange', {
+      mood: this.mood,
+      color: this.moodColor
+    });
+  }
+
+  async startActiveTask(activeTask: string, action: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    // Cannot start new task if one already exists
+    if (this.activeTask) {
+      return {
+        success: false,
+        error: `Cannot start new task "${activeTask}". Active task "${this.activeTask}" must be stopped first.`
+      };
+    }
+
+    // Execute hook if configured
+    const settings = getSettingsManager();
+    const hookPath = settings.getStartActiveTaskHook();
+
+    if (hookPath) {
+      const hookResult = await executeHook(
+        hookPath,
+        [activeTask, action, color || "white"],
+        30000
+      );
+
+      if (!hookResult.approved) {
+        const reason = hookResult.reason || "Hook rejected task start";
+        this.messages.push({
+          role: 'system',
+          content: `Failed to start task "${activeTask}": ${reason}`
+        });
+        return {
+          success: false,
+          error: reason
+        };
+      }
+
+      if (hookResult.timedOut) {
+        this.messages.push({
+          role: 'system',
+          content: `Task start hook timed out (auto-approved)`
+        });
+      }
+    }
+
+    // Set the task
+    this.activeTask = activeTask;
+    this.activeTaskAction = action;
+    this.activeTaskColor = color || "white";
+
+    // Add system message
+    const colorStr = this.activeTaskColor && this.activeTaskColor !== "white" ? ` (${this.activeTaskColor})` : "";
+    this.messages.push({
+      role: 'system',
+      content: `Assistant changed task status for "${this.activeTask}" to ${this.activeTaskAction}${colorStr}`
+    });
+
+    // Emit event
+    this.emit('activeTaskChange', {
+      activeTask: this.activeTask,
+      action: this.activeTaskAction,
+      color: this.activeTaskColor
+    });
+
+    return { success: true };
+  }
+
+  async transitionActiveTaskStatus(action: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    // Cannot transition if no active task
+    if (!this.activeTask) {
+      return {
+        success: false,
+        error: "Cannot transition task status. No active task is currently running."
+      };
+    }
+
+    // Execute hook if configured
+    const settings = getSettingsManager();
+    const hookPath = settings.getTransitionActiveTaskStatusHook();
+
+    if (hookPath) {
+      const hookResult = await executeHook(
+        hookPath,
+        [this.activeTask, this.activeTaskAction, action, color || "white"],
+        30000
+      );
+
+      if (!hookResult.approved) {
+        const reason = hookResult.reason || "Hook rejected task status transition";
+        this.messages.push({
+          role: 'system',
+          content: `Failed to transition task "${this.activeTask}" from ${this.activeTaskAction} to ${action}: ${reason}`
+        });
+        return {
+          success: false,
+          error: reason
+        };
+      }
+
+      if (hookResult.timedOut) {
+        this.messages.push({
+          role: 'system',
+          content: `Task transition hook timed out (auto-approved)`
+        });
+      }
+    }
+
+    // Store old action for system message
+    const oldAction = this.activeTaskAction;
+
+    // Update the action and color
+    this.activeTaskAction = action;
+    this.activeTaskColor = color || this.activeTaskColor;
+
+    // Add system message
+    const colorStr = this.activeTaskColor && this.activeTaskColor !== "white" ? ` (${this.activeTaskColor})` : "";
+    this.messages.push({
+      role: 'system',
+      content: `Assistant changed task status for "${this.activeTask}" from ${oldAction} to ${this.activeTaskAction}${colorStr}`
+    });
+
+    // Emit event
+    this.emit('activeTaskChange', {
+      activeTask: this.activeTask,
+      action: this.activeTaskAction,
+      color: this.activeTaskColor
+    });
+
+    return { success: true };
+  }
+
+  async stopActiveTask(reason: string, documentationFile: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    // Cannot stop if no active task
+    if (!this.activeTask) {
+      return {
+        success: false,
+        error: "Cannot stop task. No active task is currently running."
+      };
+    }
+
+    // Record the start time for 3-second minimum
+    const startTime = Date.now();
+
+    // Execute hook if configured
+    const settings = getSettingsManager();
+    const hookPath = settings.getStopActiveTaskHook();
+
+    if (hookPath) {
+      const hookResult = await executeHook(
+        hookPath,
+        [this.activeTask, this.activeTaskAction, reason, documentationFile, color || "white"],
+        30000
+      );
+
+      if (!hookResult.approved) {
+        const reason = hookResult.reason || "Hook rejected task stop";
+        this.messages.push({
+          role: 'system',
+          content: `Failed to stop task "${this.activeTask}": ${reason}`
+        });
+        return {
+          success: false,
+          error: reason
+        };
+      }
+
+      if (hookResult.timedOut) {
+        this.messages.push({
+          role: 'system',
+          content: `Task stop hook timed out (auto-approved)`
+        });
+      }
+    }
+
+    // Calculate remaining time to meet 3-second minimum
+    const elapsed = Date.now() - startTime;
+    const minimumDelay = 3000;
+    const remainingDelay = Math.max(0, minimumDelay - elapsed);
+
+    // Wait for remaining time if needed
+    if (remainingDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingDelay));
+    }
+
+    // Store task info for system message before clearing
+    const stoppedTask = this.activeTask;
+    const stoppedAction = this.activeTaskAction;
+
+    // Clear the task
+    this.activeTask = "";
+    this.activeTaskAction = "";
+    this.activeTaskColor = "white";
+
+    // Add system message
+    const colorStr = color && color !== "white" ? ` (${color})` : "";
+    this.messages.push({
+      role: 'system',
+      content: `Assistant stopped task "${stoppedTask}" (was ${stoppedAction}) with reason: ${reason}${colorStr}`
+    });
+
+    // Emit event to clear widget
+    this.emit('activeTaskChange', {
+      activeTask: "",
+      action: "",
+      color: "white"
+    });
+
+    return { success: true };
+  }
+
+  private async emitContextChange(): Promise<void> {
+    const percent = this.getContextUsagePercent();
+
+    this.emit('contextChange', {
+      current: this.getCurrentTokenCount(),
+      max: this.getMaxContextSize(),
+      percent
+    });
+
+    // Add system warnings based on context usage (may auto-clear at 100%)
+    await this.addContextWarningIfNeeded(percent);
+  }
+
+  private async addContextWarningIfNeeded(percent: number): Promise<void> {
+    let warning: string | null = null;
+    const roundedPercent = Math.round(percent);
+
+    if (percent >= 100) {
+      // Auto-clear at 100%+ to prevent exceeding context limits
+      warning = `CONTEXT LIMIT REACHED: You are at ${roundedPercent}% context capacity!  Automatically clearing cache to prevent context overflow...`;
+      this.messages.push({
+        role: 'system',
+        content: warning
+      });
+
+      // Perform automatic cache clear
+      await this.clearCache();
+      return;
+    }
+
+    if (percent >= 95) {
+      // Very stern warning at 95%+ (every time)
+      warning = `CRITICAL CONTEXT WARNING: You are at ${roundedPercent}% context capacity!  You MUST immediately save any notes and lessons learned, then run the 'clearCache' tool to reset the conversation context.  The conversation will fail if you do not take action now.`;
+    } else if (percent >= 90 && !this.contextWarningAt90) {
+      // Dire warning at 90% (one time only)
+      this.contextWarningAt90 = true;
+      warning = `URGENT CONTEXT WARNING: You are at ${roundedPercent}% context capacity!  Perform your final tasks or responses and prepare to be reset.`;
+    } else if (percent >= 80 && !this.contextWarningAt80) {
+      // Initial warning at 80% (one time only)
+      this.contextWarningAt80 = true;
+      warning = `Context Warning: You are at ${roundedPercent}% context capacity!  You are approaching the limit.  Be concise and avoid lengthy outputs.`;
+    }
+
+    if (warning) {
+      // Add as a system message
+      this.messages.push({
+        role: 'system',
+        content: warning
+      });
+    }
+  }
+
   async executeCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
     return await this.zsh.execute(command, 30000, skipConfirmation);
   }
@@ -965,6 +1359,30 @@ Current working directory: ${process.cwd()}`;
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  async clearCache(): Promise<void> {
+    const { ChatHistoryManager } = await import("../utils/chat-history-manager");
+    const historyManager = ChatHistoryManager.getInstance();
+
+    // Backup current context to timestamped files
+    historyManager.backupHistory();
+
+    // Clear the context
+    this.chatHistory = [];
+    this.messages = [];
+    this.contextWarningAt80 = false;
+    this.contextWarningAt90 = false;
+    this.firstMessageProcessed = false;
+
+    // Reinitialize with system message and startup hook
+    await this.initialize();
+
+    // Save the cleared state
+    historyManager.saveHistory(this.chatHistory);
+    historyManager.saveMessages(this.messages);
+
+    await this.emitContextChange();
   }
 
   /**

@@ -325,6 +325,136 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "clearCache",
+      description: "Clear the conversation cache/context and reset to initial state. Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code. Second call with the code clears the cache.",
+      parameters: {
+        type: "object",
+        properties: {
+          confirmationCode: {
+            type: "string",
+            description: "The confirmation code provided in the first call (6-letter code). Leave empty for initial call.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "setPersona",
+      description: "Set the persona display text in the status bar (max 20 characters). Optional color parameter to customize the display color.",
+      parameters: {
+        type: "object",
+        properties: {
+          persona: {
+            type: "string",
+            description: "The persona text to display (e.g., 'Debugging Mode', 'Code Review', 'Planning')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["persona"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "setMood",
+      description: "Set the mood display text in the status bar (max 10 characters). Optional color parameter to customize the display color.",
+      parameters: {
+        type: "object",
+        properties: {
+          mood: {
+            type: "string",
+            description: "The mood text to display (e.g., 'focused', 'tired', 'excited')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["mood"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "startActiveTask",
+      description: "Start a new active task. Cannot start if an active task already exists - must stop current task first. Actions: researching, planning, coding, documenting, testing, chatting, learning, resting, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          activeTask: {
+            type: "string",
+            description: "The task description (e.g., 'fix bug in parser', 'implement feature X', 'chatting')",
+          },
+          action: {
+            type: "string",
+            description: "Required action describing what you're doing (e.g., 'coding', 'testing', 'researching', 'planning')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["activeTask", "action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "transitionActiveTaskStatus",
+      description: "Change the status/action of the current active task. Cannot transition if no task is active. Use when switching between actions like researching→coding, coding→testing, etc. or transitioning to states like blocked, error, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            description: "New action/status (e.g., 'coding', 'testing', 'blocked', 'error', 'finished')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "stopActiveTask",
+      description: "Stop the current active task. Cannot stop if no task is active. Requires documented progress - provide a documentation file path (.md or .txt). Minimum 3 seconds delay before clearing.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            description: "Reason for stopping (e.g., 'finished', 'blocked', 'error', 'preempted')",
+          },
+          documentationFile: {
+            type: "string",
+            description: "Path to documentation file (.md or .txt) proving progress was documented. File must have been modified recently.",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["reason", "documentationFile"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "insertLines",
       description: "Insert text at a specific line in a file",
       parameters: {
@@ -496,7 +626,13 @@ export async function initializeMCPServers(debugLogFile?: string): Promise<void>
     try {
       await manager.addServer(serverConfig);
     } catch (error) {
-      console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+      // Only log to debug file if configured, otherwise suppress
+      if (debugLogFile) {
+        const fs = await import('fs');
+        const message = `Failed to initialize MCP server ${serverConfig.name}: ${error}\n`;
+        fs.appendFileSync(debugLogFile, message);
+      }
+      // Silently ignore initialization failures
     }
   }
 }

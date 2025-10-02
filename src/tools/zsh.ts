@@ -32,22 +32,22 @@ export class ZshTool implements ToolDiscovery {
         }
       }
 
-      if (command.startsWith('cd ')) {
-        const newDirRaw = command.substring(3).trim();
-        const newDir = expandHomeDir(newDirRaw);
-        try {
-          process.chdir(newDir);
-          return {
-            success: true,
-            output: `Changed directory to: ${process.cwd()}`
-          };
-        } catch (error: any) {
-          return {
-            success: false,
-            error: `Cannot change directory: ${error.message}`
-          };
-        }
-      }
+//      if (command.startsWith('cd ')) {
+//        const newDirRaw = command.substring(3).trim();
+//        const newDir = expandHomeDir(newDirRaw);
+//        try {
+//          process.chdir(newDir);
+//          return {
+//            success: true,
+//            output: `Changed directory to: ${process.cwd()}`
+//          };
+//        } catch (error: any) {
+//          return {
+//            success: false,
+//            error: `Cannot change directory: ${error.message}`
+//          };
+//        }
+//      }
 
       const { stdout, stderr } = await execAsync(command, {
         timeout,

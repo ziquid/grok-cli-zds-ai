@@ -6,3 +6,5 @@ export { ConfirmationTool } from "./confirmation-tool";
 export { SearchTool } from "./search";
 export { EnvTool } from "./env-tool";
 export { IntrospectTool } from "./introspect-tool";
+export { ClearCacheTool } from "./clear-cache-tool";
+export { CharacterTool } from "./character-tool";

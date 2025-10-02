@@ -79,7 +79,7 @@ export class MCPManager extends EventEmitter {
 
       // List available tools
       const toolsResult = await client.listTools();
-      
+
       // Register tools
       for (const tool of toolsResult.tools) {
         const mcpTool: MCPTool = {
@@ -93,6 +93,18 @@ export class MCPManager extends EventEmitter {
 
       this.emit('serverAdded', config.name, toolsResult.tools.length);
     } catch (error) {
+      // Clean up any partially initialized resources
+      this.clients.delete(config.name);
+      const transport = this.transports.get(config.name);
+      if (transport) {
+        try {
+          await transport.disconnect();
+        } catch (disconnectError) {
+          // Ignore disconnect errors during cleanup
+        }
+        this.transports.delete(config.name);
+      }
+
       this.emit('serverError', config.name, error);
       throw error;
     }
@@ -168,16 +180,22 @@ export class MCPManager extends EventEmitter {
 
     const { loadMCPConfig } = await import('../mcp/config');
     const config = loadMCPConfig();
-    
+
     // Initialize servers in parallel to avoid blocking
     const initPromises = config.servers.map(async (serverConfig) => {
       try {
         await this.addServer(serverConfig);
       } catch (error) {
-        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+        // Only log to debug file if configured, otherwise suppress
+        if (this.debugLogFile) {
+          const fs = await import('fs');
+          const message = `Failed to initialize MCP server ${serverConfig.name}: ${error}\n`;
+          fs.appendFileSync(this.debugLogFile, message);
+        }
+        // Silently ignore initialization failures
       }
     });
-    
+
     await Promise.all(initPromises);
   }
 }

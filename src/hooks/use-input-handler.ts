@@ -254,6 +254,8 @@ export function useInputHandler({
     { command: "/context", description: "Show context usage info" },
     { command: "/introspect", description: "Show available tools" },
     { command: "/models", description: "Switch Grok Model" },
+    { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
+    { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
   ];
@@ -433,6 +435,60 @@ Available models: ${modelNames.join(", ")}`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, contextEntry]);
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/persona")) {
+      const parts = trimmedInput.split(" ");
+      if (parts.length < 2) {
+        const helpEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /persona <text> [color]\nExample: /persona debugging red",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, helpEntry]);
+        clearInput();
+        return true;
+      }
+
+      const persona = parts[1];
+      const color = parts[2];
+      agent.setPersona(persona, color);
+
+      const confirmEntry: ChatEntry = {
+        type: "assistant",
+        content: `Persona set to: ${persona}${color ? ` (${color})` : ''}`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, confirmEntry]);
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/mood")) {
+      const parts = trimmedInput.split(" ");
+      if (parts.length < 2) {
+        const helpEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /mood <text> [color]\nExample: /mood focused green",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, helpEntry]);
+        clearInput();
+        return true;
+      }
+
+      const mood = parts[1];
+      const color = parts[2];
+      agent.setMood(mood, color);
+
+      const confirmEntry: ChatEntry = {
+        type: "assistant",
+        content: `Mood set to: ${mood}${color ? ` (${color})` : ''}`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, confirmEntry]);
       clearInput();
       return true;
     }

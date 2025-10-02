@@ -8,12 +8,58 @@ import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
 export class TextEditorTool implements ToolDiscovery {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
+  private agent: any; // Reference to GrokAgent for context awareness
+
+  setAgent(agent: any) {
+    this.agent = agent;
+  }
+
+  /**
+   * Get the maximum characters allowed based on current context usage
+   * Returns null if viewFile should be disabled
+   */
+  private getMaxCharsAllowed(): number | null {
+    if (!this.agent) {
+      return 80000; // Default: ~20k tokens if no agent
+    }
+
+    const contextPercent = this.agent.getContextUsagePercent();
+
+    // Disable viewFile at 95%+
+    if (contextPercent >= 95) {
+      return null;
+    }
+
+    // 2k tokens max at 90%+
+    if (contextPercent >= 90) {
+      return 8000; // ~2k tokens
+    }
+
+    // 10k tokens max at 80%+
+    if (contextPercent >= 80) {
+      return 40000; // ~10k tokens
+    }
+
+    // 20k tokens max normally
+    return 80000; // ~20k tokens
+  }
 
   async viewFile(
     filePath: string,
     viewRange?: [number, number]
   ): Promise<ToolResult> {
     try {
+      // Check if viewFile is disabled due to high context usage
+      const maxChars = this.getMaxCharsAllowed();
+      if (maxChars === null) {
+        const contextPercent = this.agent?.getContextUsagePercent() || 0;
+        return {
+          success: false,
+          error: `viewFile is disabled at ${Math.round(contextPercent)}% context usage. Please save notes and clear cache first.`,
+          output: `viewFile is disabled at ${Math.round(contextPercent)}% context usage. Please save notes and clear cache first.`
+        };
+      }
+
       const expandedPath = expandHomeDir(filePath);
       const resolvedPath = path.resolve(expandedPath);
 
@@ -34,9 +80,19 @@ export class TextEditorTool implements ToolDiscovery {
         if (viewRange) {
           const [start, end] = viewRange;
           const selectedLines = lines.slice(start - 1, end);
-          const numberedLines = selectedLines
+          let numberedLines = selectedLines
             .map((line, idx) => `${start + idx}: ${line}`)
             .join("\n");
+
+          // Apply character limit even to ranges
+          if (numberedLines.length > maxChars) {
+            numberedLines = numberedLines.substring(0, maxChars);
+            const contextPercent = this.agent?.getContextUsagePercent() || 0;
+            return {
+              success: true,
+              output: `Lines ${start}-${end} of ${filePath} (truncated due to ${Math.round(contextPercent)}% context usage):\n${numberedLines}\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens. Use smaller ranges or clear cache for full access.]`,
+            };
+          }
 
           return {
             success: true,
@@ -44,17 +100,29 @@ export class TextEditorTool implements ToolDiscovery {
           };
         }
 
+        // Full file view - apply limits
         const totalLines = lines.length;
-        const displayLines = lines; // Show all lines
-        const numberedLines = displayLines
+        let numberedLines = lines
           .map((line, idx) => `${idx + 1}: ${line}`)
           .join("\n");
-        const additionalLinesMessage = ""; // No truncation message
+
+        let truncated = false;
+        if (numberedLines.length > maxChars) {
+          numberedLines = numberedLines.substring(0, maxChars);
+          truncated = true;
+        }
+
+        const contextPercent = this.agent?.getContextUsagePercent() || 0;
+        const truncationMessage = truncated
+          ? `\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens due to ${Math.round(contextPercent)}% context usage. Use viewFile with viewRange parameter for specific sections, or clear cache for full access.]`
+          : "";
 
         return {
           success: true,
-          output: `Contents of ${filePath}:\n${numberedLines}${additionalLinesMessage}`,
-          displayOutput: `Read ${filePath} (${totalLines} lines)`, // User sees only this
+          output: `Contents of ${filePath}:\n${numberedLines}${truncationMessage}`,
+          displayOutput: truncated
+            ? `Read ${filePath} (${totalLines} lines, truncated due to context limits)`
+            : `Read ${filePath} (${totalLines} lines)`,
         };
       } else {
         return {

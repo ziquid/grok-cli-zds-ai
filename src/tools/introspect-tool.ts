@@ -142,8 +142,8 @@ Workflow for using unknown MCP tools:
         }
 
         const currentTokens = this.agent.getCurrentTokenCount();
-        const maxContext = 128000;
-        const usagePercent = ((currentTokens / maxContext) * 100).toFixed(2);
+        const maxContext = this.agent.getMaxContextSize();
+        const usagePercent = this.agent.getContextUsagePercent().toFixed(2);
 
         const output = `Current: ${currentTokens} tokens
 Maximum: ${maxContext} tokens

@@ -12,6 +12,9 @@ export interface UserSettings {
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
   startupHook?: string; // Command to run at startup, output added to system prompt
+  startActiveTaskHook?: string; // Command to validate starting a new active task
+  transitionActiveTaskStatusHook?: string; // Command to validate transitioning active task status
+  stopActiveTaskHook?: string; // Command to validate stopping active task
   mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
@@ -306,6 +309,27 @@ export class SettingsManager {
    */
   public getStartupHook(): string | undefined {
     return this.getUserSetting("startupHook");
+  }
+
+  /**
+   * Get start active task hook command from user settings
+   */
+  public getStartActiveTaskHook(): string | undefined {
+    return this.getUserSetting("startActiveTaskHook");
+  }
+
+  /**
+   * Get transition active task status hook command from user settings
+   */
+  public getTransitionActiveTaskStatusHook(): string | undefined {
+    return this.getUserSetting("transitionActiveTaskStatusHook");
+  }
+
+  /**
+   * Get stop active task hook command from user settings
+   */
+  public getStopActiveTaskHook(): string | undefined {
+    return this.getUserSetting("stopActiveTaskHook");
   }
 
   /**

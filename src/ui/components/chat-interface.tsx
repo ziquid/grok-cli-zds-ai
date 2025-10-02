@@ -8,6 +8,10 @@ import { ModelSelection } from "./model-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
 import { MCPStatus } from "./mcp-status";
+import { ContextStatus } from "./context-status";
+import { PersonaStatus } from "./persona-status";
+import { MoodStatus } from "./mood-status";
+import { ActiveTaskStatus } from "./active-task-status";
 import ConfirmationDialog from "./confirmation-dialog";
 import {
   ConfirmationService,
@@ -402,6 +406,10 @@ function ChatInterfaceWithAgent({
               <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
             </Box>
             <MCPStatus />
+            <ContextStatus agent={agent} />
+            <PersonaStatus agent={agent} />
+            <MoodStatus agent={agent} />
+            <ActiveTaskStatus agent={agent} />
           </Box>
 
           <CommandSuggestions

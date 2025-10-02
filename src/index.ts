@@ -176,6 +176,39 @@ async function showAllTools(debugLogFile?: string): Promise<void> {
   }
 }
 
+// Show context statistics (read-only, no state changes)
+async function showContextStats(contextFile?: string): Promise<void> {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+
+    // Determine context file path
+    let filePath: string;
+    if (contextFile) {
+      filePath = contextFile;
+    } else {
+      filePath = path.default.join(os.default.homedir(), '.grok', 'messages.json');
+    }
+
+    // Read messages file directly without modifying anything
+    const messagesData = fs.default.readFileSync(filePath, 'utf-8');
+    const messages = JSON.parse(messagesData);
+
+    // Import token counter and count tokens
+    const { TokenCounter } = await import('./utils/token-counter');
+    const tokenCounter = new TokenCounter();
+    const current = tokenCounter.countMessageTokens(messages);
+    const max = 128000;
+    const percent = Math.ceil((current / max) * 100);
+
+    console.log(`${current}/${max}/${percent}%`);
+  } catch (error) {
+    console.error("Error reading context stats:", error instanceof Error ? error.message : "Unknown error");
+    process.exit(1);
+  }
+}
+
 // Handle commit-and-push command in headless mode
 async function handleCommitAndPushHeadless(
   apiKey: string,
@@ -428,6 +461,10 @@ program
     "--show-all-tools",
     "list all available tools (internal and MCP) and exit"
   )
+  .option(
+    "--show-context-stats",
+    "display token usage stats for the specified context file and exit"
+  )
   .action(async (message, options) => {
     if (options.directory) {
       try {
@@ -444,6 +481,12 @@ program
     // Handle --show-all-tools flag
     if (options.showAllTools) {
       await showAllTools(options.debugLog);
+      process.exit(0);
+    }
+
+    // Handle --show-context-stats flag
+    if (options.showContextStats) {
+      await showContextStats(options.context);
       process.exit(0);
     }
 
