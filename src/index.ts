@@ -607,6 +607,14 @@ program
         // Plain console mode
         const prompts = await import('prompts');
 
+        // Helper function to save context
+        const saveContext = () => {
+          const chatHistory = agent.getChatHistory();
+          const messages = agent.getMessages();
+          historyManager.saveHistory(chatHistory);
+          historyManager.saveMessages(messages);
+        };
+
         // Process initial message if provided
         if (initialMessage) {
           console.log(`> ${initialMessage}`);
@@ -632,6 +640,8 @@ program
                   break;
                 case 'done':
                   console.log(); // Add newline after response
+                  // Save context after processing completes
+                  saveContext();
                   break;
               }
             }
@@ -652,7 +662,10 @@ program
               message: '',
               initial: ''
             }, {
-              onCancel: () => process.exit(0)
+              onCancel: () => {
+                saveContext();
+                process.exit(0);
+              }
             });
 
             if (result.input === undefined) {
@@ -694,12 +707,16 @@ program
                     break;
                   case 'done':
                     console.log(); // Add newline after response
+                    // Save context after processing completes
+                    saveContext();
                     break;
                 }
               }
             }
           } catch (error) {
             // Handle Ctrl+C or other interruptions
+            // Save context before exiting
+            saveContext();
             console.log('\n👋 Goodbye!');
             process.exit(0);
           }
