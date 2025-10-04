@@ -201,7 +201,9 @@ export class TextEditorTool implements ToolDiscovery {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "File edit cancelled by user",
+            error: confirmationResult.feedback
+              ? `File edit canceled by user: ${confirmationResult.feedback}`
+              : "File edit canceled by user",
           };
         }
       }
@@ -266,8 +268,9 @@ export class TextEditorTool implements ToolDiscovery {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error:
-              confirmationResult.feedback || "File creation cancelled by user",
+            error: confirmationResult.feedback
+              ? `File creation canceled by user: ${confirmationResult.feedback}`
+              : "File creation canceled by user",
           };
         }
       }
@@ -354,7 +357,9 @@ export class TextEditorTool implements ToolDiscovery {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "Line replacement cancelled by user",
+            error: confirmationResult.feedback
+              ? `Line replacement canceled by user: ${confirmationResult.feedback}`
+              : "Line replacement canceled by user",
           };
         }
       }

@@ -325,6 +325,20 @@ export class SearchTool implements ToolDiscovery {
               });
             }
           } else if (entry.isDirectory()) {
+            // Check if directory name matches pattern and add it to results
+            const score = this.calculateFileScore(
+              entry.name,
+              relativePath,
+              searchPattern
+            );
+            if (score > 0) {
+              files.push({
+                path: relativePath,
+                name: entry.name,
+                score,
+              });
+            }
+            // Recurse into directory
             await walkDir(fullPath, depth + 1);
           }
         }

@@ -81,7 +81,9 @@ export class MorphEditorTool implements ToolDiscovery {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "File edit cancelled by user",
+            error: confirmationResult.feedback
+              ? `File edit canceled by user: ${confirmationResult.feedback}`
+              : "File edit canceled by user",
           };
         }
       }

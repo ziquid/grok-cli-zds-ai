@@ -403,7 +403,7 @@ function ChatInterfaceWithAgent({
               </Text>
             </Box>
             <Box marginRight={2}>
-              <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
+              <Text color="yellow">≋ {agent.getCurrentModel().slice(0, 20)}{agent.getCurrentModel().length > 20 ? '…' : ''}</Text>
             </Box>
             <MCPStatus />
             <ContextStatus agent={agent} />

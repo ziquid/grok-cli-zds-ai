@@ -59,7 +59,14 @@ function restoreTerminal() {
 }
 
 // Handle SIGINT (Ctrl+C) to restore terminal properly
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
+  // If there's an active agent, abort its current operation first
+  if (currentAgent && typeof currentAgent.abortCurrentOperation === 'function') {
+    currentAgent.abortCurrentOperation();
+    // Give it a brief moment to process the abort
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
   restoreTerminal();
   console.log("\n");
   process.exit(0);
@@ -202,7 +209,14 @@ async function showContextStats(contextFile?: string): Promise<void> {
     const max = 128000;
     const percent = Math.ceil((current / max) * 100);
 
-    console.log(`${current}/${max}/${percent}%`);
+    // Round up to nearest KB (1000-based)
+    const currentKB = Math.ceil(current / 1000);
+    const maxKB = Math.ceil(max / 1000);
+
+    // Format percentage with leading spaces to always show 3 digits
+    const percentStr = percent.toString().padStart(3, ' ');
+
+    console.log(`${currentKB}k/${maxKB}k/${percentStr}%`);
   } catch (error) {
     console.error("Error reading context stats:", error instanceof Error ? error.message : "Unknown error");
     process.exit(1);

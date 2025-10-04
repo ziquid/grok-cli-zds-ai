@@ -100,3 +100,9 @@ temp/
 # Coding agents
 .claude/
 .grok/
+
+# Context files (contain AIPII - AI Personal Identifiable Information)
+*.context.json
+*.context.messages.json
+*.context.backup-*.json
+*.context.messages.backup-*.json

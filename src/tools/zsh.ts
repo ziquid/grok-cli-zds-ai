@@ -13,6 +13,35 @@ export class ZshTool implements ToolDiscovery {
 
   async execute(command: string, timeout: number = 30000, skipConfirmation: boolean = false): Promise<ToolResult> {
     try {
+      // Refuse cd and ls commands - user should use proper tools
+      if (command.trim().startsWith('cd ')) {
+        return {
+          success: false,
+          error: "Don't use zsh to cd.  Use chdir() instead."
+        };
+      }
+
+      if (command.trim().startsWith('ls ')) {
+        return {
+          success: false,
+          error: "Don't use zsh to ls.  Use listFiles() instead."
+        };
+      }
+
+      if (command.trim().startsWith('find ')) {
+        return {
+          success: false,
+          error: "Don't use zsh to find.  Use universalSearch() instead."
+        };
+      }
+
+      if (command.trim().startsWith('grep ')) {
+        return {
+          success: false,
+          error: "Don't use zsh to grep.  Use universalSearch() instead."
+        };
+      }
+
       // Check if user has already accepted zsh commands for this session
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!skipConfirmation && !sessionFlags.zshCommands && !sessionFlags.allOperations) {
@@ -27,7 +56,9 @@ export class ZshTool implements ToolDiscovery {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || 'Command execution cancelled by user'
+            error: confirmationResult.feedback
+              ? `Command execution canceled by user: ${confirmationResult.feedback}`
+              : 'Command execution canceled by user'
           };
         }
       }
@@ -87,7 +118,8 @@ export class ZshTool implements ToolDiscovery {
   }
 
   async listFiles(directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`ls -la ${directory}`);
+    const resolvedPath = expandHomeDir(directory);
+    return this.execute(`ls -la "${resolvedPath}"`);
   }
 
 
