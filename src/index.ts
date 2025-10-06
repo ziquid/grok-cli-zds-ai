@@ -27,7 +27,7 @@ function restoreTerminal() {
   // Save chat history and messages if we have an active agent
   if (currentAgent) {
     try {
-      const { ChatHistoryManager } = require("./utils/chat-history-manager");
+      const { ChatHistoryManager } = require("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
       const currentHistory = currentAgent.getChatHistory();
       const currentMessages = currentAgent.getMessages();
@@ -161,12 +161,12 @@ function loadModel(): string | undefined {
 async function showAllTools(debugLogFile?: string): Promise<void> {
   try {
     // Ensure MCP servers are initialized
-    const { getMCPManager } = await import('./grok/tools');
+    const { getMCPManager } = await import('./grok/tools.js');
     const mcpManager = getMCPManager();
     await mcpManager.ensureServersInitialized();
 
     // Create a temporary agent and use introspect tool (no startup hook needed for listing tools)
-    const { GrokAgent } = await import('./agent/grok-agent');
+    const { GrokAgent } = await import('./agent/grok-agent.js');
     const tempAgent = new GrokAgent("dummy");
     await tempAgent.initialize();
     const result = await tempAgent["introspect"].introspect("tools");
@@ -203,7 +203,7 @@ async function showContextStats(contextFile?: string): Promise<void> {
     const messages = JSON.parse(messagesData);
 
     // Import token counter and count tokens
-    const { TokenCounter } = await import('./utils/token-counter');
+    const { TokenCounter } = await import('./utils/token-counter.js');
     const tokenCounter = new TokenCounter();
     const current = tokenCounter.countMessageTokens(messages);
     const max = 128000;
@@ -232,7 +232,7 @@ async function handleCommitAndPushHeadless(
   debugLogFile?: string
 ): Promise<void> {
   try {
-    const { createGrokAgent } = await import('./utils/startup-hook');
+    const { createGrokAgent } = await import('./utils/startup-hook.js');
     const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
     currentAgent = agent; // Store reference for cleanup
 
@@ -361,7 +361,7 @@ async function processPromptHeadless(
   autoApproveCommands?: string[]
 ): Promise<void> {
   try {
-    const { createGrokAgent } = await import('./utils/startup-hook');
+    const { createGrokAgent } = await import('./utils/startup-hook.js');
     const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
     currentAgent = agent; // Store reference for cleanup
 
@@ -380,7 +380,7 @@ async function processPromptHeadless(
 
     // Load existing chat history unless fresh session
     if (!fresh) {
-      const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+      const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
       const existingHistory = historyManager.loadHistory();
       agent.loadInitialHistory(existingHistory);
@@ -398,7 +398,7 @@ async function processPromptHeadless(
     }
 
     // Save updated chat history and messages
-    const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+    const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
     const historyManager = ChatHistoryManager.getInstance();
     const currentHistory = agent.getChatHistory();
     const currentMessages = agent.getMessages();
@@ -527,7 +527,7 @@ program
 
       // Set custom context file path if provided
       if (options.context) {
-        const { ChatHistoryManager } = await import("./utils/chat-history-manager");
+        const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
         ChatHistoryManager.setCustomHistoryPath(options.context);
       }
 
@@ -588,9 +588,9 @@ program
       // Interactive mode: launch UI
 
       // Create agent for interactive mode only
-      const { createGrokAgent } = await import('./utils/startup-hook');
+      const { createGrokAgent } = await import('./utils/startup-hook.js');
       // Run startup hook for fresh sessions or when history doesn't exist
-      const { ChatHistoryManager } = await import('./utils/chat-history-manager');
+      const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
       const historyManager = ChatHistoryManager.getInstance();
       const hasHistory = !options.fresh && historyManager.loadHistory().length > 0;
       const runStartupHook = !hasHistory; // Only run hook for new sessions
