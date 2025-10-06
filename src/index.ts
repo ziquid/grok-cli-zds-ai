@@ -27,7 +27,6 @@ function restoreTerminal() {
   // Save chat history and messages if we have an active agent
   if (currentAgent) {
     try {
-      const { ChatHistoryManager } = require("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
       const currentHistory = currentAgent.getChatHistory();
       const currentMessages = currentAgent.getMessages();
