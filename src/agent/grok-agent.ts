@@ -1,12 +1,12 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
+import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
   GROK_TOOLS,
   addMCPToolsToGrokTools,
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
-} from "../grok/tools";
-import { loadMCPConfig } from "../mcp/config";
+} from "../grok/tools.js";
+import { loadMCPConfig } from "../mcp/config.js";
 import {
   TextEditorTool,
   MorphEditorTool,

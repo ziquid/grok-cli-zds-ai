@@ -208,7 +208,7 @@ export class TextEditorTool implements ToolDiscovery {
         }
       }
 
-      const newContent = replaceAll 
+      const newContent = replaceAll
         ? content.split(oldStr).join(newStr)
         : content.replace(oldStr, newStr);
       await fs.writeFile(resolvedPath, newContent, "utf-8");
@@ -367,7 +367,7 @@ export class TextEditorTool implements ToolDiscovery {
       const replacementLines = newContent.split("\n");
       lines.splice(startLine - 1, endLine - startLine + 1, ...replacementLines);
       const newFileContent = lines.join("\n");
-      
+
       await fs.writeFile(resolvedPath, newFileContent, "utf-8");
 
       this.editHistory.push({

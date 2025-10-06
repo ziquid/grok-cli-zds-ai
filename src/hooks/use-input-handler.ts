@@ -5,8 +5,8 @@ import { ConfirmationService } from "../utils/confirmation-service";
 import { ChatHistoryManager } from "../utils/chat-history-manager";
 import { useEnhancedInput, Key } from "./use-enhanced-input";
 
-import { filterCommandSuggestions } from "../ui/components/command-suggestions";
-import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
+import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
+import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;

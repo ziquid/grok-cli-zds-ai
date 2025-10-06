@@ -16,8 +16,8 @@ import ConfirmationDialog from "./confirmation-dialog";
 import {
   ConfirmationService,
   ConfirmationOptions,
-} from "../../utils/confirmation-service";
-import ApiKeyInput from "./api-key-input";
+} from "../../utils/confirmation-service.js";
+import ApiKeyInput from "./api-key-input.js";
 import cfonts from "cfonts";
 import { ChatHistoryManager } from "../../utils/chat-history-manager";
 
