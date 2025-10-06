@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { EventEmitter } from "events";
 import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
+import crypto from "crypto";
 
 export interface MCPServerConfig {
   name: string;
@@ -30,7 +31,6 @@ function createMCPToolName(serverName: string, toolName: string): string {
   }
 
   // Truncate and add hash suffix to prevent collisions
-  const crypto = require('crypto');
   const hash = crypto.createHash('md5').update(fullName).digest('hex').substring(0, 4);
   return fullName.substring(0, 60) + hash;
 }
