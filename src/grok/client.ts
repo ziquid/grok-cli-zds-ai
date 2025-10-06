@@ -71,6 +71,10 @@ export class GrokClient {
     return this.currentModel;
   }
 
+  getBaseURL(): string {
+    return this.client.baseURL || "https://api.x.ai/v1";
+  }
+
   async chat(
     messages: GrokMessage[],
     tools?: GrokTool[],
@@ -88,8 +92,8 @@ export class GrokClient {
 	think: false
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
+      // Add search parameters if specified and using Grok API (x.ai)
+      if (searchOptions?.search_parameters && this.client.baseURL?.includes('x.ai')) {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
@@ -126,8 +130,8 @@ export class GrokClient {
         stream: true,
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
+      // Add search parameters if specified and using Grok API (x.ai)
+      if (searchOptions?.search_parameters && this.client.baseURL?.includes('x.ai')) {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 

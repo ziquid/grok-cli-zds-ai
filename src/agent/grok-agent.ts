@@ -217,6 +217,9 @@ Current working directory: ${process.cwd()}`;
     const historyMessages: GrokMessage[] = [];
     let hasSystemMessage = false;
 
+    // Check if we're using OpenAI backend (which has stricter tool message requirements)
+    const isOpenAIModel = this.grokClient.getBaseURL().includes('openai.com') || false;
+
     for (const entry of history) {
       switch (entry.type) {
         case "system":
@@ -246,7 +249,9 @@ Current working directory: ${process.cwd()}`;
           historyMessages.push(assistantMessage);
           break;
         case "tool_result":
-          if (entry.toolCall) {
+          // Only include tool messages if we have the toolCall info and we're not using OpenAI
+          // OpenAI requires tool_calls in assistant messages first, which our context format doesn't guarantee
+          if (entry.toolCall && !isOpenAIModel) {
             historyMessages.push({
               role: "tool",
               content: entry.toolResult?.output || entry.toolResult?.error || "",

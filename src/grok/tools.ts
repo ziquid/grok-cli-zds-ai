@@ -591,12 +591,12 @@ const MORPH_EDIT_TOOL: GrokTool = {
 // Function to build tools array conditionally
 function buildGrokTools(): GrokTool[] {
   const tools = [...BASE_GROK_TOOLS];
-  
+
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
     tools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
   }
-  
+
   return tools;
 }
 
@@ -638,16 +638,27 @@ export async function initializeMCPServers(debugLogFile?: string): Promise<void>
 }
 
 export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
+  // Normalize schema to ensure OpenAI compatibility
+  let parameters = mcpTool.inputSchema || {
+    type: "object",
+    properties: {},
+    required: []
+  };
+
+  // OpenAI requires objects to have properties field
+  if (parameters.type === "object" && !parameters.properties) {
+    parameters = {
+      ...parameters,
+      properties: {}
+    };
+  }
+
   return {
     type: "function",
     function: {
       name: mcpTool.name,
       description: mcpTool.description,
-      parameters: mcpTool.inputSchema || {
-        type: "object",
-        properties: {},
-        required: []
-      }
+      parameters
     }
   };
 }

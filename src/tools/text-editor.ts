@@ -90,7 +90,7 @@ export class TextEditorTool implements ToolDiscovery {
             const contextPercent = this.agent?.getContextUsagePercent() || 0;
             return {
               success: true,
-              output: `Lines ${start}-${end} of ${filePath} (truncated due to ${Math.round(contextPercent)}% context usage):\n${numberedLines}\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens. Use smaller ranges or clear cache for full access.]`,
+              output: `Lines ${start}-${end} of ${filePath} (truncated due to ${Math.round(contextPercent)}% context usage):\n${numberedLines}\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens. Use smaller ranges.]`,
             };
           }
 
@@ -114,7 +114,7 @@ export class TextEditorTool implements ToolDiscovery {
 
         const contextPercent = this.agent?.getContextUsagePercent() || 0;
         const truncationMessage = truncated
-          ? `\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens due to ${Math.round(contextPercent)}% context usage. Use viewFile with viewRange parameter for specific sections, or clear cache for full access.]`
+          ? `\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens due to ${Math.round(contextPercent)}% context usage. Use viewFile with viewRange parameter for specific sections.]`
           : "";
 
         return {

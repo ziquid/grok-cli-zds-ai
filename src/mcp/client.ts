@@ -17,6 +17,22 @@ export interface MCPTool {
   description: string;
   inputSchema: any;
   serverName: string;
+  originalToolName: string;
+}
+
+/**
+ * Create MCP tool name with OpenAI 64-character limit
+ */
+function createMCPToolName(serverName: string, toolName: string): string {
+  const fullName = `mcp__${serverName}__${toolName}`;
+  if (fullName.length <= 64) {
+    return fullName;
+  }
+
+  // Truncate and add hash suffix to prevent collisions
+  const crypto = require('crypto');
+  const hash = crypto.createHash('md5').update(fullName).digest('hex').substring(0, 4);
+  return fullName.substring(0, 60) + hash;
 }
 
 export class MCPManager extends EventEmitter {
@@ -83,10 +99,11 @@ export class MCPManager extends EventEmitter {
       // Register tools
       for (const tool of toolsResult.tools) {
         const mcpTool: MCPTool = {
-          name: `mcp__${config.name}__${tool.name}`,
+          name: createMCPToolName(config.name, tool.name),
           description: tool.description || `Tool from ${config.name} server`,
           inputSchema: tool.inputSchema,
-          serverName: config.name
+          serverName: config.name,
+          originalToolName: tool.name
         };
         this.tools.set(mcpTool.name, mcpTool);
       }
@@ -146,11 +163,8 @@ export class MCPManager extends EventEmitter {
       throw new Error(`Server ${tool.serverName} not connected`);
     }
 
-    // Extract the original tool name (remove mcp__servername__ prefix)
-    const originalToolName = toolName.replace(`mcp__${tool.serverName}__`, '');
-
     return await client.callTool({
-      name: originalToolName,
+      name: tool.originalToolName,
       arguments: arguments_
     });
   }
