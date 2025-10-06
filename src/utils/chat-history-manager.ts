@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { ChatEntry } from "../agent/grok-agent";
+import { ChatEntry } from "../agent/grok-agent.js";
 
 const HISTORY_FILE_NAME = "chat-history.json";
 const HISTORY_DIR = path.join(os.homedir(), ".grok");

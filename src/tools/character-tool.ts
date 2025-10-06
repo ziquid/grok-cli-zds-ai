@@ -1,5 +1,5 @@
-import { ToolResult } from "../types";
-import { ToolDiscovery } from "./tool-discovery";
+import { ToolResult } from "../types/index.js";
+import { ToolDiscovery } from "./tool-discovery.js";
 
 export class CharacterTool implements ToolDiscovery {
   private agent: any; // Reference to the GrokAgent

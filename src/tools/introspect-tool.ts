@@ -1,6 +1,6 @@
-import { ToolResult } from "../types";
-import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
-import { getAllGrokTools } from "../grok/tools";
+import { ToolResult } from "../types/index.js";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
+import { getAllGrokTools } from "../grok/tools.js";
 
 export class IntrospectTool implements ToolDiscovery {
   private agent: any; // Reference to the GrokAgent for accessing tool class info

@@ -18,13 +18,13 @@ import {
   IntrospectTool,
   ClearCacheTool,
   CharacterTool
-} from "../tools";
-import { ToolResult } from "../types";
+} from "../tools/index.js";
+import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
-import { createTokenCounter, TokenCounter } from "../utils/token-counter";
-import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSettingsManager } from "../utils/settings-manager";
-import { executeHook } from "../utils/hook-executor";
+import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
+import { loadCustomInstructions } from "../utils/custom-instructions.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
+import { executeHook } from "../utils/hook-executor.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";

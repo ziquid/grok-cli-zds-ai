@@ -1,9 +1,9 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { ToolResult } from '../types';
-import { ConfirmationService } from '../utils/confirmation-service';
-import { expandHomeDir } from '../utils/path-utils';
-import { ToolDiscovery, getHandledToolNames } from './tool-discovery';
+import { ToolResult } from '../types/index.js';
+import { ConfirmationService } from '../utils/confirmation-service.js';
+import { expandHomeDir } from '../utils/path-utils.js';
+import { ToolDiscovery, getHandledToolNames } from './tool-discovery.js';
 
 const execAsync = promisify(exec);
 

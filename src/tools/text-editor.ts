@@ -1,9 +1,9 @@
 import * as fs from "fs-extra";
 import * as path from "path";
-import { ToolResult, EditorCommand } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
-import { expandHomeDir } from "../utils/path-utils";
-import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
+import { ToolResult, EditorCommand } from "../types/index.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
+import { expandHomeDir } from "../utils/path-utils.js";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
 export class TextEditorTool implements ToolDiscovery {
   private editHistory: EditorCommand[] = [];

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { GrokAgent } from "../../agent/grok-agent";
+import { GrokAgent } from "../../agent/grok-agent.js";
 
 interface ContextStatusProps {
   agent?: GrokAgent;

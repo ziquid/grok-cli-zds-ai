@@ -1,9 +1,9 @@
 import * as fs from "fs-extra";
 import * as path from "path";
 import axios from "axios";
-import { ToolResult } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
-import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
+import { ToolResult } from "../types/index.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
 export class MorphEditorTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();

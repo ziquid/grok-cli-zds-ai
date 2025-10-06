@@ -3,7 +3,7 @@ import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import * as fs from "fs-extra";
 import * as path from "path";
-import { ToolDiscovery, getHandledToolNames } from "./tool-discovery";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
 export interface SearchResult {
   file: string;

@@ -1,5 +1,5 @@
-import { ToolResult } from '../types';
-import { ToolDiscovery, getHandledToolNames } from './tool-discovery';
+import { ToolResult } from '../types/index.js';
+import { ToolDiscovery, getHandledToolNames } from './tool-discovery.js';
 
 interface TodoItem {
   id: string;

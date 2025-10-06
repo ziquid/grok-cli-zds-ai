@@ -1,4 +1,4 @@
-import { ToolResult } from "../types";
+import { ToolResult } from "../types/index.js";
 
 export class ClearCacheTool {
   private agent: any; // Reference to the GrokAgent

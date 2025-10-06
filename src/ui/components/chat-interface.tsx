@@ -1,25 +1,25 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
-import { GrokAgent, ChatEntry } from "../../agent/grok-agent";
-import { useInputHandler } from "../../hooks/use-input-handler";
-import { LoadingSpinner } from "./loading-spinner";
-import { CommandSuggestions } from "./command-suggestions";
-import { ModelSelection } from "./model-selection";
-import { ChatHistory } from "./chat-history";
-import { ChatInput } from "./chat-input";
-import { MCPStatus } from "./mcp-status";
-import { ContextStatus } from "./context-status";
-import { PersonaStatus } from "./persona-status";
-import { MoodStatus } from "./mood-status";
-import { ActiveTaskStatus } from "./active-task-status";
-import ConfirmationDialog from "./confirmation-dialog";
+import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
+import { useInputHandler } from "../../hooks/use-input-handler.js";
+import { LoadingSpinner } from "./loading-spinner.js";
+import { CommandSuggestions } from "./command-suggestions.js";
+import { ModelSelection } from "./model-selection.js";
+import { ChatHistory } from "./chat-history.js";
+import { ChatInput } from "./chat-input.js";
+import { MCPStatus } from "./mcp-status.js";
+import { ContextStatus } from "./context-status.js";
+import { PersonaStatus } from "./persona-status.js";
+import { MoodStatus } from "./mood-status.js";
+import { ActiveTaskStatus } from "./active-task-status.js";
+import ConfirmationDialog from "./confirmation-dialog.js";
 import {
   ConfirmationService,
   ConfirmationOptions,
 } from "../../utils/confirmation-service.js";
 import ApiKeyInput from "./api-key-input.js";
 import cfonts from "cfonts";
-import { ChatHistoryManager } from "../../utils/chat-history-manager";
+import { ChatHistoryManager } from "../../utils/chat-history-manager.js";
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;

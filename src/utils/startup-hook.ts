@@ -1,5 +1,5 @@
-import { getSettingsManager } from "./settings-manager";
-import { GrokAgent } from "../agent/grok-agent";
+import { getSettingsManager } from "./settings-manager.js";
+import { GrokAgent } from "../agent/grok-agent.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
