@@ -344,13 +344,13 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "setPersona",
-      description: "Set status bar persona text",
+      description: "Set agent's current persona",
       parameters: {
         type: "object",
         properties: {
           persona: {
             type: "string",
-            description: "The persona text to display (e.g., 'Debugging Mode', 'Code Review', 'Planning')",
+            description: "The persona (e.g., 'worker', 'receptionist')",
           },
           color: {
             type: "string",
@@ -365,13 +365,13 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "setMood",
-      description: "Set status bar mood text",
+      description: "Set agent's current mood",
       parameters: {
         type: "object",
         properties: {
           mood: {
             type: "string",
-            description: "The mood text to display (e.g., 'focused', 'tired', 'excited')",
+            description: "The mood (e.g., 'focused', 'tired', 'excited')",
           },
           color: {
             type: "string",
@@ -379,6 +379,30 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           },
         },
         required: ["mood"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getPersona",
+      description: "Get the persona last set",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getMood",
+      description: "Get the mood last set",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
       },
     },
   },
@@ -560,6 +584,23 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "downloadFile",
+      description: "Download a file < 10MB from the Internet.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "URL of the file to download",
+          },
+        },
+        required: ["url"],
+      },
+    },
+  },
 ];
 
 // Morph Fast Apply tool (conditional)
@@ -666,13 +707,13 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
 
 export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   if (!mcpManager) {
-    
+
     fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
     return baseTools;
   }
 
   const mcpTools = mcpManager.getTools();
-  
+
   fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
 

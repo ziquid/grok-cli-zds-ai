@@ -16,7 +16,9 @@ import {
   EnvTool,
   IntrospectTool,
   ClearCacheTool,
-  CharacterTool
+  CharacterTool,
+  TaskTool,
+  InternetTool
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
@@ -55,6 +57,8 @@ export class GrokAgent extends EventEmitter {
   private introspect: IntrospectTool;
   private clearCacheTool: ClearCacheTool;
   private characterTool: CharacterTool;
+  private taskTool: TaskTool;
+  private internetTool: InternetTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -95,10 +99,14 @@ export class GrokAgent extends EventEmitter {
     this.introspect = new IntrospectTool();
     this.clearCacheTool = new ClearCacheTool();
     this.characterTool = new CharacterTool();
+    this.taskTool = new TaskTool();
+    this.internetTool = new InternetTool();
     this.textEditor.setAgent(this); // Give text editor access to agent for context awareness
     this.introspect.setAgent(this); // Give introspect access to agent for tool class info
     this.clearCacheTool.setAgent(this); // Give clearCache access to agent
     this.characterTool.setAgent(this); // Give character tool access to agent
+    this.taskTool.setAgent(this); // Give task tool access to agent
+    this.internetTool.setAgent(this); // Give internet tool access to agent
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
@@ -949,14 +957,20 @@ Current working directory: ${process.cwd()}`;
         case "setMood":
           return await this.characterTool.setMood(args.mood, args.color);
 
+        case "getPersona":
+          return await this.characterTool.getPersona();
+
+        case "getMood":
+          return await this.characterTool.getMood();
+
         case "startActiveTask":
-          return await this.characterTool.startActiveTask(args.activeTask, args.action, args.color);
+          return await this.taskTool.startActiveTask(args.activeTask, args.action, args.color);
 
         case "transitionActiveTaskStatus":
-          return await this.characterTool.transitionActiveTaskStatus(args.action, args.color);
+          return await this.taskTool.transitionActiveTaskStatus(args.action, args.color);
 
         case "stopActiveTask":
-          return await this.characterTool.stopActiveTask(args.reason, args.documentationFile, args.color);
+          return await this.taskTool.stopActiveTask(args.reason, args.documentationFile, args.color);
 
         case "insertLines":
           return await this.textEditor.insertLines(args.path, args.insert_line, args.new_str);
@@ -972,6 +986,9 @@ Current working directory: ${process.cwd()}`;
 
         case "pwdir":
           return this.zsh.pwdir();
+
+        case "downloadFile":
+          return await this.internetTool.downloadFile(args.url);
 
         default:
           // Check if this is an MCP tool

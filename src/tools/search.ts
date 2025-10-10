@@ -86,7 +86,7 @@ export class SearchTool implements ToolDiscovery {
         return {
           success: true,
           output: `No results found for "${query}"`,
-          displayOutput: `No results found for "${query}"`,
+          displayOutput: "",
         };
       }
 
@@ -105,15 +105,18 @@ export class SearchTool implements ToolDiscovery {
       const fileCount = allFiles.size;
       const matchCount = textResults.length;
 
-      let displayOutput = `Found ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+      let summary = `Found ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
       if (matchCount > 0) {
-        displayOutput += ` (${matchCount} ${matchCount === 1 ? 'match' : 'matches'})`;
+        summary += ` (${matchCount} ${matchCount === 1 ? 'match' : 'matches'})`;
       }
+
+      // Prepend summary to formattedOutput for display
+      const outputWithSummary = `${summary}\n\n${formattedOutput}`;
 
       return {
         success: true,
-        output: formattedOutput,
-        displayOutput,
+        output: outputWithSummary,
+        displayOutput: "",
       };
     } catch (error: any) {
       return {

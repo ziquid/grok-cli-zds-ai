@@ -9,7 +9,7 @@ export class CharacterTool implements ToolDiscovery {
   }
 
   getHandledToolNames(): string[] {
-    return ["setPersona", "setMood", "startActiveTask", "transitionActiveTaskStatus", "stopActiveTask"];
+    return ["setPersona", "setMood", "getPersona", "getMood"];
   }
 
   /**
@@ -73,9 +73,9 @@ export class CharacterTool implements ToolDiscovery {
   }
 
   /**
-   * Start a new active task with action and optional color
+   * Get the current persona display text and color
    */
-  async startActiveTask(activeTask: string, action: string, color?: string): Promise<ToolResult> {
+  async getPersona(): Promise<ToolResult> {
     try {
       if (!this.agent) {
         return {
@@ -85,35 +85,27 @@ export class CharacterTool implements ToolDiscovery {
         };
       }
 
-      // Start the active task
-      const result = await this.agent.startActiveTask(activeTask, action, color);
-
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error,
-          output: result.error || "Failed to start active task"
-        };
-      }
+      const persona = this.agent.persona || "";
+      const color = this.agent.personaColor || "white";
 
       return {
         success: true,
-        output: `Active task started: ${action}: ${activeTask}${color ? ` (color: ${color})` : ''}`,
-        displayOutput: `Active task started`
+        output: `Current persona: "${persona}" (color: ${color})`,
+        displayOutput: `Persona: ${persona}`
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error starting active task",
-        output: error instanceof Error ? error.message : "Unknown error starting active task"
+        error: error instanceof Error ? error.message : "Unknown error getting persona",
+        output: error instanceof Error ? error.message : "Unknown error getting persona"
       };
     }
   }
 
   /**
-   * Transition the current active task to a new status/action
+   * Get the current mood display text and color
    */
-  async transitionActiveTaskStatus(action: string, color?: string): Promise<ToolResult> {
+  async getMood(): Promise<ToolResult> {
     try {
       if (!this.agent) {
         return {
@@ -123,66 +115,21 @@ export class CharacterTool implements ToolDiscovery {
         };
       }
 
-      // Transition the active task status
-      const result = await this.agent.transitionActiveTaskStatus(action, color);
-
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error,
-          output: result.error || "Failed to transition active task status"
-        };
-      }
+      const mood = this.agent.mood || "";
+      const color = this.agent.moodColor || "white";
 
       return {
         success: true,
-        output: `Active task status transitioned to: ${action}${color ? ` (color: ${color})` : ''}`,
-        displayOutput: `Active task status updated`
+        output: `Current mood: "${mood}" (color: ${color})`,
+        displayOutput: `Mood: ${mood}`
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error transitioning active task status",
-        output: error instanceof Error ? error.message : "Unknown error transitioning active task status"
+        error: error instanceof Error ? error.message : "Unknown error getting mood",
+        output: error instanceof Error ? error.message : "Unknown error getting mood"
       };
     }
   }
 
-  /**
-   * Stop the current active task with reason and documentation file
-   */
-  async stopActiveTask(reason: string, documentationFile: string, color?: string): Promise<ToolResult> {
-    try {
-      if (!this.agent) {
-        return {
-          success: false,
-          error: "Agent not available",
-          output: "Agent not available"
-        };
-      }
-
-      // Stop the active task
-      const result = await this.agent.stopActiveTask(reason, documentationFile, color);
-
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error,
-          output: result.error || "Failed to stop active task"
-        };
-      }
-
-      return {
-        success: true,
-        output: `Active task stopped: ${reason}${color ? ` (color: ${color})` : ''}`,
-        displayOutput: `Active task stopped`
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error stopping active task",
-        output: error instanceof Error ? error.message : "Unknown error stopping active task"
-      };
-    }
-  }
 }

@@ -91,13 +91,20 @@ export class ZshTool implements ToolDiscovery {
 
       // Create a brief summary for displayOutput
       const lines = trimmedOutput.split('\n');
-      const displayOutput = lines.length === 1
-        ? trimmedOutput
-        : `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} of output`;
+      let displayOutput: string;
+      let finalOutput: string;
+
+      if (trimmedOutput === 'Command executed successfully (no output)') {
+        finalOutput = '';
+        displayOutput = trimmedOutput;
+      } else {
+        finalOutput = trimmedOutput;
+        displayOutput = lines.length > 1 ? `${lines.length} lines of output` : '';
+      }
 
       return {
         success: true,
-        output: trimmedOutput,
+        output: finalOutput,
         displayOutput
       };
     } catch (error: any) {

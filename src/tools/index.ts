@@ -7,3 +7,5 @@ export { EnvTool } from "./env-tool.js";
 export { IntrospectTool } from "./introspect-tool.js";
 export { ClearCacheTool } from "./clear-cache-tool.js";
 export { CharacterTool } from "./character-tool.js";
+export { TaskTool } from "./task-tool.js";
+export { InternetTool } from "./internet-tool.js";
