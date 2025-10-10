@@ -11,7 +11,6 @@ import {
   TextEditorTool,
   MorphEditorTool,
   ZshTool,
-  TodoTool,
   ConfirmationTool,
   SearchTool,
   EnvTool,
@@ -50,7 +49,6 @@ export class GrokAgent extends EventEmitter {
   private textEditor: TextEditorTool;
   private morphEditor: MorphEditorTool | null;
   private zsh: ZshTool;
-  private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
   private env: EnvTool;
@@ -91,7 +89,6 @@ export class GrokAgent extends EventEmitter {
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.zsh = new ZshTool();
-    this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.env = new EnvTool();
@@ -918,13 +915,6 @@ Current working directory: ${process.cwd()}`;
         case "listFiles":
           return await this.zsh.listFiles(args.directory);
 
-
-        case "createTodoList":
-          return await this.todoTool.createTodoList(args.todos);
-
-        case "updateTodoList":
-          return await this.todoTool.updateTodoList(args.updates);
-
         case "universalSearch":
           return await this.search.universalSearch(args.query, {
             searchType: args.search_type,
@@ -976,9 +966,6 @@ Current working directory: ${process.cwd()}`;
 
         case "undoEdit":
           return await this.textEditor.undoEdit();
-
-        case "viewTodoList":
-          return await this.todoTool.viewTodoList();
 
         case "chdir":
           return this.zsh.chdir(args.directory);

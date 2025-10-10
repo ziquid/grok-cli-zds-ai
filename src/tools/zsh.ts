@@ -127,9 +127,8 @@ export class ZshTool implements ToolDiscovery {
 
   async listFiles(directory: string = '.'): Promise<ToolResult> {
     const resolvedPath = expandHomeDir(directory);
-    return this.execute(`ls -la "${resolvedPath}"`);
+    return this.execute(`/bin/ls -la "${resolvedPath}"`);
   }
-
 
   async chdir(path: string): Promise<ToolResult> {
     try {
