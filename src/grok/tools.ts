@@ -344,7 +344,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "setPersona",
-      description: "Set the persona display text in the status bar (max 20 characters). Optional color parameter to customize the display color.",
+      description: "Set status bar persona text",
       parameters: {
         type: "object",
         properties: {
@@ -365,7 +365,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "setMood",
-      description: "Set the mood display text in the status bar (max 10 characters). Optional color parameter to customize the display color.",
+      description: "Set status bar mood text",
       parameters: {
         type: "object",
         properties: {
@@ -386,7 +386,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "startActiveTask",
-      description: "Start a new active task. Cannot start if an active task already exists - must stop current task first. Actions: researching, planning, coding, documenting, testing, chatting, learning, resting, etc.",
+      description: "Start a new active task",
       parameters: {
         type: "object",
         properties: {
@@ -411,7 +411,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "transitionActiveTaskStatus",
-      description: "Change the status/action of the current active task. Cannot transition if no task is active. Use when switching between actions like researching→coding, coding→testing, etc. or transitioning to states like blocked, error, etc.",
+      description: "Change active task status or action",
       parameters: {
         type: "object",
         properties: {
@@ -432,7 +432,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "stopActiveTask",
-      description: "Stop the current active task. Cannot stop if no task is active. Requires documented progress - provide a documentation file path (.md or .txt). Minimum 3 seconds delay before clearing.",
+      description: "Stop the current active task",
       parameters: {
         type: "object",
         properties: {
