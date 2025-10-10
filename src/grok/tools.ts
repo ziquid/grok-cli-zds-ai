@@ -177,88 +177,88 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "createTodoList",
-      description: "Create a new todo list for planning and tracking tasks",
-      parameters: {
-        type: "object",
-        properties: {
-          todos: {
-            type: "array",
-            description: "Array of todo items",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "Description of the todo item",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item",
-                },
-              },
-              required: ["id", "content", "status", "priority"],
-            },
-          },
-        },
-        required: ["todos"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "updateTodoList",
-      description: "Update existing todos in the todo list",
-      parameters: {
-        type: "object",
-        properties: {
-          updates: {
-            type: "array",
-            description: "Array of todo updates",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "ID of the todo item to update",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "New content for the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item",
-                },
-              },
-              required: ["id"],
-            },
-          },
-        },
-        required: ["updates"],
-      },
-    },
-  },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "createTodoList",
+  //     description: "Create a new todo list for planning and tracking tasks",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {
+  //         todos: {
+  //           type: "array",
+  //           description: "Array of todo items",
+  //           items: {
+  //             type: "object",
+  //             properties: {
+  //               id: {
+  //                 type: "string",
+  //                 description: "Unique identifier for the todo item",
+  //               },
+  //               content: {
+  //                 type: "string",
+  //                 description: "Description of the todo item",
+  //               },
+  //               status: {
+  //                 type: "string",
+  //                 enum: ["pending", "in_progress", "completed"],
+  //                 description: "Current status of the todo item",
+  //               },
+  //               priority: {
+  //                 type: "string",
+  //                 enum: ["high", "medium", "low"],
+  //                 description: "Priority level of the todo item",
+  //               },
+  //             },
+  //             required: ["id", "content", "status", "priority"],
+  //           },
+  //         },
+  //       },
+  //       required: ["todos"],
+  //     },
+  //   },
+  // },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "updateTodoList",
+  //     description: "Update existing todos in the todo list",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {
+  //         updates: {
+  //           type: "array",
+  //           description: "Array of todo updates",
+  //           items: {
+  //             type: "object",
+  //             properties: {
+  //               id: {
+  //                 type: "string",
+  //                 description: "ID of the todo item to update",
+  //               },
+  //               status: {
+  //                 type: "string",
+  //                   enum: ["pending", "in_progress", "completed"],
+  //                 description: "New status for the todo item",
+  //               },
+  //               content: {
+  //                 type: "string",
+  //                 description: "New content for the todo item",
+  //               },
+  //               priority: {
+  //                 type: "string",
+  //                 enum: ["high", "medium", "low"],
+  //                 description: "New priority for the todo item",
+  //               },
+  //             },
+  //             required: ["id"],
+  //           },
+  //         },
+  //       },
+  //       required: ["updates"],
+  //     },
+  //   },
+  // },
   {
     type: "function",
     function: {
@@ -519,18 +519,18 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "viewTodoList",
-      description: "View the current todo list",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "viewTodoList",
+  //     description: "View the current todo list",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {},
+  //       required: [],
+  //     },
+  //   },
+  // },
   {
     type: "function",
     function: {
