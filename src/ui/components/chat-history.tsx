@@ -9,6 +9,20 @@ interface ChatHistoryProps {
   isConfirmationActive?: boolean;
 }
 
+const TRUNCATE_LINES = 3;
+
+// Helper function to truncate content to first N lines
+function truncateContent(content: string, maxLines: number = TRUNCATE_LINES): { truncated: string; hiddenLines: number } {
+  const lines = content.split("\n");
+  // Only truncate if we're hiding more than 2 lines (otherwise showing "… +1 lines" is worse UX)
+  if (lines.length <= maxLines + 2) {
+    return { truncated: content, hiddenLines: 0 };
+  }
+  const truncated = lines.slice(0, maxLines).join("\n");
+  const hiddenLines = lines.length - maxLines;
+  return { truncated, hiddenLines };
+}
+
 // Memoized ChatEntry component to prevent unnecessary re-renders
 const MemoizedChatEntry = React.memo(
   ({ entry, index }: { entry: ChatEntry; index: number }) => {
@@ -87,30 +101,12 @@ const MemoizedChatEntry = React.memo(
             if (parts.length >= 3) {
               const serverName = parts[1];
               const actualToolName = parts.slice(2).join("__");
-              return `${serverName.charAt(0).toUpperCase() + serverName.slice(1)}(${actualToolName.replace(/_/g, " ")})`;
+              return `${serverName.charAt(0).toUpperCase() + serverName.slice(1)}/${actualToolName.replace(/_/g, " ")}`;
             }
           }
 
-          switch (toolName) {
-            case "view_file":
-              return "Read";
-            case "str_replace_editor":
-              return "Update";
-            case "create_file":
-              return "Create";
-            case "bash":
-              return "Bash";
-            case "search":
-              return "Search";
-            case "env_vars":
-              return "Environment";
-            case "create_todo_list":
-              return "Created Todo";
-            case "update_todo_list":
-              return "Updated Todo";
-            default:
-              return "Tool";
-          }
+          // Return the actual tool name from the function call
+          return toolName;
         };
 
         const toolName = entry.toolCall?.function?.name || "unknown";
@@ -120,7 +116,7 @@ const MemoizedChatEntry = React.memo(
           if (toolCall?.function?.arguments) {
             try {
               const args = JSON.parse(toolCall.function.arguments);
-              if (toolCall.function.name === "search") {
+              if (toolCall.function.name === "universalSearch") {
                 return args.query;
               }
               return args.path || args.file_path || args.command || "";
@@ -179,19 +175,26 @@ const MemoizedChatEntry = React.memo(
             <Box marginLeft={2} flexDirection="column">
               {isExecuting ? (
                 <Text color="cyan">⎿ Executing...</Text>
-              ) : shouldShowFileContent ? (
-                <Box flexDirection="column">
-                  <Text color="gray">⎿ File contents:</Text>
-                  <Box marginLeft={2} flexDirection="column">
-                    {renderFileContent(entry.content || "")}
-                  </Box>
-                </Box>
-              ) : shouldShowDiff ? (
-                // For diff results, show only the summary line, not the raw content
-                <Text color="gray">⎿ {(entry.content || "").split("\n")[0]}</Text>
-              ) : (
-                <Text color="gray">⎿ {formatToolContent(entry.content || "", toolName)}</Text>
-              )}
+              ) : (() => {
+                const content = entry.content || "";
+                const displayOutput = entry.toolResult?.displayOutput;
+
+                // Only show displayOutput if it exists and provides additional value
+                const showDisplayOutput = displayOutput && displayOutput.trim() !== content.trim();
+                const { truncated, hiddenLines } = truncateContent(content);
+
+                return (
+                  <>
+                    {showDisplayOutput && (
+                      <Text color="gray">⎿ {displayOutput}</Text>
+                    )}
+                    <Text color="gray">{showDisplayOutput ? truncated : `⎿ ${truncated}`}</Text>
+                    {hiddenLines > 0 && (
+                      <Text color="gray" dimColor>   … +{hiddenLines} lines (ctrl+o to expand)</Text>
+                    )}
+                  </>
+                );
+              })()}
             </Box>
             {shouldShowDiff && !isExecuting && (
               <Box marginLeft={4} flexDirection="column">

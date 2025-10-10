@@ -11,7 +11,7 @@ export class ZshTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
 
 
-  async execute(command: string, timeout: number = 30000, skipConfirmation: boolean = false): Promise<ToolResult> {
+  async execute(command: string, timeout: number = 90000, skipConfirmation: boolean = false): Promise<ToolResult> {
     try {
       // Refuse cd and ls commands - user should use proper tools
       if (command.trim().startsWith('cd ')) {
@@ -87,10 +87,18 @@ export class ZshTool implements ToolDiscovery {
       });
 
       const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : '');
+      const trimmedOutput = output.trim() || 'Command executed successfully (no output)';
+
+      // Create a brief summary for displayOutput
+      const lines = trimmedOutput.split('\n');
+      const displayOutput = lines.length === 1
+        ? trimmedOutput
+        : `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} of output`;
 
       return {
         success: true,
-        output: output.trim() || 'Command executed successfully (no output)'
+        output: trimmedOutput,
+        displayOutput
       };
     } catch (error: any) {
       // Capture stdout and stderr even from failed commands

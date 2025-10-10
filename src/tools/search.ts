@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
@@ -86,6 +86,7 @@ export class SearchTool implements ToolDiscovery {
         return {
           success: true,
           output: `No results found for "${query}"`,
+          displayOutput: `No results found for "${query}"`,
         };
       }
 
@@ -95,9 +96,24 @@ export class SearchTool implements ToolDiscovery {
         searchType
       );
 
+      // Count unique files for displayOutput
+      const textResults = results.filter((r) => r.type === "text");
+      const fileResults = results.filter((r) => r.type === "file");
+      const allFiles = new Set<string>();
+      textResults.forEach((r) => allFiles.add(r.file));
+      fileResults.forEach((r) => allFiles.add(r.file));
+      const fileCount = allFiles.size;
+      const matchCount = textResults.length;
+
+      let displayOutput = `Found ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+      if (matchCount > 0) {
+        displayOutput += ` (${matchCount} ${matchCount === 1 ? 'match' : 'matches'})`;
+      }
+
       return {
         success: true,
         output: formattedOutput,
+        displayOutput,
       };
     } catch (error: any) {
       return {

@@ -1,4 +1,4 @@
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
 import { ToolResult, EditorCommand } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
@@ -71,6 +71,7 @@ export class TextEditorTool implements ToolDiscovery {
           return {
             success: true,
             output: `Directory contents of ${filePath}:\n${files.join("\n")}`,
+            displayOutput: `Listed directory ${filePath} (${files.length} items)`,
           };
         }
 
@@ -91,12 +92,14 @@ export class TextEditorTool implements ToolDiscovery {
             return {
               success: true,
               output: `Lines ${start}-${end} of ${filePath} (truncated due to ${Math.round(contextPercent)}% context usage):\n${numberedLines}\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens. Use smaller ranges.]`,
+              displayOutput: `Read ${filePath} (lines ${start}-${end}, truncated)`,
             };
           }
 
           return {
             success: true,
             output: `Lines ${start}-${end} of ${filePath}:\n${numberedLines}`,
+            displayOutput: `Read ${filePath} (lines ${start}-${end})`,
           };
         }
 
@@ -224,9 +227,14 @@ export class TextEditorTool implements ToolDiscovery {
       const newLines = newContent.split("\n");
       const diff = this.generateDiff(oldLines, newLines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const changeCount = replaceAll && occurrences > 1 ? occurrences : 1;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Updated ${filename} (${changeCount} ${changeCount === 1 ? 'change' : 'changes'})`,
       };
     } catch (error: any) {
       return {
@@ -290,9 +298,14 @@ export class TextEditorTool implements ToolDiscovery {
       const newLines = content.split("\n");
       const diff = this.generateDiff(oldLines, newLines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const lineCount = newLines.length;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Created ${filename} (${lineCount} ${lineCount === 1 ? 'line' : 'lines'})`,
       };
     } catch (error: any) {
       return {
@@ -380,9 +393,14 @@ export class TextEditorTool implements ToolDiscovery {
       const oldLines = fileContent.split("\n");
       const diff = this.generateDiff(oldLines, lines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const lineRange = startLine === endLine ? `line ${startLine}` : `lines ${startLine}-${endLine}`;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Replaced ${lineRange} in ${filename}`,
       };
     } catch (error: any) {
       return {
@@ -422,9 +440,12 @@ export class TextEditorTool implements ToolDiscovery {
         content,
       });
 
+      const filename = path.basename(filePath);
+
       return {
         success: true,
         output: `Successfully inserted content at line ${insertLine} in ${filePath}`,
+        displayOutput: `Inserted at line ${insertLine} in ${filename}`,
       };
     } catch (error: any) {
       return {
@@ -476,6 +497,7 @@ export class TextEditorTool implements ToolDiscovery {
       return {
         success: true,
         output: `Successfully undid ${lastEdit.command} operation`,
+        displayOutput: `Undid ${lastEdit.command} operation`,
       };
     } catch (error: any) {
       return {
