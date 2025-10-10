@@ -615,6 +615,7 @@ program
       const initialMessage = Array.isArray(message)
         ? message.join(" ")
         : message;
+   // Optimize console output for plain mode to reduce flickering
 
       if (!options.ink) {
         // Plain console mode

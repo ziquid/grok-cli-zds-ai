@@ -1,3 +1,5 @@
+// Optimization to reduce flickering in Ink TUI
+
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
 import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
@@ -124,6 +126,7 @@ function ChatInterfaceWithAgent({
     // This ensures system prompts are preserved when syncing back
     setChatHistory(agent.getChatHistory());
   }, []);
+   // Optimize streaming updates to reduce flickering
 
   // Sync chatHistory back to agent whenever it changes (critical for saving on Ctrl+C)
   useEffect(() => {

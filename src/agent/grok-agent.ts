@@ -217,8 +217,20 @@ Current working directory: ${process.cwd()}`;
     const historyMessages: GrokMessage[] = [];
     let hasSystemMessage = false;
 
-    // Check if we're using OpenAI backend (which has stricter tool message requirements)
-    const isOpenAIModel = this.grokClient.getBaseURL().includes('openai.com') || false;
+    // Track which tool_call_ids we've seen in assistant messages
+    const seenToolCallIds = new Set<string>();
+
+    // First pass: collect all tool_call_ids from assistant messages
+    for (const entry of history) {
+      if (entry.type === "assistant" && entry.tool_calls) {
+        entry.tool_calls.forEach(tc => seenToolCallIds.add(tc.id));
+      }
+    }
+
+    // Second pass: build history messages, only including tool_results that have matching tool_calls
+    // We'll collect them separately and insert them in the correct order
+    const toolResultMessages: GrokMessage[] = [];
+    const toolCallIdToMessage: Map<string, GrokMessage> = new Map();
 
     for (const entry of history) {
       switch (entry.type) {
@@ -244,20 +256,41 @@ Current working directory: ${process.cwd()}`;
             content: entry.content || "", // Ensure content is never null/undefined
           };
           if (entry.tool_calls && entry.tool_calls.length > 0) {
-            assistantMessage.tool_calls = entry.tool_calls;
+            // For assistant messages with tool calls, collect the tool results that correspond to them
+            const correspondingToolResults: GrokMessage[] = [];
+            const toolCallsWithResults: GrokToolCall[] = [];
+
+            entry.tool_calls.forEach(tc => {
+              // Find the tool_result entry for this tool_call
+              const toolResultEntry = history.find(h => h.type === "tool_result" && h.toolCall?.id === tc.id);
+              if (toolResultEntry) {
+                // Only include this tool_call if we have its result
+                toolCallsWithResults.push(tc);
+                correspondingToolResults.push({
+                  role: "tool",
+                  content: toolResultEntry.toolResult?.output || toolResultEntry.toolResult?.error || "",
+                  tool_call_id: tc.id,
+                });
+              }
+            });
+
+            // Only add tool_calls if we have at least one with a result
+            if (toolCallsWithResults.length > 0) {
+              assistantMessage.tool_calls = toolCallsWithResults;
+              // Add assistant message
+              historyMessages.push(assistantMessage);
+              // Add corresponding tool results immediately after
+              historyMessages.push(...correspondingToolResults);
+            } else {
+              // No tool results found, just add the assistant message without tool_calls
+              historyMessages.push(assistantMessage);
+            }
+          } else {
+            historyMessages.push(assistantMessage);
           }
-          historyMessages.push(assistantMessage);
           break;
         case "tool_result":
-          // Only include tool messages if we have the toolCall info and we're not using OpenAI
-          // OpenAI requires tool_calls in assistant messages first, which our context format doesn't guarantee
-          if (entry.toolCall && !isOpenAIModel) {
-            historyMessages.push({
-              role: "tool",
-              content: entry.toolResult?.output || entry.toolResult?.error || "",
-              tool_call_id: entry.toolCall.id,
-            });
-          }
+          // Skip tool_result entries here - they're handled when processing assistant messages with tool_calls
           break;
         // Skip tool_call entries as they are included with assistant
       }
@@ -401,7 +434,25 @@ Current working directory: ${process.cwd()}`;
           });
 
           // Execute tool calls and update the entries
+          let toolIndex = 0;
           for (const toolCall of assistantMessage.tool_calls) {
+            // Check for cancellation before executing each tool
+            if (this.abortController?.signal.aborted) {
+              console.error(`Tool execution cancelled after ${toolIndex}/${assistantMessage.tool_calls.length} tools`);
+
+              // Add dummy responses for remaining uncompleted tools
+              for (let i = toolIndex; i < assistantMessage.tool_calls.length; i++) {
+                const remainingToolCall = assistantMessage.tool_calls[i];
+                this.messages.push({
+                  role: "tool",
+                  content: "[Cancelled by user]",
+                  tool_call_id: remainingToolCall.id,
+                });
+              }
+
+              throw new Error("Operation cancelled by user");
+            }
+
             const result = await this.executeTool(toolCall);
 
             // Update the existing tool_call entry with the result
@@ -441,6 +492,8 @@ Current working directory: ${process.cwd()}`;
               tool_call_id: toolCall.id,
             });
             await this.emitContextChange();
+
+            toolIndex++;
           }
 
           // Get next response - this might contain more tool calls
@@ -717,9 +770,22 @@ Current working directory: ${process.cwd()}`;
           }
 
           // Execute tools
+          let toolIndex = 0;
           for (const toolCall of accumulatedMessage.tool_calls) {
             // Check for cancellation before executing each tool
             if (this.abortController?.signal.aborted) {
+              console.error(`Tool execution cancelled after ${toolIndex}/${accumulatedMessage.tool_calls.length} tools`);
+
+              // Add dummy responses for remaining uncompleted tools
+              for (let i = toolIndex; i < accumulatedMessage.tool_calls.length; i++) {
+                const remainingToolCall = accumulatedMessage.tool_calls[i];
+                this.messages.push({
+                  role: "tool",
+                  content: "[Cancelled by user]",
+                  tool_call_id: remainingToolCall.id,
+                });
+              }
+
               yield {
                 type: "content",
                 content: "\n\n[Operation cancelled by user]",
@@ -744,6 +810,8 @@ Current working directory: ${process.cwd()}`;
                 : result.error || "Error",
               tool_call_id: toolCall.id,
             });
+
+            toolIndex++;
           }
 
           // Update token count after processing all tool calls to include tool results
