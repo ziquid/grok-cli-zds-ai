@@ -290,11 +290,12 @@ function ChatInterfaceWithAgent({
       processingStartTime.current = Date.now();
     }
 
+    // Reduce update frequency to every 2 seconds to minimize re-renders
     const interval = setInterval(() => {
       setProcessingTime(
         Math.floor((Date.now() - processingStartTime.current) / 1000)
       );
-    }, 1000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);

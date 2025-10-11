@@ -6,7 +6,7 @@ interface ActiveTaskStatusProps {
   agent?: GrokAgent;
 }
 
-export function ActiveTaskStatus({ agent }: ActiveTaskStatusProps) {
+export const ActiveTaskStatus = React.memo(({ agent }: ActiveTaskStatusProps) => {
   const [activeTask, setActiveTask] = useState<string>("");
   const [action, setAction] = useState<string>("");
   const [color, setColor] = useState<string>("white");
@@ -52,4 +52,4 @@ export function ActiveTaskStatus({ agent }: ActiveTaskStatusProps) {
       </Text>
     </Box>
   );
-}
+});

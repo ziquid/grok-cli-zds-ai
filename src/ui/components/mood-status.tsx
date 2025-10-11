@@ -6,7 +6,7 @@ interface MoodStatusProps {
   agent?: GrokAgent;
 }
 
-export function MoodStatus({ agent }: MoodStatusProps) {
+export const MoodStatus = React.memo(({ agent }: MoodStatusProps) => {
   const [mood, setMood] = useState<string>("");
   const [color, setColor] = useState<string>("white");
 
@@ -46,4 +46,4 @@ export function MoodStatus({ agent }: MoodStatusProps) {
       </Text>
     </Box>
   );
-}
+});

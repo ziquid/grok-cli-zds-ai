@@ -6,7 +6,7 @@ interface ContextStatusProps {
   agent?: GrokAgent;
 }
 
-export function ContextStatus({ agent }: ContextStatusProps) {
+export const ContextStatus = React.memo(({ agent }: ContextStatusProps) => {
   const [contextUsage, setContextUsage] = useState<number>(0);
 
   useEffect(() => {
@@ -47,4 +47,4 @@ export function ContextStatus({ agent }: ContextStatusProps) {
       </Text>
     </Box>
   );
-}
+});

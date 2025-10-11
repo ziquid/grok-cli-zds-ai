@@ -8,12 +8,12 @@ interface ChatInputProps {
   isStreaming: boolean;
 }
 
-export function ChatInput({
+export const ChatInput = React.memo(({
   input,
   cursorPosition,
   isProcessing,
   isStreaming,
-}: ChatInputProps) {
+}: ChatInputProps) => {
   const beforeCursor = input.slice(0, cursorPosition);
   const afterCursor = input.slice(cursorPosition);
 
@@ -114,4 +114,4 @@ export function ChatInput({
       </Box>
     </Box>
   );
-}
+});

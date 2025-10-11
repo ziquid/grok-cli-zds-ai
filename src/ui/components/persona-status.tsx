@@ -6,7 +6,7 @@ interface PersonaStatusProps {
   agent?: GrokAgent;
 }
 
-export function PersonaStatus({ agent }: PersonaStatusProps) {
+export const PersonaStatus = React.memo(({ agent }: PersonaStatusProps) => {
   const [persona, setPersona] = useState<string>("");
   const [color, setColor] = useState<string>("white");
 
@@ -46,4 +46,4 @@ export function PersonaStatus({ agent }: PersonaStatusProps) {
       </Text>
     </Box>
   );
-}
+});

@@ -25,11 +25,11 @@ const loadingTexts = [
   "Downloading...",
 ];
 
-export function LoadingSpinner({
+export const LoadingSpinner = React.memo(({
   isActive,
   processingTime,
   tokenCount,
-}: LoadingSpinnerProps) {
+}: LoadingSpinnerProps) => {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
 
@@ -37,10 +37,10 @@ export function LoadingSpinner({
     if (!isActive) return;
 
     const spinnerFrames = ["/", "-", "\\", "|"];
-    // Reduced frequency: 500ms instead of 250ms to reduce flickering on Windows
+    // Reduced frequency: 1000ms to reduce flickering
     const interval = setInterval(() => {
       setSpinnerFrame((prev) => (prev + 1) % spinnerFrames.length);
-    }, 500);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [isActive]);
@@ -50,10 +50,10 @@ export function LoadingSpinner({
 
     setLoadingTextIndex(Math.floor(Math.random() * loadingTexts.length));
 
-    // Increased interval: 4s instead of 2s to reduce state changes
+    // Increased interval: 5s instead of 4s to reduce state changes
     const interval = setInterval(() => {
       setLoadingTextIndex(Math.floor(Math.random() * loadingTexts.length));
-    }, 4000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [isActive]);
@@ -73,4 +73,4 @@ export function LoadingSpinner({
       </Text>
     </Box>
   );
-}
+});
