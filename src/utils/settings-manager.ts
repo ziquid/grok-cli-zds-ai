@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { BACKEND_CONFIGS } from "./backend-config.js";
 
 /**
  * User-level settings stored in ~/.grok/user-settings.json
@@ -28,11 +29,11 @@ export interface ProjectSettings {
 }
 
 /**
- * Default values for user settings
+ * Default values for user settings (uses centralized backend config)
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
-  baseURL: "https://api.x.ai/v1",
-  defaultModel: "grok-code-fast-1",
+  baseURL: BACKEND_CONFIGS.grok.baseURL,
+  defaultModel: BACKEND_CONFIGS.grok.defaultModel,
   models: [
     "grok-code-fast-1",
     "grok-4-latest",
@@ -43,10 +44,10 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
 };
 
 /**
- * Default values for project settings
+ * Default values for project settings (uses centralized backend config)
  */
 const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
-  model: "grok-code-fast-1",
+  model: BACKEND_CONFIGS.grok.defaultModel,
 };
 
 /**
@@ -345,7 +346,7 @@ export class SettingsManager {
     // Then check user settings
     const userBaseURL = this.getUserSetting("baseURL");
     return (
-      userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1"
+      userBaseURL || DEFAULT_USER_SETTINGS.baseURL || BACKEND_CONFIGS.grok.baseURL
     );
   }
 }

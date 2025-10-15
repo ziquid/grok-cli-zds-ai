@@ -12,6 +12,11 @@ import { getSettingsManager } from "./utils/settings-manager.js";
 import { ConfirmationService } from "./utils/confirmation-service.js";
 import { ChatHistoryManager } from "./utils/chat-history-manager.js";
 import { createMCPCommand } from "./commands/mcp.js";
+import { getAuthConfig, validateApiKey } from "./utils/auth-helper.js";
+import {
+  getBackendBaseURL,
+  getAllBackendNames,
+} from "./utils/backend-config.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables
@@ -106,18 +111,6 @@ function ensureUserSettingsDirectory(): void {
   }
 }
 
-// Load API key from user settings if not in environment
-function loadApiKey(): string | undefined {
-  const manager = getSettingsManager();
-  return manager.getApiKey();
-}
-
-// Load base URL from user settings if not in environment
-function loadBaseURL(): string {
-  const manager = getSettingsManager();
-  return manager.getBaseURL();
-}
-
 // Save command line API key to user settings file (baseURL is not saved - it's for override only)
 async function saveCommandLineSettings(
   apiKey?: string
@@ -136,24 +129,6 @@ async function saveCommandLineSettings(
       error instanceof Error ? error.message : "Unknown error"
     );
   }
-}
-
-// Load model from user settings if not in environment
-function loadModel(): string | undefined {
-  // First check environment variables
-  let model = process.env.GROK_MODEL;
-
-  if (!model) {
-    // Use the unified model loading from settings manager
-    try {
-      const manager = getSettingsManager();
-      model = manager.getCurrentModel();
-    } catch (error) {
-      // Ignore errors, model will remain undefined
-    }
-  }
-
-  return model;
 }
 
 // Show all available tools (internal and MCP)
@@ -420,17 +395,6 @@ async function processPromptHeadless(
   }
 }
 
-// Backend service to base URL mapping
-const BACKEND_URLS: Record<string, string> = {
-  grok: "https://api.x.ai/v1",
-  openai: "https://api.openai.com/v1",
-  claude: "https://api.anthropic.com/v1",
-  openrouter: "https://openrouter.ai/api/v1",
-  ollama: "http://localhost:11434/v1",
-  "ollama-local": "http://localhost:11434/v1",
-  "ollama-remote": "http://ollama:11434/v1",
-};
-
 program
   .name("grok")
   .description(
@@ -441,7 +405,7 @@ program
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
     "-b, --backend <service>",
-    "Backend service (grok, openai, claude, openrouter, ollama, ollama-local, ollama-remote)"
+    `Backend service (${getAllBackendNames().join(", ")})`
   )
   .option(
     "-u, --base-url <url>",
@@ -519,40 +483,29 @@ program
     }
 
     try {
-      // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
+      // Get authentication and backend configuration
+      const authConfig = getAuthConfig({
+        apiKey: options.apiKey,
+        baseURL: options.backend ? getBackendBaseURL(options.backend.toLowerCase()) : options.baseUrl,
+        model: options.model,
+      });
 
-      // Determine base URL: --base-url (explicit) > --backend (service) > settings
-      let baseURL: string | undefined;
-
-      // First check for explicit base URL (highest priority)
-      if (options.baseUrl) {
-        baseURL = options.baseUrl;
-      }
-      // Then check for backend service
-      else if (options.backend) {
-        baseURL = BACKEND_URLS[options.backend.toLowerCase()];
-        if (!baseURL) {
-          console.error(
-            `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${Object.keys(BACKEND_URLS).join(', ')}`
-          );
-          process.exit(1);
-        }
-      }
-      // Finally fall back to settings
-      else {
-        baseURL = loadBaseURL();
-      }
-
-      const model = options.model || loadModel();
+      const { apiKey, baseURL, model } = authConfig;
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
-      // Debug log will be passed to MCP servers during initialization
-
-      if (!apiKey) {
+      // Validate backend service if provided
+      if (options.backend && !getBackendBaseURL(options.backend.toLowerCase())) {
         console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
+          `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${getAllBackendNames().join(", ")}`
         );
+        process.exit(1);
+      }
+
+      // Validate API key
+      try {
+        validateApiKey(apiKey);
+      } catch (error: any) {
+        console.error(`❌ Error: ${error.message}`);
         process.exit(1);
       }
 
@@ -800,7 +753,7 @@ gitCommand
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
     "-b, --backend <service>",
-    "Backend service (grok, openai, claude, openrouter, ollama, ollama-local, ollama-remote)"
+    `Backend service (${getAllBackendNames().join(", ")})`
   )
   .option(
     "-u, --base-url <url>",
@@ -833,40 +786,29 @@ gitCommand
     }
 
     try {
-      // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
+      // Get authentication and backend configuration
+      const authConfig = getAuthConfig({
+        apiKey: options.apiKey,
+        baseURL: options.backend ? getBackendBaseURL(options.backend.toLowerCase()) : options.baseUrl,
+        model: options.model,
+      });
 
-      // Determine base URL: --base-url (explicit) > --backend (service) > settings
-      let baseURL: string | undefined;
-
-      // First check for explicit base URL (highest priority)
-      if (options.baseUrl) {
-        baseURL = options.baseUrl;
-      }
-      // Then check for backend service
-      else if (options.backend) {
-        baseURL = BACKEND_URLS[options.backend.toLowerCase()];
-        if (!baseURL) {
-          console.error(
-            `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${Object.keys(BACKEND_URLS).join(', ')}`
-          );
-          process.exit(1);
-        }
-      }
-      // Finally fall back to settings
-      else {
-        baseURL = loadBaseURL();
-      }
-
-      const model = options.model || loadModel();
+      const { apiKey, baseURL, model } = authConfig;
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
-      // Debug log will be passed to MCP servers during initialization
-
-      if (!apiKey) {
+      // Validate backend service if provided
+      if (options.backend && !getBackendBaseURL(options.backend.toLowerCase())) {
         console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
+          `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${getAllBackendNames().join(", ")}`
         );
+        process.exit(1);
+      }
+
+      // Validate API key
+      try {
+        validateApiKey(apiKey);
+      } catch (error: any) {
+        console.error(`❌ Error: ${error.message}`);
         process.exit(1);
       }
 

@@ -27,6 +27,7 @@ import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { executeHook } from "../utils/hook-executor.js";
+import { detectBackendFromURL, isOllamaCloudModel } from "../utils/backend-config.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
@@ -1452,31 +1453,18 @@ Current working directory: ${process.cwd()}`;
   }
 
   getBackend(): string {
-    const baseURL = this.grokClient.getBaseURL().toLowerCase();
-    const model = this.grokClient.getCurrentModel().toLowerCase();
+    const baseURL = this.grokClient.getBaseURL();
+    const model = this.grokClient.getCurrentModel();
 
-    // Check for known backends
-    if (baseURL.includes('x.ai')) return 'grok';
-    if (baseURL.includes('openai.com')) return 'openai';
-    if (baseURL.includes('anthropic.com')) return 'claude';
-    if (baseURL.includes('openrouter.ai')) return 'openrouter';
+    // Use centralized backend detection
+    const detected = detectBackendFromURL(baseURL);
 
-    // Check for Ollama (local or remote)
-    if (baseURL.includes('localhost:11434') || baseURL.includes('127.0.0.1:11434') || baseURL.includes(':11434')) {
-      // Detect if it's an Ollama cloud model (has -cloud suffix)
-      if (model.includes('-cloud')) {
-        return 'ollama-cloud';
-      }
-      return 'ollama';
+    // Special case: Ollama cloud models
+    if (detected.serviceName === 'ollama' && isOllamaCloudModel(model)) {
+      return 'ollama-cloud';
     }
 
-    // For custom URLs, extract hostname
-    try {
-      const url = new URL(baseURL);
-      return url.hostname;
-    } catch {
-      return 'custom';
-    }
+    return detected.serviceName;
   }
 
   abortCurrentOperation(): void {

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import fs from "fs";
+import { detectBackendFromURL, getBackendDisplayNameWithModel } from "../utils/backend-config.js";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
@@ -65,38 +66,24 @@ export class GrokClient {
       this.currentModel = model;
     }
 
-    // Determine backend name from URL
-    this.backendName = this.detectBackendName(finalBaseURL);
-    // Update to 'Ollama Cloud' if using a cloud model
-    this.updateBackendForCloudModel();
+    // Detect backend from URL using centralized config
+    const detected = detectBackendFromURL(finalBaseURL);
+    this.backendName = detected.displayName;
+
+    // Update display name for Ollama Cloud models
+    this.updateBackendDisplayName();
   }
 
-  private detectBackendName(baseURL: string): string {
-    const url = baseURL.toLowerCase();
-    if (url.includes('x.ai')) return 'Grok';
-    if (url.includes('openai.com')) return 'OpenAI';
-    if (url.includes('anthropic.com')) return 'Claude';
-    if (url.includes('openrouter.ai')) return 'OpenRouter';
-    if (url.includes('localhost:11434') || url.includes('127.0.0.1:11434') || url.includes(':11434')) {
-      // Will be updated to 'Ollama Cloud' if using cloud model
-      return 'Ollama';
-    }
-    return 'API';
-  }
-
-  private updateBackendForCloudModel(): void {
-    // Check if current model is an Ollama cloud model (has -cloud suffix)
-    const model = this.currentModel.toLowerCase();
-
-    if (this.backendName === 'Ollama' && model.includes('-cloud')) {
-      this.backendName = 'Ollama Cloud';
-    }
+  private updateBackendDisplayName(): void {
+    // Update display name based on current model (handles Ollama Cloud)
+    const detected = detectBackendFromURL(this.client.baseURL || "https://api.x.ai/v1");
+    this.backendName = getBackendDisplayNameWithModel(detected.serviceName, this.currentModel);
   }
 
   setModel(model: string): void {
     this.currentModel = model;
-    // Update backend name if switching to/from cloud model
-    this.updateBackendForCloudModel();
+    // Update display name if model changed
+    this.updateBackendDisplayName();
   }
 
   getCurrentModel(): string {
