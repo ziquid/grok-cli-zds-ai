@@ -61,6 +61,7 @@ export function useInputHandler({
   });
 
   const lastEscapeTime = useRef(0);
+  const wasCancelled = useRef(false);
 
   const handleEscape = () => {
     const now = Date.now();
@@ -85,6 +86,7 @@ export function useInputHandler({
       return;
     }
     if (isProcessing || isStreaming) {
+      wasCancelled.current = true;
       agent.abortCurrentOperation();
       setIsProcessing(false);
       setIsStreaming(false);
@@ -196,6 +198,7 @@ export function useInputHandler({
     }
 
     if (userInput.trim()) {
+      wasCancelled.current = false;
       const directCommandResult = await handleDirectCommand(userInput);
       if (!directCommandResult) {
         await processUserMessage(userInput);
@@ -268,20 +271,33 @@ export function useInputHandler({
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
 
+    // Handle !<command> - execute but don't return true so AI can process the output
     if (trimmedInput.startsWith("!")) {
       const command = trimmedInput.substring(1).trim();
       if (command) {
-        const result = await agent.executeCommand(command);
-        const resultEntry: ChatEntry = {
-          type: "assistant",
+        // Execute the command and add result to chat history
+        const result = await agent.executeCommand(command, true); // skip confirmation
+
+        const commandEntry: ChatEntry = {
+          type: "tool_result",
           content: result.success
-            ? result.output || "Command executed successfully"
-            : `Error: ${result.error}`,
+            ? result.output || "Command completed"
+            : result.error || "Command failed",
           timestamp: new Date(),
+          toolCall: {
+            id: `user_execute_${Date.now()}`,
+            type: "function",
+            function: {
+              name: "execute",
+              arguments: JSON.stringify({ command: command }),
+            },
+          },
+          toolResult: result,
         };
-        setChatHistory((prev) => [...prev, resultEntry]);
-        clearInput();
-        return true;
+        setChatHistory((prev) => [...prev, commandEntry]);
+
+        // Don't return true - let it fall through to processUserMessage
+        return false;
       }
       return false; // Empty command after !
     }
@@ -696,108 +712,6 @@ Respond with ONLY the commit message, no additional text.`;
       return true;
     }
 
-    const directBashCommands = [
-      "ls",
-      "pwd",
-      "cd",
-      "cat",
-      "mkdir",
-      "touch",
-      "echo",
-      "grep",
-      "find",
-      "cp",
-      "mv",
-      "rm",
-    ];
-    const firstWord = trimmedInput.split(" ")[0];
-
-    if (directBashCommands.includes(firstWord)) {
-      const userEntry: ChatEntry = {
-        type: "user",
-        content: trimmedInput,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, userEntry]);
-
-      try {
-        const result = await agent.executeCommand(trimmedInput);
-
-        const commandEntry: ChatEntry = {
-          type: "tool_result",
-          content: result.success
-            ? result.output || "Command completed"
-            : result.error || "Command failed",
-          timestamp: new Date(),
-          toolCall: {
-            id: `bash_${Date.now()}`,
-            type: "function",
-            function: {
-              name: "bash",
-              arguments: JSON.stringify({ command: trimmedInput }),
-            },
-          },
-          toolResult: result,
-        };
-        setChatHistory((prev) => [...prev, commandEntry]);
-      } catch (error: any) {
-        const errorEntry: ChatEntry = {
-          type: "assistant",
-          content: `Error executing command: ${error.message}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, errorEntry]);
-      }
-
-      clearInput();
-      return true;
-    }
-
-    // Handle direct bash commands with ! prefix (no confirmation required)
-    if (trimmedInput.startsWith("!")) {
-      const command = trimmedInput.substring(1).trim();
-      if (command) {
-        const userEntry: ChatEntry = {
-          type: "user",
-          content: trimmedInput,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, userEntry]);
-
-        try {
-          const result = await agent.executeCommand(command, true); // skip confirmation
-
-          const commandEntry: ChatEntry = {
-            type: "tool_result",
-            content: result.success
-              ? result.output || "Command completed"
-              : result.error || "Command failed",
-            timestamp: new Date(),
-            toolCall: {
-              id: `bang_command_${Date.now()}`,
-              type: "function",
-              function: {
-                name: "bash",
-                arguments: JSON.stringify({ command: command }),
-              },
-            },
-            toolResult: result,
-          };
-          setChatHistory((prev) => [...prev, commandEntry]);
-        } catch (error: any) {
-          const errorEntry: ChatEntry = {
-            type: "assistant",
-            content: `Error executing command: ${error.message}`,
-            timestamp: new Date(),
-          };
-          setChatHistory((prev) => [...prev, errorEntry]);
-        }
-
-        clearInput();
-        return true;
-      }
-    }
-
     return false;
   };
 
@@ -817,6 +731,13 @@ Respond with ONLY the commit message, no additional text.`;
       let streamingEntry: ChatEntry | null = null;
 
       for await (const chunk of agent.processUserMessageStream(userInput)) {
+        // Check if user cancelled - stop immediately
+        if (wasCancelled.current) {
+          setIsProcessing(false);
+          setIsStreaming(false);
+          return;
+        }
+
         switch (chunk.type) {
           case "content":
             if (chunk.content) {

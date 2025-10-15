@@ -601,6 +601,84 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generateImage",
+      description: "Generate an image using AI image generation",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description: "Text description of the image to generate",
+          },
+          negativePrompt: {
+            type: "string",
+            description: "Text description of what to avoid in the image (optional)",
+          },
+          width: {
+            type: "number",
+            description: "Image width in pixels (default: 480)",
+          },
+          height: {
+            type: "number",
+            description: "Image height in pixels (default: 720)",
+          },
+          model: {
+            type: "string",
+            description: "Model checkpoint to use for generation (default: 'cyberrealisticPony_v130')",
+          },
+          sampler: {
+            type: "string",
+            description: "Sampling method (default: 'DPM++ 2M Karras')",
+          },
+          configScale: {
+            type: "number",
+            description: "Guidance scale - how closely to follow the prompt (default: 5.0)",
+          },
+          numSteps: {
+            type: "number",
+            description: "Number of inference steps (default: 30)",
+          },
+          nsfw: {
+            type: "boolean",
+            description: "Allow NSFW content by disabling safety checker (default: false)",
+          },
+          name: {
+            type: "string",
+            description: "Optional slug to include in the filename (e.g., 'portrait' becomes 'portrait-2025-10-12T14-30-45.png')",
+          },
+          move: {
+            type: "boolean",
+            description: "Move the generated image to ZAI folder (default: false)",
+          },
+        },
+        required: ["prompt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "captionImage",
+      description: "Generate a caption for an image",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Path to the image file to caption",
+          },
+          prompt: {
+            type: "string",
+            description: "Optional prompt to guide the captioning process",
+          },
+        },
+        required: ["path"],
+      },
+    },
+  },
 ];
 
 // Morph Fast Apply tool (conditional)
