@@ -813,6 +813,7 @@ Respond with ONLY the commit message, no additional text.`;
                     return {
                       ...entry,
                       type: "tool_result",
+                      toolCall: chunk.toolCall, // Use the new toolCall from chunk with complete arguments
                       content: chunk.toolResult.success
                         ? chunk.toolResult.output || "Success"
                         : chunk.toolResult.error || "Error occurred",

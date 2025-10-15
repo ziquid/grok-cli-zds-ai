@@ -590,12 +590,12 @@ Current working directory: ${process.cwd()}`;
           }
         } else if (typeof acc[key] === "string" && typeof value === "string") {
           // Don't concatenate certain properties that should remain separate
-          const nonConcatenableProps = ['id', 'type', 'name', 'arguments'];
+          const nonConcatenableProps = ['id', 'type', 'name'];
           if (nonConcatenableProps.includes(key)) {
             // For non-concatenable properties, keep the new value
             acc[key] = value;
           } else {
-            // For content and other text properties, concatenate
+            // For content, arguments, and other text properties, concatenate
             (acc[key] as string) += value;
           }
         } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
@@ -888,6 +888,14 @@ Current working directory: ${process.cwd()}`;
 
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
     try {
+      // Validate arguments field before parsing
+      if (!toolCall.function.arguments || toolCall.function.arguments.trim() === "") {
+        return {
+          success: false,
+          error: `Tool ${toolCall.function.name} has empty or missing arguments field`,
+        };
+      }
+
       const args = JSON.parse(toolCall.function.arguments);
 
       // Check tool approval hook if configured
