@@ -420,18 +420,32 @@ async function processPromptHeadless(
   }
 }
 
+// Backend service to base URL mapping
+const BACKEND_URLS: Record<string, string> = {
+  grok: "https://api.x.ai/v1",
+  openai: "https://api.openai.com/v1",
+  claude: "https://api.anthropic.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  ollama: "http://localhost:11434/v1",
+  "ollama-local": "http://localhost:11434/v1",
+  "ollama-remote": "http://ollama:11434/v1",
+};
+
 program
   .name("grok")
   .description(
     "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
   .version("1.0.1")
-  .argument("[message...]", "Initial message to send to Grok")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
+    "-b, --backend <service>",
+    "Backend service (grok, openai, claude, openrouter, ollama, ollama-local, ollama-remote)"
+  )
+  .option(
     "-u, --base-url <url>",
-    "Grok API base URL (or set GROK_BASE_URL env var)"
+    "API base URL (overrides --backend, or set GROK_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
@@ -478,6 +492,7 @@ program
     "--show-context-stats",
     "display token usage stats for the specified context file and exit"
   )
+  .argument("[message...]", "Initial message to send to Grok")
   .action(async (message, options) => {
     if (options.directory) {
       try {
@@ -506,7 +521,29 @@ program
     try {
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
-      const baseURL = options.baseUrl || loadBaseURL();
+
+      // Determine base URL: --base-url (explicit) > --backend (service) > settings
+      let baseURL: string | undefined;
+
+      // First check for explicit base URL (highest priority)
+      if (options.baseUrl) {
+        baseURL = options.baseUrl;
+      }
+      // Then check for backend service
+      else if (options.backend) {
+        baseURL = BACKEND_URLS[options.backend.toLowerCase()];
+        if (!baseURL) {
+          console.error(
+            `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${Object.keys(BACKEND_URLS).join(', ')}`
+          );
+          process.exit(1);
+        }
+      }
+      // Finally fall back to settings
+      else {
+        baseURL = loadBaseURL();
+      }
+
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
@@ -762,8 +799,12 @@ gitCommand
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
+    "-b, --backend <service>",
+    "Backend service (grok, openai, claude, openrouter, ollama, ollama-local, ollama-remote)"
+  )
+  .option(
     "-u, --base-url <url>",
-    "Grok API base URL (or set GROK_BASE_URL env var)"
+    "API base URL (overrides --backend, or set GROK_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
@@ -794,7 +835,29 @@ gitCommand
     try {
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
-      const baseURL = options.baseUrl || loadBaseURL();
+
+      // Determine base URL: --base-url (explicit) > --backend (service) > settings
+      let baseURL: string | undefined;
+
+      // First check for explicit base URL (highest priority)
+      if (options.baseUrl) {
+        baseURL = options.baseUrl;
+      }
+      // Then check for backend service
+      else if (options.backend) {
+        baseURL = BACKEND_URLS[options.backend.toLowerCase()];
+        if (!baseURL) {
+          console.error(
+            `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${Object.keys(BACKEND_URLS).join(', ')}`
+          );
+          process.exit(1);
+        }
+      }
+      // Finally fall back to settings
+      else {
+        baseURL = loadBaseURL();
+      }
+
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 

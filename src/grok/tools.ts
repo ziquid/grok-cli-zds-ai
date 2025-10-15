@@ -8,13 +8,13 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "viewFile",
-      description: "View contents of a file or list directory contents",
+      description: "View contents of a file",
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
-            description: "Path to file or directory to view",
+            description: "Path to the file to view",
           },
           start_line: {
             type: "number",
@@ -26,7 +26,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Ending line number for partial file view (optional)",
           },
         },
-        required: ["path"],
+        required: ["filename"],
       },
     },
   },
@@ -38,16 +38,16 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
-            description: "Path where the file should be created",
+            description: "Path to the file to create",
           },
           content: {
             type: "string",
             description: "Content to write to the file",
           },
         },
-        required: ["path", "content"],
+        required: ["filename", "content"],
       },
     },
   },
@@ -59,7 +59,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
             description: "Path to the file to edit",
           },
@@ -78,7 +78,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
               "Replace all occurrences (default: false, only replaces first occurrence)",
           },
         },
-        required: ["path", "old_str", "new_str"],
+        required: ["filename", "old_str", "new_str"],
       },
     },
   },
@@ -108,9 +108,9 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          directory: {
+          dirname: {
             type: "string",
-            description: "Directory to list files from (default: current directory)",
+            description: "Path to the directory to list (default: current directory)",
           },
         },
         required: [],
@@ -485,7 +485,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
             description: "Path to the file to edit",
           },
@@ -498,7 +498,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Text to insert",
           },
         },
-        required: ["path", "insert_line", "new_str"],
+        required: ["filename", "insert_line", "new_str"],
       },
     },
   },
@@ -510,7 +510,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
             description: "Path to the file to edit",
           },
@@ -527,7 +527,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Replacement text",
           },
         },
-        required: ["path", "start_line", "end_line", "new_str"],
+        required: ["filename", "start_line", "end_line", "new_str"],
       },
     },
   },
@@ -563,12 +563,12 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          directory: {
+          dirname: {
             type: "string",
-            description: "Directory path to change to",
+            description: "Path to the directory to change to",
           },
         },
-        required: ["directory"],
+        required: ["dirname"],
       },
     },
   },
@@ -666,7 +666,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
             description: "Path to the image file to caption",
           },
@@ -675,7 +675,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Optional prompt to guide the captioning process",
           },
         },
-        required: ["path"],
+        required: ["filename"],
       },
     },
   },
@@ -690,9 +690,9 @@ const MORPH_EDIT_TOOL: GrokTool = {
     parameters: {
       type: "object",
       properties: {
-        target_file: {
+        filename: {
           type: "string",
-          description: "The target file to modify."
+          description: "Path to the file to modify"
         },
         instructions: {
           type: "string",
@@ -703,7 +703,7 @@ const MORPH_EDIT_TOOL: GrokTool = {
           description: "Specify ONLY the precise lines of code that you wish to edit. NEVER specify or write out unchanged code. Instead, represent all unchanged code using the comment of the language you're editing in - example: // ... existing code ..."
         }
       },
-      required: ["target_file", "instructions", "code_edit"]
+      required: ["filename", "instructions", "code_edit"]
     }
   }
 };

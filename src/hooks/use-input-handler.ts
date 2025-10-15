@@ -814,7 +814,7 @@ Respond with ONLY the commit message, no additional text.`;
                       ...entry,
                       type: "tool_result",
                       content: chunk.toolResult.success
-                        ? `displayOutput: ${chunk.toolResult.displayOutput || "No displayOutput"}\n\n${chunk.toolResult.output || "No output" || "Success"}`
+                        ? chunk.toolResult.output || "Success"
                         : chunk.toolResult.error || "Error occurred",
                       toolResult: chunk.toolResult,
                     };

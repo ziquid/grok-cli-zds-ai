@@ -14,6 +14,7 @@ import { ContextStatus } from "./context-status.js";
 import { PersonaStatus } from "./persona-status.js";
 import { MoodStatus } from "./mood-status.js";
 import { ActiveTaskStatus } from "./active-task-status.js";
+import { BackendStatus } from "./backend-status.js";
 import ConfirmationDialog from "./confirmation-dialog.js";
 import {
   ConfirmationService,
@@ -223,7 +224,7 @@ function ChatInterfaceWithAgent({
                           ...entry,
                           type: "tool_result",
                           content: chunk.toolResult.success
-                            ? `displayOutput: ${chunk.toolResult.displayOutput || "No displayOutput"}\n\n${chunk.toolResult.output || "No output" || "Success"}`
+                            ? chunk.toolResult.output || "Success"
                             : chunk.toolResult.error || "Error occurred",
                           toolResult: chunk.toolResult,
                         };
@@ -406,9 +407,7 @@ function ChatInterfaceWithAgent({
                 (shift + tab)
               </Text>
             </Box>
-            <Box marginRight={2}>
-              <Text color="yellow">≋ {agent.getCurrentModel().slice(0, 20)}{agent.getCurrentModel().length > 20 ? '…' : ''}</Text>
-            </Box>
+            <BackendStatus agent={agent} />
             <MCPStatus />
             <ContextStatus agent={agent} />
             <PersonaStatus agent={agent} />

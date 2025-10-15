@@ -18,7 +18,8 @@ import {
   ClearCacheTool,
   CharacterTool,
   TaskTool,
-  InternetTool
+  InternetTool,
+  ImageTool
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
@@ -59,6 +60,7 @@ export class GrokAgent extends EventEmitter {
   private characterTool: CharacterTool;
   private taskTool: TaskTool;
   private internetTool: InternetTool;
+  private imageTool: ImageTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -101,12 +103,14 @@ export class GrokAgent extends EventEmitter {
     this.characterTool = new CharacterTool();
     this.taskTool = new TaskTool();
     this.internetTool = new InternetTool();
+    this.imageTool = new ImageTool();
     this.textEditor.setAgent(this); // Give text editor access to agent for context awareness
     this.introspect.setAgent(this); // Give introspect access to agent for tool class info
     this.clearCacheTool.setAgent(this); // Give clearCache access to agent
     this.characterTool.setAgent(this); // Give character tool access to agent
     this.taskTool.setAgent(this); // Give task tool access to agent
     this.internetTool.setAgent(this); // Give internet tool access to agent
+    this.imageTool.setAgent(this); // Give image tool access to agent
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured
@@ -162,41 +166,7 @@ export class GrokAgent extends EventEmitter {
 ${startupHookSection}
 ${customInstructionsSection}
 
-IMPORTANT: You are NOT in a sandbox! You have full access to real tools that execute directly on the user's actual machine.
-You can read, write, and modify real files, execute real commands, and make actual changes to the system.
-All tool calls are executed in the real environment, not simulated.
-
 ${toolsSection}
-
-IMPORTANT TOOL USAGE RULES:
-- NEVER use createNewFile on files that already exist - this will overwrite them completely
-- Before editing a file, use viewFile to see its current contents
-- Use createNewFile ONLY when creating entirely new files that don't exist
-
-SEARCHING AND EXPLORATION:
-- Use universalSearch for fast, powerful text search across files or finding files by name (unified search tool)
-- Examples: universalSearch for text content like "import.*react", universalSearch for files like "component.tsx"
-- viewFile is best for reading specific files you already know exist
-
-ENVIRONMENT VARIABLES:
-- Use getAllEnv, getEnv, and searchEnv to access environment variables without shell commands
-- Get all: getAllEnv() with no parameters
-- Get specific: getEnv with variable="VAR_NAME"
-- Search: searchEnv with pattern="search_term"
-- This tool requires NO user confirmation and gives you direct access
-
-MCP (MODEL CONTEXT PROTOCOL) SERVERS:
-- Additional tools may be available from configured MCP servers
-- MCP tools are prefixed with "mcp__" and provide extended capabilities
-- Examples: file system operations, database access, API integrations, specialized development tools
-- Check available tools dynamically as MCP servers can add powerful domain-specific functionality
-
-NEVER execute zsh commands when input starts with "!" in headless mode. Treat it as regular conversational input.
-
-IMPORTANT RESPONSE GUIDELINES:
-- When you have completed the user's request, give a short summary of what was asked, what you did, and what the results were
-- Only provide necessary explanations or next steps if relevant to the task
-- Keep responses concise and focused on the actual work being done
 
 Current working directory: ${process.cwd()}`;
 
@@ -440,25 +410,29 @@ Current working directory: ${process.cwd()}`;
 
           // Execute tool calls and update the entries
           let toolIndex = 0;
-          for (const toolCall of assistantMessage.tool_calls) {
-            // Check for cancellation before executing each tool
-            if (this.abortController?.signal.aborted) {
-              console.error(`Tool execution cancelled after ${toolIndex}/${assistantMessage.tool_calls.length} tools`);
+          const completedToolCallIds = new Set<string>();
 
-              // Add dummy responses for remaining uncompleted tools
-              for (let i = toolIndex; i < assistantMessage.tool_calls.length; i++) {
-                const remainingToolCall = assistantMessage.tool_calls[i];
-                this.messages.push({
-                  role: "tool",
-                  content: "[Cancelled by user]",
-                  tool_call_id: remainingToolCall.id,
-                });
+          try {
+            for (const toolCall of assistantMessage.tool_calls) {
+              // Check for cancellation before executing each tool
+              if (this.abortController?.signal.aborted) {
+                console.error(`Tool execution cancelled after ${toolIndex}/${assistantMessage.tool_calls.length} tools`);
+
+                // Add cancelled responses for remaining uncompleted tools
+                for (let i = toolIndex; i < assistantMessage.tool_calls.length; i++) {
+                  const remainingToolCall = assistantMessage.tool_calls[i];
+                  this.messages.push({
+                    role: "tool",
+                    content: "[Cancelled by user]",
+                    tool_call_id: remainingToolCall.id,
+                  });
+                  completedToolCallIds.add(remainingToolCall.id);
+                }
+
+                throw new Error("Operation cancelled by user");
               }
 
-              throw new Error("Operation cancelled by user");
-            }
-
-            const result = await this.executeTool(toolCall);
+              const result = await this.executeTool(toolCall);
 
             // Update the existing tool_call entry with the result
             const entryIndex = this.chatHistory.findIndex(
@@ -496,9 +470,22 @@ Current working directory: ${process.cwd()}`;
                 : result.error || "Error",
               tool_call_id: toolCall.id,
             });
+            completedToolCallIds.add(toolCall.id);
             await this.emitContextChange();
 
             toolIndex++;
+          }
+          } finally {
+            // Ensure ALL tool calls in this.messages have results, even if we crashed/errored
+            for (const toolCall of assistantMessage.tool_calls) {
+              if (!completedToolCallIds.has(toolCall.id)) {
+                this.messages.push({
+                  role: "tool",
+                  content: "[Error: Tool execution interrupted]",
+                  tool_call_id: toolCall.id,
+                });
+              }
+            }
           }
 
           // Get next response - this might contain more tool calls
@@ -776,30 +763,34 @@ Current working directory: ${process.cwd()}`;
 
           // Execute tools
           let toolIndex = 0;
-          for (const toolCall of accumulatedMessage.tool_calls) {
-            // Check for cancellation before executing each tool
-            if (this.abortController?.signal.aborted) {
-              console.error(`Tool execution cancelled after ${toolIndex}/${accumulatedMessage.tool_calls.length} tools`);
+          const completedToolCallIds = new Set<string>();
 
-              // Add dummy responses for remaining uncompleted tools
-              for (let i = toolIndex; i < accumulatedMessage.tool_calls.length; i++) {
-                const remainingToolCall = accumulatedMessage.tool_calls[i];
-                this.messages.push({
-                  role: "tool",
-                  content: "[Cancelled by user]",
-                  tool_call_id: remainingToolCall.id,
-                });
+          try {
+            for (const toolCall of accumulatedMessage.tool_calls) {
+              // Check for cancellation before executing each tool
+              if (this.abortController?.signal.aborted) {
+                console.error(`Tool execution cancelled after ${toolIndex}/${accumulatedMessage.tool_calls.length} tools`);
+
+                // Add cancelled responses for remaining uncompleted tools
+                for (let i = toolIndex; i < accumulatedMessage.tool_calls.length; i++) {
+                  const remainingToolCall = accumulatedMessage.tool_calls[i];
+                  this.messages.push({
+                    role: "tool",
+                    content: "[Cancelled by user]",
+                    tool_call_id: remainingToolCall.id,
+                  });
+                  completedToolCallIds.add(remainingToolCall.id);
+                }
+
+                yield {
+                  type: "content",
+                  content: "\n\n[Operation cancelled by user]",
+                };
+                yield { type: "done" };
+                return;
               }
 
-              yield {
-                type: "content",
-                content: "\n\n[Operation cancelled by user]",
-              };
-              yield { type: "done" };
-              return;
-            }
-
-            const result = await this.executeTool(toolCall);
+              const result = await this.executeTool(toolCall);
 
             yield {
               type: "tool_result",
@@ -815,8 +806,21 @@ Current working directory: ${process.cwd()}`;
                 : result.error || "Error",
               tool_call_id: toolCall.id,
             });
+            completedToolCallIds.add(toolCall.id);
 
             toolIndex++;
+          }
+          } finally {
+            // Ensure ALL tool calls in this.messages have results, even if we crashed/errored
+            for (const toolCall of accumulatedMessage.tool_calls) {
+              if (!completedToolCallIds.has(toolCall.id)) {
+                this.messages.push({
+                  role: "tool",
+                  content: "[Error: Tool execution interrupted]",
+                  tool_call_id: toolCall.id,
+                });
+              }
+            }
           }
 
           // Update token count after processing all tool calls to include tool results
@@ -890,14 +894,14 @@ Current working directory: ${process.cwd()}`;
           range = args.start_line && args.end_line
             ? [args.start_line, args.end_line]
             : undefined;
-          return await this.textEditor.viewFile(args.path, range); }
+          return await this.textEditor.viewFile(args.filename, range); }
 
         case "createNewFile":
-          return await this.textEditor.createNewFile(args.path, args.content);
+          return await this.textEditor.createNewFile(args.filename, args.content);
 
         case "strReplace":
           return await this.textEditor.strReplace(
-            args.path,
+            args.filename,
             args.old_str,
             args.new_str,
             args.replace_all
@@ -912,7 +916,7 @@ Current working directory: ${process.cwd()}`;
             };
           }
           return await this.morphEditor.editFile(
-            args.target_file,
+            args.filename,
             args.instructions,
             args.code_edit
           );
@@ -921,7 +925,7 @@ Current working directory: ${process.cwd()}`;
           return await this.zsh.execute(args.command);
 
         case "listFiles":
-          return await this.zsh.listFiles(args.directory);
+          return await this.zsh.listFiles(args.dirname);
 
         case "universalSearch":
           return await this.search.universalSearch(args.query, {
@@ -973,22 +977,37 @@ Current working directory: ${process.cwd()}`;
           return await this.taskTool.stopActiveTask(args.reason, args.documentationFile, args.color);
 
         case "insertLines":
-          return await this.textEditor.insertLines(args.path, args.insert_line, args.new_str);
+          return await this.textEditor.insertLines(args.filename, args.insert_line, args.new_str);
 
         case "replaceLines":
-          return await this.textEditor.replaceLines(args.path, args.start_line, args.end_line, args.new_str);
+          return await this.textEditor.replaceLines(args.filename, args.start_line, args.end_line, args.new_str);
 
         case "undoEdit":
           return await this.textEditor.undoEdit();
 
         case "chdir":
-          return this.zsh.chdir(args.directory);
+          return this.zsh.chdir(args.dirname);
 
         case "pwdir":
           return this.zsh.pwdir();
 
         case "downloadFile":
           return await this.internetTool.downloadFile(args.url);
+
+        case "generateImage":
+          return await this.imageTool.generateImage(
+            args.prompt,
+            args.negativePrompt,
+            args.width,
+            args.height,
+            args.model,
+            args.sampler,
+            args.configScale,
+            args.numSteps,
+            args.nsfw,
+            args.name,
+            args.move
+          );
 
         default:
           // Check if this is an MCP tool
@@ -1430,6 +1449,34 @@ Current working directory: ${process.cwd()}`;
     // Update token counter for new model
     this.tokenCounter.dispose();
     this.tokenCounter = createTokenCounter(model);
+  }
+
+  getBackend(): string {
+    const baseURL = this.grokClient.getBaseURL().toLowerCase();
+    const model = this.grokClient.getCurrentModel().toLowerCase();
+
+    // Check for known backends
+    if (baseURL.includes('x.ai')) return 'grok';
+    if (baseURL.includes('openai.com')) return 'openai';
+    if (baseURL.includes('anthropic.com')) return 'claude';
+    if (baseURL.includes('openrouter.ai')) return 'openrouter';
+
+    // Check for Ollama (local or remote)
+    if (baseURL.includes('localhost:11434') || baseURL.includes('127.0.0.1:11434') || baseURL.includes(':11434')) {
+      // Detect if it's an Ollama cloud model (has -cloud suffix)
+      if (model.includes('-cloud')) {
+        return 'ollama-cloud';
+      }
+      return 'ollama';
+    }
+
+    // For custom URLs, extract hostname
+    try {
+      const url = new URL(baseURL);
+      return url.hostname;
+    } catch {
+      return 'custom';
+    }
   }
 
   abortCurrentOperation(): void {

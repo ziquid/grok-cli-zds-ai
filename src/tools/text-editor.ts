@@ -246,6 +246,14 @@ export class TextEditorTool implements ToolDiscovery {
 
   async createNewFile(filePath: string, content: string): Promise<ToolResult> {
     try {
+      // Validate required parameters
+      if (content === undefined || content === null) {
+        return {
+          success: false,
+          error: "Content parameter is required for createNewFile",
+        };
+      }
+
       const expandedPath = expandHomeDir(filePath);
       const resolvedPath = path.resolve(expandedPath);
 
