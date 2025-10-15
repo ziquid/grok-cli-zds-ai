@@ -208,17 +208,26 @@ Current working directory: ${process.cwd()}`;
     // We'll collect them separately and insert them in the correct order
     const toolResultMessages: GrokMessage[] = [];
     const toolCallIdToMessage: Map<string, GrokMessage> = new Map();
+    let firstSystemMessageSeen = false;
 
     for (const entry of history) {
       switch (entry.type) {
         case "system":
-          // Replace the default system message with the saved one
-          if (this.messages.length > 0 && this.messages[0].role === "system") {
+          // First system message replaces the default system message (instructions)
+          // Subsequent system messages are added to conversation history
+          if (!firstSystemMessageSeen && this.messages.length > 0 && this.messages[0].role === "system") {
             this.messages[0] = {
               role: "system",
               content: entry.content,
             };
             hasSystemMessage = true;
+            firstSystemMessageSeen = true;
+          } else {
+            // Add subsequent system messages to history (e.g., persona changes)
+            historyMessages.push({
+              role: "system",
+              content: entry.content,
+            });
           }
           break;
         case "user":
@@ -888,15 +897,9 @@ Current working directory: ${process.cwd()}`;
 
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
     try {
-      // Validate arguments field before parsing
-      if (!toolCall.function.arguments || toolCall.function.arguments.trim() === "") {
-        return {
-          success: false,
-          error: `Tool ${toolCall.function.name} has empty or missing arguments field`,
-        };
-      }
-
-      const args = JSON.parse(toolCall.function.arguments);
+      // Parse arguments - handle empty string as empty object for parameter-less tools
+      const argsString = toolCall.function.arguments?.trim() || "{}";
+      const args = JSON.parse(argsString);
 
       // Check tool approval hook if configured
       const settings = getSettingsManager();
