@@ -28,13 +28,30 @@ export function MCPStatus({}: MCPStatusProps) {
     // Initial update with a small delay to allow MCP initialization
     const initialTimer = setTimeout(updateStatus, 2000);
 
-    // Set up polling to check for status changes
-    const interval = setInterval(updateStatus, 2000);
+    // Listen for MCP server events instead of polling
+    let manager;
+    try {
+      manager = getMCPManager();
 
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
+      // Update on server add/remove events
+      const handleServerChange = () => updateStatus();
+      manager.on('serverAdded', handleServerChange);
+      manager.on('serverRemoved', handleServerChange);
+      manager.on('serverError', handleServerChange);
+
+      // Cleanup listeners on unmount
+      return () => {
+        clearTimeout(initialTimer);
+        if (manager) {
+          manager.off('serverAdded', handleServerChange);
+          manager.off('serverRemoved', handleServerChange);
+          manager.off('serverError', handleServerChange);
+        }
+      };
+    } catch (error) {
+      // MCP not available, just cleanup timer
+      return () => clearTimeout(initialTimer);
+    }
   }, []);
 
   if (connectedServers.length === 0) {

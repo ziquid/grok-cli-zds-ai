@@ -1,8 +1,9 @@
 import { spawn } from "child_process";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
 export interface SearchResult {
   file: string;
@@ -28,14 +29,14 @@ export interface UnifiedSearchResult {
   score?: number;
 }
 
-export class SearchTool {
+export class SearchTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
   private currentDirectory: string = process.cwd();
 
   /**
    * Unified search method that can search for text content or find files
    */
-  async search(
+  async universalSearch(
     query: string,
     options: {
       searchType?: "text" | "files" | "both";
@@ -56,7 +57,7 @@ export class SearchTool {
 
       // Search for text content if requested
       if (searchType === "text" || searchType === "both") {
-        const textResults = await this.executeRipgrep(query, options);
+        const textResults = await this._executeRipgrep(query, options);
         results.push(
           ...textResults.map((r) => ({
             type: "text" as const,
@@ -71,7 +72,7 @@ export class SearchTool {
 
       // Search for files if requested
       if (searchType === "files" || searchType === "both") {
-        const fileResults = await this.findFilesByPattern(query, options);
+        const fileResults = await this._findFilesByPattern(query, options);
         results.push(
           ...fileResults.map((r) => ({
             type: "file" as const,
@@ -85,6 +86,7 @@ export class SearchTool {
         return {
           success: true,
           output: `No results found for "${query}"`,
+          displayOutput: "",
         };
       }
 
@@ -94,9 +96,27 @@ export class SearchTool {
         searchType
       );
 
+      // Count unique files for displayOutput
+      const textResults = results.filter((r) => r.type === "text");
+      const fileResults = results.filter((r) => r.type === "file");
+      const allFiles = new Set<string>();
+      textResults.forEach((r) => allFiles.add(r.file));
+      fileResults.forEach((r) => allFiles.add(r.file));
+      const fileCount = allFiles.size;
+      const matchCount = textResults.length;
+
+      let summary = `Found ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+      if (matchCount > 0) {
+        summary += ` (${matchCount} ${matchCount === 1 ? 'match' : 'matches'})`;
+      }
+
+      // Prepend summary to formattedOutput for display
+      const outputWithSummary = `${summary}\n\n${formattedOutput}`;
+
       return {
         success: true,
-        output: formattedOutput,
+        output: outputWithSummary,
+        displayOutput: "",
       };
     } catch (error: any) {
       return {
@@ -109,7 +129,7 @@ export class SearchTool {
   /**
    * Execute ripgrep command with specified options
    */
-  private async executeRipgrep(
+  private async _executeRipgrep(
     query: string,
     options: {
       includePattern?: string;
@@ -256,7 +276,7 @@ export class SearchTool {
   /**
    * Find files by pattern using a simple file walking approach
    */
-  private async findFilesByPattern(
+  private async _findFilesByPattern(
     pattern: string,
     options: {
       maxResults?: number;
@@ -324,6 +344,20 @@ export class SearchTool {
               });
             }
           } else if (entry.isDirectory()) {
+            // Check if directory name matches pattern and add it to results
+            const score = this.calculateFileScore(
+              entry.name,
+              relativePath,
+              searchPattern
+            );
+            if (score > 0) {
+              files.push({
+                path: relativePath,
+                name: entry.name,
+                score,
+              });
+            }
+            // Recurse into directory
             await walkDir(fullPath, depth + 1);
           }
         }
@@ -439,5 +473,9 @@ export class SearchTool {
    */
   getCurrentDirectory(): string {
     return this.currentDirectory;
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

@@ -27,9 +27,12 @@ export class ConfirmationService extends EventEmitter {
   // Session flags for different operation types
   private sessionFlags = {
     fileOperations: false,
-    bashCommands: false,
+    zshCommands: false,
     allOperations: false,
   };
+
+  // List of specific commands to auto-approve
+  private approvedCommands = new Set<string>();
 
   static getInstance(): ConfirmationService {
     if (!ConfirmationService.instance) {
@@ -44,14 +47,19 @@ export class ConfirmationService extends EventEmitter {
 
   async requestConfirmation(
     options: ConfirmationOptions,
-    operationType: "file" | "bash" = "file"
+    operationType: "file" | "zsh" = "file"
   ): Promise<ConfirmationResult> {
     // Check session flags
     if (
       this.sessionFlags.allOperations ||
       (operationType === "file" && this.sessionFlags.fileOperations) ||
-      (operationType === "bash" && this.sessionFlags.bashCommands)
+      (operationType === "zsh" && this.sessionFlags.zshCommands)
     ) {
+      return { confirmed: true };
+    }
+
+    // Check if this specific command is approved
+    if (this.isCommandApproved(options.operation, options.filename)) {
       return { confirmed: true };
     }
 
@@ -81,8 +89,8 @@ export class ConfirmationService extends EventEmitter {
       // Set the appropriate session flag based on operation type
       if (operationType === "file") {
         this.sessionFlags.fileOperations = true;
-      } else if (operationType === "bash") {
-        this.sessionFlags.bashCommands = true;
+      } else if (operationType === "zsh") {
+        this.sessionFlags.zshCommands = true;
       }
       // Could also set allOperations for global skip
     }
@@ -131,9 +139,10 @@ export class ConfirmationService extends EventEmitter {
   resetSession(): void {
     this.sessionFlags = {
       fileOperations: false,
-      bashCommands: false,
+      zshCommands: false,
       allOperations: false,
     };
+    this.approvedCommands.clear();
   }
 
   getSessionFlags() {
@@ -141,9 +150,56 @@ export class ConfirmationService extends EventEmitter {
   }
 
   setSessionFlag(
-    flagType: "fileOperations" | "bashCommands" | "allOperations",
+    flagType: "fileOperations" | "zshCommands" | "allOperations",
     value: boolean
   ) {
     this.sessionFlags[flagType] = value;
+  }
+
+  /**
+   * Set specific commands to auto-approve
+   */
+  setApprovedCommands(commands: string[]): void {
+    this.approvedCommands.clear();
+    commands.forEach(cmd => this.approvedCommands.add(cmd.toLowerCase()));
+  }
+
+  /**
+   * Check if a command should be auto-approved
+   */
+  private isCommandApproved(operation: string, filename: string): boolean {
+    // Check for exact operation matches
+    if (this.approvedCommands.has(operation.toLowerCase())) {
+      return true;
+    }
+
+    // Check for common command mappings
+    const normalizedOp = this.normalizeOperation(operation, filename);
+    return this.approvedCommands.has(normalizedOp);
+  }
+
+  /**
+   * Normalize operation names to match common command names
+   */
+  private normalizeOperation(operation: string, filename: string): string {
+    const op = operation.toLowerCase();
+
+    // Map common operations to their command names
+    if (op.includes('run zsh command') || op.includes('execute')) {
+      // Extract actual command from filename for zsh operations
+      const cmd = filename.split(' ')[0]; // Get first word as command
+      return cmd.toLowerCase();
+    }
+
+    // Direct tool mappings
+    if (op.includes('edit file')) return 'str_replace_editor';
+    if (op.includes('write')) return 'create_file';
+    if (op.includes('view') || op.includes('read')) return 'view_file';
+
+    // Handle specific commands that users might want to approve
+    if (filename.startsWith('ls ')) return 'list_files';
+    if (filename.startsWith('pwd')) return 'pwd';
+
+    return op;
   }
 }

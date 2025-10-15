@@ -3,6 +3,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { ChildProcess, spawn } from "child_process";
 import { EventEmitter } from "events";
 import axios, { AxiosInstance } from "axios";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 export type TransportType = 'stdio' | 'http' | 'sse' | 'streamable_http';
 
@@ -13,6 +16,7 @@ export interface TransportConfig {
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
+  debugLogFile?: string; // Optional debug log file for MCP server output
 }
 
 export interface MCPTransport {
@@ -24,6 +28,7 @@ export interface MCPTransport {
 export class StdioTransport implements MCPTransport {
   private transport?: StdioClientTransport;
   private process?: ChildProcess;
+  private debugLogStream?: fs.WriteStream;
 
   constructor(private config: TransportConfig) {
     if (!config.command) {
@@ -33,8 +38,8 @@ export class StdioTransport implements MCPTransport {
 
   async connect(): Promise<Transport> {
     // Create transport with environment variables to suppress verbose output
-    const env = { 
-      ...process.env, 
+    const env = {
+      ...process.env,
       ...this.config.env,
       // Try to suppress verbose output from mcp-remote
       MCP_REMOTE_QUIET: '1',
@@ -43,10 +48,31 @@ export class StdioTransport implements MCPTransport {
       NODE_ENV: 'production'
     };
 
+    // Determine where to redirect stderr
+    let stderrTarget: any = 'ignore'; // Default: discard stderr output
+
+    if (this.config.debugLogFile) {
+      // Create debug log file and stream
+      const debugLogPath = path.resolve(this.config.debugLogFile);
+      const debugLogDir = path.dirname(debugLogPath);
+
+      // Ensure debug log directory exists
+      if (!fs.existsSync(debugLogDir)) {
+        fs.mkdirSync(debugLogDir, { recursive: true });
+      }
+
+      this.debugLogStream = fs.createWriteStream(debugLogPath, { flags: 'a' });
+      this.debugLogStream.write(`\n=== MCP Server Started: ${new Date().toISOString()} ===\n`);
+      this.debugLogStream.write(`Command: ${this.config.command} ${(this.config.args || []).join(' ')}\n`);
+
+      stderrTarget = this.debugLogStream;
+    }
+
     this.transport = new StdioClientTransport({
       command: this.config.command!,
       args: this.config.args || [],
-      env
+      env,
+      stderr: stderrTarget // Redirect stderr to log file or discard
     });
 
     return this.transport;
@@ -61,6 +87,12 @@ export class StdioTransport implements MCPTransport {
     if (this.process) {
       this.process.kill();
       this.process = undefined;
+    }
+
+    if (this.debugLogStream) {
+      this.debugLogStream.write(`=== MCP Server Stopped: ${new Date().toISOString()} ===\n\n`);
+      this.debugLogStream.end();
+      this.debugLogStream = undefined;
     }
   }
 
@@ -240,9 +272,6 @@ class StreamableHttpClientTransport extends EventEmitter implements Transport {
   }
 
   async send(message: any): Promise<any> {
-    console.log('StreamableHttpTransport: SSE endpoints require persistent connections, not suitable for MCP request-response pattern');
-    console.log('StreamableHttpTransport: Message that would be sent:', JSON.stringify(message));
-    
     // For now, return a mock response to indicate the transport type is not compatible
     // with the MCP protocol's request-response pattern
     throw new Error('StreamableHttpTransport: SSE endpoints are not compatible with MCP request-response pattern. GitHub Copilot MCP may require a different integration approach.');

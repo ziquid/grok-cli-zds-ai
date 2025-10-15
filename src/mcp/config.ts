@@ -6,12 +6,16 @@ export interface MCPConfig {
 }
 
 /**
- * Load MCP configuration from project settings
+ * Load MCP configuration from user settings (with project settings override)
  */
 export function loadMCPConfig(): MCPConfig {
   const manager = getSettingsManager();
+  const userSettings = manager.loadUserSettings();
   const projectSettings = manager.loadProjectSettings();
-  const servers = projectSettings.mcpServers ? Object.values(projectSettings.mcpServers) : [];
+
+  // Use project settings if available, otherwise fall back to user settings
+  const mcpServers = projectSettings.mcpServers || userSettings.mcpServers;
+  const servers = mcpServers ? Object.values(mcpServers) : [];
   return { servers };
 }
 

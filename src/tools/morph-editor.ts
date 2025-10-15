@@ -1,10 +1,11 @@
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
 import axios from "axios";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
-export class MorphEditorTool {
+export class MorphEditorTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
   private morphApiKey: string;
   private morphBaseUrl: string = "https://api.morphllm.com/v1";
@@ -80,7 +81,9 @@ export class MorphEditorTool {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "File edit cancelled by user",
+            error: confirmationResult.feedback
+              ? `File edit canceled by user: ${confirmationResult.feedback}`
+              : "File edit canceled by user",
           };
         }
       }
@@ -389,5 +392,9 @@ export class MorphEditorTool {
 
   getApiKey(): string {
     return this.morphApiKey;
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

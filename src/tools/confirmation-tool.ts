@@ -33,7 +33,7 @@ export class ConfirmationTool {
       };
 
       // Determine operation type based on operation name
-      const operationType = request.operation.toLowerCase().includes('bash') ? 'bash' : 'file';
+      const operationType = request.operation.toLowerCase().includes('zsh') ? 'zsh' : 'file';
       const result = await this.confirmationService.requestConfirmation(options, operationType);
 
       if (result.confirmed) {
@@ -63,9 +63,9 @@ export class ConfirmationTool {
         success: true,
         data: {
           fileOperationsAccepted: sessionFlags.fileOperations,
-          bashCommandsAccepted: sessionFlags.bashCommands,
+          bashCommandsAccepted: sessionFlags.zshCommands,
           allOperationsAccepted: sessionFlags.allOperations,
-          hasAnyAcceptance: sessionFlags.fileOperations || sessionFlags.bashCommands || sessionFlags.allOperations
+          hasAnyAcceptance: sessionFlags.fileOperations || sessionFlags.zshCommands || sessionFlags.allOperations
         }
       };
     } catch (error: any) {

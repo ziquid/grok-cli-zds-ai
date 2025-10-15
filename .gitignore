@@ -100,3 +100,10 @@ temp/
 # Coding agents
 .claude/
 .grok/
+.github/instructions/ZDS_AI_AGENT.instructions.md
+
+# Context files (contain AIPII - AI Personal Identifiable Information)
+*.context.json
+*.context.messages.json
+*.context.backup-*.json
+*.context.messages.backup-*.json

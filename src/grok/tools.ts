@@ -1,19 +1,20 @@
 import { GrokTool } from "./client.js";
 import { MCPManager, MCPTool } from "../mcp/client.js";
 import { loadMCPConfig } from "../mcp/config.js";
+import fs from "fs";
 
 const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "view_file",
-      description: "View contents of a file or list directory contents",
+      name: "viewFile",
+      description: "View contents of a file",
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
-            description: "Path to file or directory to view",
+            description: "Path to the file to view",
           },
           start_line: {
             type: "number",
@@ -25,40 +26,40 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Ending line number for partial file view (optional)",
           },
         },
-        required: ["path"],
+        required: ["filename"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "create_file",
+      name: "createNewFile",
       description: "Create a new file with specified content",
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
-            description: "Path where the file should be created",
+            description: "Path to the file to create",
           },
           content: {
             type: "string",
             description: "Content to write to the file",
           },
         },
-        required: ["path", "content"],
+        required: ["filename", "content"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "str_replace_editor",
+      name: "strReplace",
       description: "Replace specific text in a file. Use this for single line edits only",
       parameters: {
         type: "object",
         properties: {
-          path: {
+          filename: {
             type: "string",
             description: "Path to the file to edit",
           },
@@ -77,7 +78,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
               "Replace all occurrences (default: false, only replaces first occurrence)",
           },
         },
-        required: ["path", "old_str", "new_str"],
+        required: ["filename", "old_str", "new_str"],
       },
     },
   },
@@ -85,14 +86,14 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "bash",
-      description: "Execute a bash command",
+      name: "execute",
+      description: "Execute a zsh command",
       parameters: {
         type: "object",
         properties: {
           command: {
             type: "string",
-            description: "The bash command to execute",
+            description: "The zsh command to execute",
           },
         },
         required: ["command"],
@@ -102,7 +103,24 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
-      name: "search",
+      name: "listFiles",
+      description: "List files in a directory (equivalent to 'ls -la')",
+      parameters: {
+        type: "object",
+        properties: {
+          dirname: {
+            type: "string",
+            description: "Path to the directory to list (default: current directory)",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "universalSearch",
       description:
         "Unified search tool for finding text content or files (similar to Cursor's search)",
       parameters: {
@@ -159,85 +177,505 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "createTodoList",
+  //     description: "Create a new todo list for planning and tracking tasks",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {
+  //         todos: {
+  //           type: "array",
+  //           description: "Array of todo items",
+  //           items: {
+  //             type: "object",
+  //             properties: {
+  //               id: {
+  //                 type: "string",
+  //                 description: "Unique identifier for the todo item",
+  //               },
+  //               content: {
+  //                 type: "string",
+  //                 description: "Description of the todo item",
+  //               },
+  //               status: {
+  //                 type: "string",
+  //                 enum: ["pending", "in_progress", "completed"],
+  //                 description: "Current status of the todo item",
+  //               },
+  //               priority: {
+  //                 type: "string",
+  //                 enum: ["high", "medium", "low"],
+  //                 description: "Priority level of the todo item",
+  //               },
+  //             },
+  //             required: ["id", "content", "status", "priority"],
+  //           },
+  //         },
+  //       },
+  //       required: ["todos"],
+  //     },
+  //   },
+  // },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "updateTodoList",
+  //     description: "Update existing todos in the todo list",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {
+  //         updates: {
+  //           type: "array",
+  //           description: "Array of todo updates",
+  //           items: {
+  //             type: "object",
+  //             properties: {
+  //               id: {
+  //                 type: "string",
+  //                 description: "ID of the todo item to update",
+  //               },
+  //               status: {
+  //                 type: "string",
+  //                   enum: ["pending", "in_progress", "completed"],
+  //                 description: "New status for the todo item",
+  //               },
+  //               content: {
+  //                 type: "string",
+  //                 description: "New content for the todo item",
+  //               },
+  //               priority: {
+  //                 type: "string",
+  //                 enum: ["high", "medium", "low"],
+  //                 description: "New priority for the todo item",
+  //               },
+  //             },
+  //             required: ["id"],
+  //           },
+  //         },
+  //       },
+  //       required: ["updates"],
+  //     },
+  //   },
+  // },
   {
     type: "function",
     function: {
-      name: "create_todo_list",
-      description: "Create a new todo list for planning and tracking tasks",
+      name: "getEnv",
+      description: "Get a specific environment variable",
       parameters: {
         type: "object",
         properties: {
-          todos: {
-            type: "array",
-            description: "Array of todo items",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "Description of the todo item",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item",
-                },
-              },
-              required: ["id", "content", "status", "priority"],
-            },
+          variable: {
+            type: "string",
+            description: "Name of environment variable to get",
           },
         },
-        required: ["todos"],
+        required: ["variable"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "update_todo_list",
-      description: "Update existing todos in the todo list",
+      name: "getAllEnv",
+      description: "Get all environment variables",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchEnv",
+      description: "Search environment variables by pattern",
       parameters: {
         type: "object",
         properties: {
-          updates: {
-            type: "array",
-            description: "Array of todo updates",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "ID of the todo item to update",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "New content for the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item",
-                },
-              },
-              required: ["id"],
-            },
+          pattern: {
+            type: "string",
+            description: "Pattern to search for in variable names or values",
           },
         },
-        required: ["updates"],
+        required: ["pattern"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "introspect",
+      description: "Introspect available tools and system information",
+      parameters: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            description: "What to introspect. Available: 'tools' - list all available tools (internal and MCP), 'env' - show ZDS_AI_AGENT_* environment variables, 'context' - show context/token usage, 'all' - show all introspection data",
+            enum: ["tools", "env", "context", "all"],
+          },
+        },
+        required: ["target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "clearCache",
+      description: "Clear the conversation cache/context and reset to initial state. Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code. Second call with the code clears the cache.",
+      parameters: {
+        type: "object",
+        properties: {
+          confirmationCode: {
+            type: "string",
+            description: "The confirmation code provided in the first call (6-letter code). Leave empty for initial call.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "setPersona",
+      description: "Set agent's current persona",
+      parameters: {
+        type: "object",
+        properties: {
+          persona: {
+            type: "string",
+            description: "The persona (e.g., 'worker', 'receptionist')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["persona"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "setMood",
+      description: "Set agent's current mood",
+      parameters: {
+        type: "object",
+        properties: {
+          mood: {
+            type: "string",
+            description: "The mood (e.g., 'focused', 'tired', 'excited')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["mood"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getPersona",
+      description: "Get the persona last set",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getMood",
+      description: "Get the mood last set",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "startActiveTask",
+      description: "Start a new active task",
+      parameters: {
+        type: "object",
+        properties: {
+          activeTask: {
+            type: "string",
+            description: "The task description (e.g., 'fix bug in parser', 'implement feature X', 'chatting')",
+          },
+          action: {
+            type: "string",
+            description: "Required action describing what you're doing (e.g., 'coding', 'testing', 'researching', 'planning')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["activeTask", "action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "transitionActiveTaskStatus",
+      description: "Change active task status or action",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            description: "New action/status (e.g., 'coding', 'testing', 'blocked', 'error', 'finished')",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "stopActiveTask",
+      description: "Stop the current active task",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            description: "Reason for stopping (e.g., 'finished', 'blocked', 'error', 'preempted')",
+          },
+          documentationFile: {
+            type: "string",
+            description: "Path to documentation file (.md or .txt) proving progress was documented. File must have been modified recently.",
+          },
+          color: {
+            type: "string",
+            description: "Optional color for the text (e.g., 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', '#FF5733', etc.)",
+          },
+        },
+        required: ["reason", "documentationFile"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "insertLines",
+      description: "Insert text at a specific line in a file",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the file to edit",
+          },
+          insert_line: {
+            type: "number",
+            description: "Line number to insert at",
+          },
+          new_str: {
+            type: "string",
+            description: "Text to insert",
+          },
+        },
+        required: ["filename", "insert_line", "new_str"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "replaceLines",
+      description: "Replace a range of lines in a file",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the file to edit",
+          },
+          start_line: {
+            type: "number",
+            description: "Starting line number",
+          },
+          end_line: {
+            type: "number",
+            description: "Ending line number",
+          },
+          new_str: {
+            type: "string",
+            description: "Replacement text",
+          },
+        },
+        required: ["filename", "start_line", "end_line", "new_str"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "undoEdit",
+      description: "Undo the last edit operation",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  // {
+  //   type: "function",
+  //   function: {
+  //     name: "viewTodoList",
+  //     description: "View the current todo list",
+  //     parameters: {
+  //       type: "object",
+  //       properties: {},
+  //       required: [],
+  //     },
+  //   },
+  // },
+  {
+    type: "function",
+    function: {
+      name: "chdir",
+      description: "Change the current working directory",
+      parameters: {
+        type: "object",
+        properties: {
+          dirname: {
+            type: "string",
+            description: "Path to the directory to change to",
+          },
+        },
+        required: ["dirname"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pwdir",
+      description: "Show the current working directory",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "downloadFile",
+      description: "Download a file < 10MB from the Internet.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "URL of the file to download",
+          },
+        },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generateImage",
+      description: "Generate an image using AI image generation",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description: "Text description of the image to generate",
+          },
+          negativePrompt: {
+            type: "string",
+            description: "Text description of what to avoid in the image (optional)",
+          },
+          width: {
+            type: "number",
+            description: "Image width in pixels (default: 480)",
+          },
+          height: {
+            type: "number",
+            description: "Image height in pixels (default: 720)",
+          },
+          model: {
+            type: "string",
+            description: "Model checkpoint to use for generation (default: 'cyberrealisticPony_v130')",
+          },
+          sampler: {
+            type: "string",
+            description: "Sampling method (default: 'DPM++ 2M Karras')",
+          },
+          configScale: {
+            type: "number",
+            description: "Guidance scale - how closely to follow the prompt (default: 5.0)",
+          },
+          numSteps: {
+            type: "number",
+            description: "Number of inference steps (default: 30)",
+          },
+          nsfw: {
+            type: "boolean",
+            description: "Allow NSFW content by disabling safety checker (default: false)",
+          },
+          name: {
+            type: "string",
+            description: "Optional slug to include in the filename (e.g., 'portrait' becomes 'portrait-2025-10-12T14-30-45.png')",
+          },
+          move: {
+            type: "boolean",
+            description: "Move the generated image to ZAI folder (default: false)",
+          },
+        },
+        required: ["prompt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "captionImage",
+      description: "Generate a caption for an image",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the image file to caption",
+          },
+          prompt: {
+            type: "string",
+            description: "Optional prompt to guide the captioning process",
+          },
+        },
+        required: ["filename"],
       },
     },
   },
@@ -247,14 +685,14 @@ const BASE_GROK_TOOLS: GrokTool[] = [
 const MORPH_EDIT_TOOL: GrokTool = {
   type: "function",
   function: {
-    name: "edit_file",
+    name: "editFile",
     description: "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nMake edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
     parameters: {
       type: "object",
       properties: {
-        target_file: {
+        filename: {
           type: "string",
-          description: "The target file to modify."
+          description: "Path to the file to modify"
         },
         instructions: {
           type: "string",
@@ -265,7 +703,7 @@ const MORPH_EDIT_TOOL: GrokTool = {
           description: "Specify ONLY the precise lines of code that you wish to edit. NEVER specify or write out unchanged code. Instead, represent all unchanged code using the comment of the language you're editing in - example: // ... existing code ..."
         }
       },
-      required: ["target_file", "instructions", "code_edit"]
+      required: ["filename", "instructions", "code_edit"]
     }
   }
 };
@@ -273,12 +711,12 @@ const MORPH_EDIT_TOOL: GrokTool = {
 // Function to build tools array conditionally
 function buildGrokTools(): GrokTool[] {
   const tools = [...BASE_GROK_TOOLS];
-  
+
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
     tools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
   }
-  
+
   return tools;
 }
 
@@ -295,73 +733,68 @@ export function getMCPManager(): MCPManager {
   return mcpManager;
 }
 
-export async function initializeMCPServers(): Promise<void> {
+export async function initializeMCPServers(debugLogFile?: string): Promise<void> {
   const manager = getMCPManager();
   const config = loadMCPConfig();
-  
-  // Store original stderr.write
-  const originalStderrWrite = process.stderr.write;
-  
-  // Temporarily suppress stderr to hide verbose MCP connection logs
-  process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-    // Filter out mcp-remote verbose logs
-    const chunkStr = chunk.toString();
-    if (chunkStr.includes('[') && (
-        chunkStr.includes('Using existing client port') ||
-        chunkStr.includes('Connecting to remote server') ||
-        chunkStr.includes('Using transport strategy') ||
-        chunkStr.includes('Connected to remote server') ||
-        chunkStr.includes('Local STDIO server running') ||
-        chunkStr.includes('Proxy established successfully') ||
-        chunkStr.includes('Local→Remote') ||
-        chunkStr.includes('Remote→Local')
-      )) {
-      // Suppress these verbose logs
-      if (callback) callback();
-      return true;
-    }
-    
-    // Allow other stderr output
-    return originalStderrWrite.call(this, chunk, encoding, callback);
-  };
-  
-  try {
-    for (const serverConfig of config.servers) {
-      try {
-        await manager.addServer(serverConfig);
-      } catch (error) {
-        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+
+  // Pass debug log file to manager for per-server stream redirection
+  if (debugLogFile) {
+    manager.setDebugLogFile(debugLogFile);
+  }
+
+  for (const serverConfig of config.servers) {
+    try {
+      await manager.addServer(serverConfig);
+    } catch (error) {
+      // Only log to debug file if configured, otherwise suppress
+      if (debugLogFile) {
+        const fs = await import('fs');
+        const message = `Failed to initialize MCP server ${serverConfig.name}: ${error}\n`;
+        fs.appendFileSync(debugLogFile, message);
       }
+      // Silently ignore initialization failures
     }
-  } finally {
-    // Restore original stderr.write
-    process.stderr.write = originalStderrWrite;
   }
 }
 
 export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
+  // Normalize schema to ensure OpenAI compatibility
+  let parameters = mcpTool.inputSchema || {
+    type: "object",
+    properties: {},
+    required: []
+  };
+
+  // OpenAI requires objects to have properties field
+  if (parameters.type === "object" && !parameters.properties) {
+    parameters = {
+      ...parameters,
+      properties: {}
+    };
+  }
+
   return {
     type: "function",
     function: {
       name: mcpTool.name,
       description: mcpTool.description,
-      parameters: mcpTool.inputSchema || {
-        type: "object",
-        properties: {},
-        required: []
-      }
+      parameters
     }
   };
 }
 
 export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   if (!mcpManager) {
+
+    fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
     return baseTools;
   }
-  
+
   const mcpTools = mcpManager.getTools();
+
+  fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
-  
+
   return [...baseTools, ...grokMCPTools];
 }
 

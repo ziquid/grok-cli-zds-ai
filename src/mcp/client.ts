@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { EventEmitter } from "events";
 import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
+import crypto from "crypto";
 
 export interface MCPServerConfig {
   name: string;
@@ -17,12 +18,32 @@ export interface MCPTool {
   description: string;
   inputSchema: any;
   serverName: string;
+  originalToolName: string;
+}
+
+/**
+ * Create MCP tool name with OpenAI 64-character limit
+ */
+function createMCPToolName(serverName: string, toolName: string): string {
+  const fullName = `mcp__${serverName}__${toolName}`;
+  if (fullName.length <= 64) {
+    return fullName;
+  }
+
+  // Truncate and add hash suffix to prevent collisions
+  const hash = crypto.createHash('md5').update(fullName).digest('hex').substring(0, 4);
+  return fullName.substring(0, 60) + hash;
 }
 
 export class MCPManager extends EventEmitter {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, MCPTransport> = new Map();
   private tools: Map<string, MCPTool> = new Map();
+  private debugLogFile?: string;
+
+  setDebugLogFile(debugLogFile: string): void {
+    this.debugLogFile = debugLogFile;
+  }
 
   async addServer(config: MCPServerConfig): Promise<void> {
     try {
@@ -39,6 +60,14 @@ export class MCPManager extends EventEmitter {
 
       if (!transportConfig) {
         throw new Error('Transport configuration is required');
+      }
+
+      // Add debug log file to transport config if available
+      if (this.debugLogFile && transportConfig.type === 'stdio') {
+        transportConfig = {
+          ...transportConfig,
+          debugLogFile: `${this.debugLogFile}.${config.name}.log`
+        };
       }
 
       // Create transport
@@ -66,20 +95,33 @@ export class MCPManager extends EventEmitter {
 
       // List available tools
       const toolsResult = await client.listTools();
-      
+
       // Register tools
       for (const tool of toolsResult.tools) {
         const mcpTool: MCPTool = {
-          name: `mcp__${config.name}__${tool.name}`,
+          name: createMCPToolName(config.name, tool.name),
           description: tool.description || `Tool from ${config.name} server`,
           inputSchema: tool.inputSchema,
-          serverName: config.name
+          serverName: config.name,
+          originalToolName: tool.name
         };
         this.tools.set(mcpTool.name, mcpTool);
       }
 
       this.emit('serverAdded', config.name, toolsResult.tools.length);
     } catch (error) {
+      // Clean up any partially initialized resources
+      this.clients.delete(config.name);
+      const transport = this.transports.get(config.name);
+      if (transport) {
+        try {
+          await transport.disconnect();
+        } catch (disconnectError) {
+          // Ignore disconnect errors during cleanup
+        }
+        this.transports.delete(config.name);
+      }
+
       this.emit('serverError', config.name, error);
       throw error;
     }
@@ -121,11 +163,8 @@ export class MCPManager extends EventEmitter {
       throw new Error(`Server ${tool.serverName} not connected`);
     }
 
-    // Extract the original tool name (remove mcp__servername__ prefix)
-    const originalToolName = toolName.replace(`mcp__${tool.serverName}__`, '');
-
     return await client.callTool({
-      name: originalToolName,
+      name: tool.originalToolName,
       arguments: arguments_
     });
   }
@@ -153,18 +192,24 @@ export class MCPManager extends EventEmitter {
       return; // Already initialized
     }
 
-    const { loadMCPConfig } = await import('../mcp/config');
+    const { loadMCPConfig } = await import('../mcp/config.js');
     const config = loadMCPConfig();
-    
+
     // Initialize servers in parallel to avoid blocking
     const initPromises = config.servers.map(async (serverConfig) => {
       try {
         await this.addServer(serverConfig);
       } catch (error) {
-        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+        // Only log to debug file if configured, otherwise suppress
+        if (this.debugLogFile) {
+          const fs = await import('fs');
+          const message = `Failed to initialize MCP server ${serverConfig.name}: ${error}\n`;
+          fs.appendFileSync(this.debugLogFile, message);
+        }
+        // Silently ignore initialization failures
       }
     });
-    
+
     await Promise.all(initPromises);
   }
 }

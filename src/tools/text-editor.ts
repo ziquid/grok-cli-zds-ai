@@ -1,19 +1,67 @@
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
-import { writeFile as writeFilePromise } from "fs/promises";
 import { ToolResult, EditorCommand } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
+import { expandHomeDir } from "../utils/path-utils.js";
+import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
-export class TextEditorTool {
+export class TextEditorTool implements ToolDiscovery {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
+  private agent: any; // Reference to GrokAgent for context awareness
 
-  async view(
+  setAgent(agent: any) {
+    this.agent = agent;
+  }
+
+  /**
+   * Get the maximum characters allowed based on current context usage
+   * Returns null if viewFile should be disabled
+   */
+  private getMaxCharsAllowed(): number | null {
+    if (!this.agent) {
+      return 80000; // Default: ~20k tokens if no agent
+    }
+
+    const contextPercent = this.agent.getContextUsagePercent();
+
+    // Disable viewFile at 95%+
+    if (contextPercent >= 95) {
+      return null;
+    }
+
+    // 2k tokens max at 90%+
+    if (contextPercent >= 90) {
+      return 8000; // ~2k tokens
+    }
+
+    // 10k tokens max at 80%+
+    if (contextPercent >= 80) {
+      return 40000; // ~10k tokens
+    }
+
+    // 20k tokens max normally
+    return 80000; // ~20k tokens
+  }
+
+  async viewFile(
     filePath: string,
     viewRange?: [number, number]
   ): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      // Check if viewFile is disabled due to high context usage
+      const maxChars = this.getMaxCharsAllowed();
+      if (maxChars === null) {
+        const contextPercent = this.agent?.getContextUsagePercent() || 0;
+        return {
+          success: false,
+          error: `viewFile is disabled at ${Math.round(contextPercent)}% context usage. Please save notes and clear cache first.`,
+          output: `viewFile is disabled at ${Math.round(contextPercent)}% context usage. Please save notes and clear cache first.`
+        };
+      }
+
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       if (await fs.pathExists(resolvedPath)) {
         const stats = await fs.stat(resolvedPath);
@@ -23,6 +71,7 @@ export class TextEditorTool {
           return {
             success: true,
             output: `Directory contents of ${filePath}:\n${files.join("\n")}`,
+            displayOutput: `Listed directory ${filePath} (${files.length} items)`,
           };
         }
 
@@ -32,27 +81,51 @@ export class TextEditorTool {
         if (viewRange) {
           const [start, end] = viewRange;
           const selectedLines = lines.slice(start - 1, end);
-          const numberedLines = selectedLines
+          let numberedLines = selectedLines
             .map((line, idx) => `${start + idx}: ${line}`)
             .join("\n");
+
+          // Apply character limit even to ranges
+          if (numberedLines.length > maxChars) {
+            numberedLines = numberedLines.substring(0, maxChars);
+            const contextPercent = this.agent?.getContextUsagePercent() || 0;
+            return {
+              success: true,
+              output: `Lines ${start}-${end} of ${filePath} (truncated due to ${Math.round(contextPercent)}% context usage):\n${numberedLines}\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens. Use smaller ranges.]`,
+              displayOutput: `Read ${filePath} (lines ${start}-${end}, truncated)`,
+            };
+          }
 
           return {
             success: true,
             output: `Lines ${start}-${end} of ${filePath}:\n${numberedLines}`,
+            displayOutput: `Read ${filePath} (lines ${start}-${end})`,
           };
         }
 
+        // Full file view - apply limits
         const totalLines = lines.length;
-        const displayLines = totalLines > 10 ? lines.slice(0, 10) : lines;
-        const numberedLines = displayLines
+        let numberedLines = lines
           .map((line, idx) => `${idx + 1}: ${line}`)
           .join("\n");
-        const additionalLinesMessage =
-          totalLines > 10 ? `\n... +${totalLines - 10} lines` : "";
+
+        let truncated = false;
+        if (numberedLines.length > maxChars) {
+          numberedLines = numberedLines.substring(0, maxChars);
+          truncated = true;
+        }
+
+        const contextPercent = this.agent?.getContextUsagePercent() || 0;
+        const truncationMessage = truncated
+          ? `\n\n[Content truncated to ~${Math.round(maxChars / 4000)}k tokens due to ${Math.round(contextPercent)}% context usage. Use viewFile with viewRange parameter for specific sections.]`
+          : "";
 
         return {
           success: true,
-          output: `Contents of ${filePath}:\n${numberedLines}${additionalLinesMessage}`,
+          output: `Contents of ${filePath}:\n${numberedLines}${truncationMessage}`,
+          displayOutput: truncated
+            ? `Read ${filePath} (${totalLines} lines, truncated due to context limits)`
+            : `Read ${filePath} (${totalLines} lines)`,
         };
       } else {
         return {
@@ -75,7 +148,8 @@ export class TextEditorTool {
     replaceAll: boolean = false
   ): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       if (!(await fs.pathExists(resolvedPath))) {
         return {
@@ -130,7 +204,9 @@ export class TextEditorTool {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "File edit cancelled by user",
+            error: confirmationResult.feedback
+              ? `File edit canceled by user: ${confirmationResult.feedback}`
+              : "File edit canceled by user",
           };
         }
       }
@@ -138,7 +214,7 @@ export class TextEditorTool {
       const newContent = replaceAll
         ? content.split(oldStr).join(newStr)
         : content.replace(oldStr, newStr);
-      await writeFilePromise(resolvedPath, newContent, "utf-8");
+      await fs.writeFile(resolvedPath, newContent, "utf-8");
 
       this.editHistory.push({
         command: "str_replace",
@@ -151,9 +227,14 @@ export class TextEditorTool {
       const newLines = newContent.split("\n");
       const diff = this.generateDiff(oldLines, newLines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const changeCount = replaceAll && occurrences > 1 ? occurrences : 1;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Updated ${filename} (${changeCount} ${changeCount === 1 ? 'change' : 'changes'})`,
       };
     } catch (error: any) {
       return {
@@ -163,9 +244,18 @@ export class TextEditorTool {
     }
   }
 
-  async create(filePath: string, content: string): Promise<ToolResult> {
+  async createNewFile(filePath: string, content: string): Promise<ToolResult> {
     try {
-      const resolvedPath = path.resolve(filePath);
+      // Validate required parameters
+      if (content === undefined || content === null) {
+        return {
+          success: false,
+          error: "Content parameter is required for createNewFile",
+        };
+      }
+
+      const expandedPath = expandHomeDir(filePath);
+      const resolvedPath = path.resolve(expandedPath);
 
       // Check if user has already accepted file operations for this session
       const sessionFlags = this.confirmationService.getSessionFlags();
@@ -194,15 +284,16 @@ export class TextEditorTool {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error:
-              confirmationResult.feedback || "File creation cancelled by user",
+            error: confirmationResult.feedback
+              ? `File creation canceled by user: ${confirmationResult.feedback}`
+              : "File creation canceled by user",
           };
         }
       }
 
       const dir = path.dirname(resolvedPath);
       await fs.ensureDir(dir);
-      await writeFilePromise(resolvedPath, content, "utf-8");
+      await fs.writeFile(resolvedPath, content, "utf-8");
 
       this.editHistory.push({
         command: "create",
@@ -215,9 +306,14 @@ export class TextEditorTool {
       const newLines = content.split("\n");
       const diff = this.generateDiff(oldLines, newLines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const lineCount = newLines.length;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Created ${filename} (${lineCount} ${lineCount === 1 ? 'line' : 'lines'})`,
       };
     } catch (error: any) {
       return {
@@ -282,7 +378,9 @@ export class TextEditorTool {
         if (!confirmationResult.confirmed) {
           return {
             success: false,
-            error: confirmationResult.feedback || "Line replacement cancelled by user",
+            error: confirmationResult.feedback
+              ? `Line replacement canceled by user: ${confirmationResult.feedback}`
+              : "Line replacement canceled by user",
           };
         }
       }
@@ -291,7 +389,7 @@ export class TextEditorTool {
       lines.splice(startLine - 1, endLine - startLine + 1, ...replacementLines);
       const newFileContent = lines.join("\n");
 
-      await writeFilePromise(resolvedPath, newFileContent, "utf-8");
+      await fs.writeFile(resolvedPath, newFileContent, "utf-8");
 
       this.editHistory.push({
         command: "str_replace",
@@ -303,9 +401,14 @@ export class TextEditorTool {
       const oldLines = fileContent.split("\n");
       const diff = this.generateDiff(oldLines, lines, filePath);
 
+      // Extract filename from path for display
+      const filename = path.basename(filePath);
+      const lineRange = startLine === endLine ? `line ${startLine}` : `lines ${startLine}-${endLine}`;
+
       return {
         success: true,
         output: diff,
+        displayOutput: `Replaced ${lineRange} in ${filename}`,
       };
     } catch (error: any) {
       return {
@@ -315,7 +418,7 @@ export class TextEditorTool {
     }
   }
 
-  async insert(
+  async insertLines(
     filePath: string,
     insertLine: number,
     content: string
@@ -336,7 +439,7 @@ export class TextEditorTool {
       lines.splice(insertLine - 1, 0, content);
       const newContent = lines.join("\n");
 
-      await writeFilePromise(resolvedPath, newContent, "utf-8");
+      await fs.writeFile(resolvedPath, newContent, "utf-8");
 
       this.editHistory.push({
         command: "insert",
@@ -345,9 +448,12 @@ export class TextEditorTool {
         content,
       });
 
+      const filename = path.basename(filePath);
+
       return {
         success: true,
         output: `Successfully inserted content at line ${insertLine} in ${filePath}`,
+        displayOutput: `Inserted at line ${insertLine} in ${filename}`,
       };
     } catch (error: any) {
       return {
@@ -376,7 +482,7 @@ export class TextEditorTool {
               lastEdit.new_str,
               lastEdit.old_str
             );
-            await writeFilePromise(lastEdit.path, revertedContent, "utf-8");
+            await fs.writeFile(lastEdit.path, revertedContent, "utf-8");
           }
           break;
 
@@ -391,7 +497,7 @@ export class TextEditorTool {
             const content = await fs.readFile(lastEdit.path, "utf-8");
             const lines = content.split("\n");
             lines.splice(lastEdit.insert_line - 1, 1);
-            await writeFilePromise(lastEdit.path, lines.join("\n"), "utf-8");
+            await fs.writeFile(lastEdit.path, lines.join("\n"), "utf-8");
           }
           break;
       }
@@ -399,6 +505,7 @@ export class TextEditorTool {
       return {
         success: true,
         output: `Successfully undid ${lastEdit.command} operation`,
+        displayOutput: `Undid ${lastEdit.command} operation`,
       };
     } catch (error: any) {
       return {
@@ -468,17 +575,108 @@ export class TextEditorTool {
       const tokens = str.match(/\b(function|console\.log|return|if|else|for|while)\b/g) || [];
       return tokens;
     };
-    
+
     const searchTokens = extractTokens(search);
     const actualTokens = extractTokens(actual);
-    
+
     if (searchTokens.length !== actualTokens.length) return false;
-    
+
     for (let i = 0; i < searchTokens.length; i++) {
       if (searchTokens[i] !== actualTokens[i]) return false;
     }
-    
+
     return true;
+  }
+
+  /**
+   * Compute Longest Common Subsequence using dynamic programming
+   * Returns array of indices in oldLines that are part of LCS
+   */
+  private computeLCS(oldLines: string[], newLines: string[]): number[][] {
+    const m = oldLines.length;
+    const n = newLines.length;
+    const dp: number[][] = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+
+    // Build LCS length table
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (oldLines[i - 1] === newLines[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+
+    return dp;
+  }
+
+  /**
+   * Extract changes from LCS table
+   * Returns array of change regions
+   */
+  private extractChanges(
+    oldLines: string[],
+    newLines: string[],
+    lcs: number[][]
+  ): Array<{ oldStart: number; oldEnd: number; newStart: number; newEnd: number }> {
+    const changes: Array<{
+      oldStart: number;
+      oldEnd: number;
+      newStart: number;
+      newEnd: number;
+    }> = [];
+
+    let i = oldLines.length;
+    let j = newLines.length;
+    let oldEnd = i;
+    let newEnd = j;
+    let inChange = false;
+
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+        // Lines match - if we were in a change, close it
+        if (inChange) {
+          changes.unshift({
+            oldStart: i,
+            oldEnd: oldEnd,
+            newStart: j,
+            newEnd: newEnd
+          });
+          inChange = false;
+        }
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+        // Insertion in new file
+        if (!inChange) {
+          oldEnd = i;
+          newEnd = j;
+          inChange = true;
+        }
+        j--;
+      } else if (i > 0) {
+        // Deletion from old file
+        if (!inChange) {
+          oldEnd = i;
+          newEnd = j;
+          inChange = true;
+        }
+        i--;
+      }
+    }
+
+    // Close any remaining change
+    if (inChange) {
+      changes.unshift({
+        oldStart: 0,
+        oldEnd: oldEnd,
+        newStart: 0,
+        newEnd: newEnd
+      });
+    }
+
+    return changes;
   }
 
   private generateDiff(
@@ -487,65 +685,10 @@ export class TextEditorTool {
     filePath: string
   ): string {
     const CONTEXT_LINES = 3;
-    
-    const changes: Array<{
-      oldStart: number;
-      oldEnd: number;
-      newStart: number;
-      newEnd: number;
-    }> = [];
-    
-    let i = 0, j = 0;
-    
-    while (i < oldLines.length || j < newLines.length) {
-      while (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
-        i++;
-        j++;
-      }
-      
-      if (i < oldLines.length || j < newLines.length) {
-        const changeStart = { old: i, new: j };
-        
-        let oldEnd = i;
-        let newEnd = j;
-        
-        while (oldEnd < oldLines.length || newEnd < newLines.length) {
-          let matchFound = false;
-          let matchLength = 0;
-          
-          for (let k = 0; k < Math.min(2, oldLines.length - oldEnd, newLines.length - newEnd); k++) {
-            if (oldEnd + k < oldLines.length && 
-                newEnd + k < newLines.length && 
-                oldLines[oldEnd + k] === newLines[newEnd + k]) {
-              matchLength++;
-            } else {
-              break;
-            }
-          }
-          
-          if (matchLength >= 2 || (oldEnd >= oldLines.length && newEnd >= newLines.length)) {
-            matchFound = true;
-          }
-          
-          if (matchFound) {
-            break;
-          }
-          
-          if (oldEnd < oldLines.length) oldEnd++;
-          if (newEnd < newLines.length) newEnd++;
-        }
-        
-        changes.push({
-          oldStart: changeStart.old,
-          oldEnd: oldEnd,
-          newStart: changeStart.new,
-          newEnd: newEnd
-        });
-        
-        i = oldEnd;
-        j = newEnd;
-      }
-    }
+
+    // Use LCS-based diff algorithm to find actual changes
+    const lcs = this.computeLCS(oldLines, newLines);
+    const changes = this.extractChanges(oldLines, newLines, lcs);
     
     const hunks: Array<{
       oldStart: number;
@@ -664,5 +807,9 @@ export class TextEditorTool {
 
   getEditHistory(): EditorCommand[] {
     return [...this.editHistory];
+  }
+
+  getHandledToolNames(): string[] {
+    return getHandledToolNames(this);
   }
 }

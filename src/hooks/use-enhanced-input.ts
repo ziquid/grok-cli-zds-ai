@@ -46,6 +46,7 @@ interface UseEnhancedInputProps {
   onSubmit?: (text: string) => void;
   onEscape?: () => void;
   onSpecialKey?: (key: Key) => boolean; // Return true to prevent default handling
+  onCtrlC?: () => void;
   disabled?: boolean;
   multiline?: boolean;
 }
@@ -54,6 +55,7 @@ export function useEnhancedInput({
   onSubmit,
   onEscape,
   onSpecialKey,
+  onCtrlC,
   disabled = false,
   multiline = false,
 }: UseEnhancedInputProps = {}): EnhancedInputHook {
@@ -99,6 +101,11 @@ export function useEnhancedInput({
       addToHistory(input);
       onSubmit?.(input);
       clearInput();
+    } else if (!isMultilineRef.current) {
+      // Blank line in single-line mode: submit 'continue'
+      addToHistory('continue');
+      onSubmit?.('continue');
+      clearInput();
     }
   }, [input, addToHistory, onSubmit, clearInput]);
 
@@ -107,9 +114,18 @@ export function useEnhancedInput({
 
     // Handle Ctrl+C - check multiple ways it could be detected
     if ((key.ctrl && inputChar === "c") || inputChar === "\x03") {
+      // First try the onCtrlC handler (for aborting operations)
+      onCtrlC?.();
+      // Then clear the input
       setInputState("");
       setCursorPositionState(0);
       setOriginalInput("");
+      return;
+    }
+
+    // Handle Ctrl+D on blank line to exit
+    if (key.ctrl && inputChar === "d" && input === "") {
+      process.exit(0);
       return;
     }
 

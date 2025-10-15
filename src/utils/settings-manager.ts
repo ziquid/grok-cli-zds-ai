@@ -11,6 +11,11 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  startupHook?: string; // Command to run at startup, output added to system prompt
+  taskHook?: string; // Command to validate task operations (start/transition/stop)
+  toolApprovalHook?: string; // Command to validate tool execution before running
+  personaHook?: string; // Command to validate persona changes
+  mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
 /**
@@ -24,9 +29,10 @@ export interface ProjectSettings {
 
 /**
  * Default values for user settings
+ * Note: baseURL and defaultModel are typically set by environment variables or helpers
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
-  baseURL: "https://api.x.ai/v1",
+  baseURL: "https://api.x.ai/v1", // Grok default
   defaultModel: "grok-code-fast-1",
   models: [
     "grok-code-fast-1",
@@ -300,6 +306,35 @@ export class SettingsManager {
   }
 
   /**
+   * Get startup hook command from user settings
+   */
+  public getStartupHook(): string | undefined {
+    return this.getUserSetting("startupHook");
+  }
+
+  /**
+   * Get task hook command from user settings
+   * Used for validating all task operations (start/transition/stop)
+   */
+  public getTaskHook(): string | undefined {
+    return this.getUserSetting("taskHook");
+  }
+
+  /**
+   * Get tool approval hook command from user settings
+   */
+  public getToolApprovalHook(): string | undefined {
+    return this.getUserSetting("toolApprovalHook");
+  }
+
+  /**
+   * Get persona hook command from user settings
+   */
+  public getPersonaHook(): string | undefined {
+    return this.getUserSetting("personaHook");
+  }
+
+  /**
    * Get base URL from user settings or environment
    */
   public getBaseURL(): string {
@@ -309,11 +344,9 @@ export class SettingsManager {
       return envBaseURL;
     }
 
-    // Then check user settings
+    // Then check user settings, then use default
     const userBaseURL = this.getUserSetting("baseURL");
-    return (
-      userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1"
-    );
+    return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1";
   }
 }
 

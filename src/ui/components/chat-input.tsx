@@ -8,12 +8,12 @@ interface ChatInputProps {
   isStreaming: boolean;
 }
 
-export function ChatInput({
+export const ChatInput = React.memo(({
   input,
   cursorPosition,
   isProcessing,
   isStreaming,
-}: ChatInputProps) {
+}: ChatInputProps) => {
   const beforeCursor = input.slice(0, cursorPosition);
   const afterCursor = input.slice(cursorPosition);
 
@@ -39,9 +39,7 @@ export function ChatInput({
   const borderColor = isProcessing || isStreaming ? "yellow" : "blue";
   const promptColor = "cyan";
 
-  // Display placeholder when input is empty
-  const placeholderText = "Ask me anything...";
-  const isPlaceholder = !input;
+
 
   if (isMultiline) {
     return (
@@ -97,36 +95,23 @@ export function ChatInput({
     <Box
       borderStyle="round"
       borderColor={borderColor}
-      paddingX={1}
+      paddingX={0}
       paddingY={0}
       marginTop={1}
     >
       <Box>
         <Text color={promptColor}>❯ </Text>
-        {isPlaceholder ? (
-          <>
-            <Text color="gray" dimColor>
-              {placeholderText}
+        <Text>
+          {beforeCursor}
+          {showCursor && (
+            <Text backgroundColor="white" color="black">
+              {cursorChar}
             </Text>
-            {showCursor && (
-              <Text backgroundColor="white" color="black">
-                {" "}
-              </Text>
-            )}
-          </>
-        ) : (
-          <Text>
-            {beforeCursor}
-            {showCursor && (
-              <Text backgroundColor="white" color="black">
-                {cursorChar}
-              </Text>
-            )}
-            {!showCursor && cursorChar !== " " && cursorChar}
-            {afterCursorText}
-          </Text>
-        )}
+          )}
+          {!showCursor && cursorChar !== " " && cursorChar}
+          {afterCursorText}
+        </Text>
       </Box>
     </Box>
   );
-}
+});

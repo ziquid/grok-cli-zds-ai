@@ -1,3 +1,5 @@
+// Optimization to reduce flickering in Ink TUI
+
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
 import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
@@ -8,6 +10,11 @@ import { ModelSelection } from "./model-selection.js";
 import { ChatHistory } from "./chat-history.js";
 import { ChatInput } from "./chat-input.js";
 import { MCPStatus } from "./mcp-status.js";
+import { ContextStatus } from "./context-status.js";
+import { PersonaStatus } from "./persona-status.js";
+import { MoodStatus } from "./mood-status.js";
+import { ActiveTaskStatus } from "./active-task-status.js";
+import { BackendStatus } from "./backend-status.js";
 import ConfirmationDialog from "./confirmation-dialog.js";
 import {
   ConfirmationService,
@@ -15,24 +22,29 @@ import {
 } from "../../utils/confirmation-service.js";
 import ApiKeyInput from "./api-key-input.js";
 import cfonts from "cfonts";
+import { ChatHistoryManager } from "../../utils/chat-history-manager.js";
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;
   initialMessage?: string;
+  fresh?: boolean;
 }
 
 // Main chat component that handles input when agent is available
 function ChatInterfaceWithAgent({
   agent,
   initialMessage,
+  fresh,
 }: {
   agent: GrokAgent;
   initialMessage?: string;
+  fresh?: boolean;
 }) {
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
   const [tokenCount, setTokenCount] = useState(0);
+  const [totalTokenUsage, setTotalTokenUsage] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [confirmationOptions, setConfirmationOptions] =
     useState<ConfirmationOptions | null>(null);
@@ -58,25 +70,16 @@ function ChatInterfaceWithAgent({
     setIsProcessing,
     setIsStreaming,
     setTokenCount,
+    setTotalTokenUsage,
     setProcessingTime,
     processingStartTime,
     isProcessing,
     isStreaming,
     isConfirmationActive: !!confirmationOptions,
+    totalTokenUsage,
   });
 
   useEffect(() => {
-    // Only clear console on non-Windows platforms or if not PowerShell
-    // Windows PowerShell can have issues with console.clear() causing flickering
-    const isWindows = process.platform === "win32";
-    const isPowerShell =
-      process.env.ComSpec?.toLowerCase().includes("powershell") ||
-      process.env.PSModulePath !== undefined;
-
-    if (!isWindows || !isPowerShell) {
-      console.clear();
-    }
-
     // Add top padding
     console.log("    ");
 
@@ -105,8 +108,33 @@ function ChatInterfaceWithAgent({
 
     console.log(" "); // Spacing after logo
 
-    setChatHistory([]);
+    // Load chat history from file (unless fresh session is requested)
+    const historyManager = ChatHistoryManager.getInstance();
+    if (!fresh) {
+      const loadedHistory = historyManager.loadHistory();
+      setChatHistory(loadedHistory);
+      agent.loadInitialHistory(loadedHistory);
+      // Initialize token count from loaded history
+      setTotalTokenUsage(agent.getCurrentTokenCount());
+    } else {
+      // Clear existing history file for fresh session
+      historyManager.clearHistory();
+      // Reset confirmation service session flags
+      confirmationService.resetSession();
+    }
+
+    // Initialize UI chatHistory with agent's complete history (including system prompts)
+    // This ensures system prompts are preserved when syncing back
+    setChatHistory(agent.getChatHistory());
   }, []);
+   // Optimize streaming updates to reduce flickering
+
+  // Sync chatHistory back to agent whenever it changes (critical for saving on Ctrl+C)
+  useEffect(() => {
+    if (chatHistory.length > 0) {
+      agent.setChatHistory(chatHistory);
+    }
+  }, [chatHistory, agent]);
 
   // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
@@ -116,7 +144,7 @@ function ChatInterfaceWithAgent({
         content: initialMessage,
         timestamp: new Date(),
       };
-      setChatHistory([userEntry]);
+      setChatHistory((prev) => [...prev, userEntry]);
 
       const processInitialMessage = async () => {
         setIsProcessing(true);
@@ -141,7 +169,7 @@ function ChatInterfaceWithAgent({
                     setChatHistory((prev) =>
                       prev.map((entry, idx) =>
                         idx === prev.length - 1 && entry.isStreaming
-                          ? { ...entry, content: entry.content + chunk.content }
+                          ? { ...entry, content: (entry.content || "") + chunk.content }
                           : entry
                       )
                     );
@@ -154,7 +182,7 @@ function ChatInterfaceWithAgent({
                 }
                 break;
               case "tool_calls":
-                if (chunk.toolCalls) {
+                if (chunk.tool_calls) {
                   // Stop streaming for the current assistant message
                   setChatHistory((prev) =>
                     prev.map((entry) =>
@@ -162,7 +190,7 @@ function ChatInterfaceWithAgent({
                         ? {
                             ...entry,
                             isStreaming: false,
-                            toolCalls: chunk.toolCalls,
+                            tool_calls: chunk.tool_calls,
                           }
                         : entry
                     )
@@ -170,7 +198,7 @@ function ChatInterfaceWithAgent({
                   streamingEntry = null;
 
                   // Add individual tool call entries to show tools are being executed
-                  chunk.toolCalls.forEach((toolCall) => {
+                  chunk.tool_calls.forEach((toolCall) => {
                     const toolCallEntry: ChatEntry = {
                       type: "tool_call",
                       content: "Executing...",
@@ -216,6 +244,7 @@ function ChatInterfaceWithAgent({
                   );
                 }
                 setIsStreaming(false);
+                setTotalTokenUsage(prev => prev + tokenCount);
                 break;
             }
           }
@@ -262,14 +291,28 @@ function ChatInterfaceWithAgent({
       processingStartTime.current = Date.now();
     }
 
+    // Reduce update frequency to every 2 seconds to minimize re-renders
     const interval = setInterval(() => {
       setProcessingTime(
         Math.floor((Date.now() - processingStartTime.current) / 1000)
       );
-    }, 1000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);
+
+  // Save chat history to file when it changes (but not during streaming/processing)
+  useEffect(() => {
+    if (chatHistory.length > 0 && !isProcessing && !isStreaming) {
+      const historyManager = ChatHistoryManager.getInstance();
+      // Filter out streaming entries before saving
+      const historyToSave = chatHistory.filter(entry => !entry.isStreaming);
+      historyManager.saveHistory(historyToSave);
+      // Also save the raw messages
+      const messages = agent.getMessages();
+      historyManager.saveMessages(messages);
+    }
+  }, [chatHistory, isProcessing, isStreaming]);
 
   const handleConfirmation = (dontAskAgain?: boolean) => {
     confirmationService.confirmOperation(true, dontAskAgain);
@@ -289,7 +332,7 @@ function ChatInterfaceWithAgent({
   };
 
   return (
-    <Box flexDirection="column" paddingX={2}>
+    <Box flexDirection="column" paddingX={0}>
       {/* Show tips only when no chat history and no confirmation dialog */}
       {chatHistory.length === 0 && !confirmationOptions && (
         <Box flexDirection="column" marginBottom={2}>
@@ -364,10 +407,12 @@ function ChatInterfaceWithAgent({
                 (shift + tab)
               </Text>
             </Box>
-            <Box marginRight={2}>
-              <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
-            </Box>
+            <BackendStatus agent={agent} />
             <MCPStatus />
+            <ContextStatus agent={agent} />
+            <PersonaStatus agent={agent} />
+            <MoodStatus agent={agent} />
+            <ActiveTaskStatus agent={agent} />
           </Box>
 
           <CommandSuggestions
@@ -393,6 +438,7 @@ function ChatInterfaceWithAgent({
 export default function ChatInterface({
   agent,
   initialMessage,
+  fresh,
 }: ChatInterfaceProps) {
   const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
     agent || null
@@ -410,6 +456,7 @@ export default function ChatInterface({
     <ChatInterfaceWithAgent
       agent={currentAgent}
       initialMessage={initialMessage}
+      fresh={fresh}
     />
   );
 }

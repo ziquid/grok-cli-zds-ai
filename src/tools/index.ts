@@ -1,6 +1,12 @@
-export { BashTool } from "./bash.js";
+export { ZshTool } from "./zsh.js";
 export { TextEditorTool } from "./text-editor.js";
 export { MorphEditorTool } from "./morph-editor.js";
-export { TodoTool } from "./todo-tool.js";
 export { ConfirmationTool } from "./confirmation-tool.js";
 export { SearchTool } from "./search.js";
+export { EnvTool } from "./env-tool.js";
+export { IntrospectTool } from "./introspect-tool.js";
+export { ClearCacheTool } from "./clear-cache-tool.js";
+export { CharacterTool } from "./character-tool.js";
+export { TaskTool } from "./task-tool.js";
+export { InternetTool } from "./internet-tool.js";
+export { ImageTool } from "./image-tool.js";

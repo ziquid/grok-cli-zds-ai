@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
+import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { useEnhancedInput, Key } from "./use-enhanced-input.js";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
@@ -14,11 +15,13 @@ interface UseInputHandlerProps {
   setIsProcessing: (processing: boolean) => void;
   setIsStreaming: (streaming: boolean) => void;
   setTokenCount: (count: number) => void;
+  setTotalTokenUsage: (updater: number | ((prev: number) => number)) => void;
   setProcessingTime: (time: number) => void;
   processingStartTime: React.MutableRefObject<number>;
   isProcessing: boolean;
   isStreaming: boolean;
   isConfirmationActive?: boolean;
+  totalTokenUsage: number;
 }
 
 interface CommandSuggestion {
@@ -37,12 +40,16 @@ export function useInputHandler({
   setIsProcessing,
   setIsStreaming,
   setTokenCount,
+  setTotalTokenUsage,
   setProcessingTime,
   processingStartTime,
   isProcessing,
   isStreaming,
   isConfirmationActive = false,
+  totalTokenUsage,
 }: UseInputHandlerProps) {
+  // Track current token count for accumulation
+  const currentTokenCount = useRef(0);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
@@ -52,6 +59,44 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
+
+  const lastEscapeTime = useRef(0);
+  const wasCancelled = useRef(false);
+
+  const handleEscape = () => {
+    const now = Date.now();
+    if (now - lastEscapeTime.current < 500) {
+      // Double ESC: clear input
+      setInput("");
+      setCursorPosition(0);
+      lastEscapeTime.current = 0;
+      return;
+    }
+    lastEscapeTime.current = now;
+
+    // Single ESC: cancel current action or close menus
+    if (showCommandSuggestions) {
+      setShowCommandSuggestions(false);
+      setSelectedCommandIndex(0);
+      return;
+    }
+    if (showModelSelection) {
+      setShowModelSelection(false);
+      setSelectedModelIndex(0);
+      return;
+    }
+    if (isProcessing || isStreaming) {
+      wasCancelled.current = true;
+      agent.abortCurrentOperation();
+      setIsProcessing(false);
+      setIsStreaming(false);
+      setTokenCount(0);
+      setProcessingTime(0);
+      processingStartTime.current = 0;
+      return;
+    }
+    // Otherwise, just return to input (no-op)
+  };
 
   const handleSpecialKey = (key: Key): boolean => {
     // Don't handle input if confirmation dialog is active
@@ -73,30 +118,6 @@ export function useInputHandler({
         confirmationService.resetSession();
       }
       return true; // Handled
-    }
-
-    // Handle escape key for closing menus
-    if (key.escape) {
-      if (showCommandSuggestions) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        return true;
-      }
-      if (showModelSelection) {
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return true;
-      }
-      if (isProcessing || isStreaming) {
-        agent.abortCurrentOperation();
-        setIsProcessing(false);
-        setIsStreaming(false);
-        setTokenCount(0);
-        setProcessingTime(0);
-        processingStartTime.current = 0;
-        return true;
-      }
-      return false; // Let default escape handling work
     }
 
     // Handle command suggestions navigation
@@ -177,6 +198,7 @@ export function useInputHandler({
     }
 
     if (userInput.trim()) {
+      wasCancelled.current = false;
       const directCommandResult = await handleDirectCommand(userInput);
       if (!directCommandResult) {
         await processUserMessage(userInput);
@@ -206,12 +228,22 @@ export function useInputHandler({
   } = useEnhancedInput({
     onSubmit: handleInputSubmit,
     onSpecialKey: handleSpecialKey,
+    onEscape: handleEscape,
+    onCtrlC: handleEscape,
     disabled: isConfirmationActive,
   });
 
   // Hook up the actual input handling
   useInput((inputChar: string, key: Key) => {
     handleInput(inputChar, key);
+  });
+
+  // Additional input handler specifically for abort operations (always active)
+  useInput((inputChar: string, key: Key) => {
+    // Handle ESC and Ctrl+C during streaming/processing (bypass normal input handling)
+    if ((isProcessing || isStreaming) && (key.escape || (key.ctrl && inputChar === "c") || inputChar === "\x03")) {
+      handleEscape();
+    }
   });
 
   // Update command suggestions when input changes
@@ -222,7 +254,11 @@ export function useInputHandler({
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
+    { command: "/context", description: "Show context usage info" },
+    { command: "/introspect", description: "Show available tools" },
     { command: "/models", description: "Switch Grok Model" },
+    { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
+    { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
   ];
@@ -235,9 +271,44 @@ export function useInputHandler({
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
 
+    // Handle !<command> - execute but don't return true so AI can process the output
+    if (trimmedInput.startsWith("!")) {
+      const command = trimmedInput.substring(1).trim();
+      if (command) {
+        // Execute the command and add result to chat history
+        const result = await agent.executeCommand(command, true); // skip confirmation
+
+        const commandEntry: ChatEntry = {
+          type: "tool_result",
+          content: result.success
+            ? result.output || "Command completed"
+            : result.error || "Command failed",
+          timestamp: new Date(),
+          toolCall: {
+            id: `user_execute_${Date.now()}`,
+            type: "function",
+            function: {
+              name: "execute",
+              arguments: JSON.stringify({ command: command }),
+            },
+          },
+          toolResult: result,
+        };
+        setChatHistory((prev) => [...prev, commandEntry]);
+
+        // Don't return true - let it fall through to processUserMessage
+        return false;
+      }
+      return false; // Empty command after !
+    }
+
     if (trimmedInput === "/clear") {
       // Reset chat history
       setChatHistory([]);
+
+      // Clear persisted history
+      const historyManager = ChatHistoryManager.getInstance();
+      historyManager.clearHistory();
 
       // Reset processing states
       setIsProcessing(false);
@@ -255,17 +326,37 @@ export function useInputHandler({
       return true;
     }
 
+    if (trimmedInput.startsWith("/introspect")) {
+      const parts = trimmedInput.split(" ");
+      const target = parts[1] || "help";
+
+      const toolResult = await agent["introspect"].introspect(target);
+      const introspectEntry: ChatEntry = {
+        type: "assistant",
+        content: toolResult.success ? toolResult.output! : toolResult.error!,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, introspectEntry]);
+      clearInput();
+      return true;
+    }
+
     if (trimmedInput === "/help") {
       const helpEntry: ChatEntry = {
         type: "assistant",
         content: `Grok CLI Help:
 
 Built-in Commands:
-  /clear      - Clear chat history
+  /clear      - Clear chat history (current session + persisted)
+  /context    - Show context usage info
   /help       - Show this help
+  /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
   /exit       - Exit application
   exit, quit  - Exit application
+
+CLI Options:
+  --fresh     - Start with a fresh session (don't load previous history)
 
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
@@ -273,14 +364,18 @@ Git Commands:
 Enhanced Input Features:
   ↑/↓ Arrow   - Navigate command history
   Ctrl+C      - Clear input (press twice to exit)
+  Ctrl+D      - Exit on blank line
   Ctrl+←/→    - Move by word
   Ctrl+A/E    - Move to line start/end
   Ctrl+W      - Delete word before cursor
   Ctrl+K      - Delete to end of line
   Ctrl+U      - Delete to start of line
+  ESC         - Cancel current action / close menus
+  ESC (twice) - Clear input line
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
+  !command    - Execute any shell command directly
   ls [path]   - List directory contents
   pwd         - Show current directory
   cd <path>   - Change directory
@@ -290,6 +385,10 @@ Direct Commands (executed immediately):
 
 Model Configuration:
   Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
+
+History Persistence:
+  Chat history is automatically saved and restored between sessions.
+  Use /clear to reset both current and persisted history.
 
 For complex operations, just describe what you want in natural language.
 Examples:
@@ -343,6 +442,72 @@ Available models: ${modelNames.join(", ")}`,
       return true;
     }
 
+    if (trimmedInput === "/context") {
+      // Redirect to /introspect context for consistency
+      const toolResult = await agent["introspect"].introspect("context");
+      const contextEntry: ChatEntry = {
+        type: "assistant",
+        content: toolResult.success ? toolResult.output! : toolResult.error!,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, contextEntry]);
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/persona")) {
+      const parts = trimmedInput.split(" ");
+      if (parts.length < 2) {
+        const helpEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /persona <text> [color]\nExample: /persona debugging red",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, helpEntry]);
+        clearInput();
+        return true;
+      }
+
+      const persona = parts[1];
+      const color = parts[2];
+      agent.setPersona(persona, color);
+
+      const confirmEntry: ChatEntry = {
+        type: "assistant",
+        content: `Persona set to: ${persona}${color ? ` (${color})` : ''}`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, confirmEntry]);
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/mood")) {
+      const parts = trimmedInput.split(" ");
+      if (parts.length < 2) {
+        const helpEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /mood <text> [color]\nExample: /mood focused green",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, helpEntry]);
+        clearInput();
+        return true;
+      }
+
+      const mood = parts[1];
+      const color = parts[2];
+      agent.setMood(mood, color);
+
+      const confirmEntry: ChatEntry = {
+        type: "assistant",
+        content: `Mood set to: ${mood}${color ? ` (${color})` : ''}`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, confirmEntry]);
+      clearInput();
+      return true;
+    }
 
     if (trimmedInput === "/commit-and-push") {
       const userEntry: ChatEntry = {
@@ -357,7 +522,7 @@ Available models: ${modelNames.join(", ")}`,
 
       try {
         // First check if there are any changes at all
-        const initialStatusResult = await agent.executeBashCommand(
+        const initialStatusResult = await agent.executeCommand(
           "git status --porcelain"
         );
 
@@ -378,7 +543,7 @@ Available models: ${modelNames.join(", ")}`,
         }
 
         // Add all changes
-        const addResult = await agent.executeBashCommand("git add .");
+        const addResult = await agent.executeCommand("git add .");
 
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
@@ -413,7 +578,7 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, addEntry]);
 
         // Get staged changes for commit message generation
-        const diffResult = await agent.executeBashCommand("git diff --cached");
+        const diffResult = await agent.executeCommand("git diff --cached");
 
         // Generate commit message using AI
         const commitPrompt = `Generate a concise, professional git commit message for these changes:
@@ -480,7 +645,7 @@ Respond with ONLY the commit message, no additional text.`;
           .trim()
           .replace(/^["']|["']$/g, "");
         const commitCommand = `git commit -m "${cleanCommitMessage}"`;
-        const commitResult = await agent.executeBashCommand(commitCommand);
+        const commitResult = await agent.executeCommand(commitCommand);
 
         const commitEntry: ChatEntry = {
           type: "tool_result",
@@ -503,7 +668,7 @@ Respond with ONLY the commit message, no additional text.`;
         // If commit was successful, push to remote
         if (commitResult.success) {
           // First try regular push, if it fails try with upstream setup
-          let pushResult = await agent.executeBashCommand("git push");
+          let pushResult = await agent.executeCommand("git push");
           let pushCommand = "git push";
 
           if (
@@ -511,7 +676,7 @@ Respond with ONLY the commit message, no additional text.`;
             pushResult.error?.includes("no upstream branch")
           ) {
             pushCommand = "git push -u origin HEAD";
-            pushResult = await agent.executeBashCommand(pushCommand);
+            pushResult = await agent.executeCommand(pushCommand);
           }
 
           const pushEntry: ChatEntry = {
@@ -547,63 +712,6 @@ Respond with ONLY the commit message, no additional text.`;
       return true;
     }
 
-    const directBashCommands = [
-      "ls",
-      "pwd",
-      "cd",
-      "cat",
-      "mkdir",
-      "touch",
-      "echo",
-      "grep",
-      "find",
-      "cp",
-      "mv",
-      "rm",
-    ];
-    const firstWord = trimmedInput.split(" ")[0];
-
-    if (directBashCommands.includes(firstWord)) {
-      const userEntry: ChatEntry = {
-        type: "user",
-        content: trimmedInput,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, userEntry]);
-
-      try {
-        const result = await agent.executeBashCommand(trimmedInput);
-
-        const commandEntry: ChatEntry = {
-          type: "tool_result",
-          content: result.success
-            ? result.output || "Command completed"
-            : result.error || "Command failed",
-          timestamp: new Date(),
-          toolCall: {
-            id: `bash_${Date.now()}`,
-            type: "function",
-            function: {
-              name: "bash",
-              arguments: JSON.stringify({ command: trimmedInput }),
-            },
-          },
-          toolResult: result,
-        };
-        setChatHistory((prev) => [...prev, commandEntry]);
-      } catch (error: any) {
-        const errorEntry: ChatEntry = {
-          type: "assistant",
-          content: `Error executing command: ${error.message}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, errorEntry]);
-      }
-
-      clearInput();
-      return true;
-    }
-
     return false;
   };
 
@@ -623,6 +731,13 @@ Respond with ONLY the commit message, no additional text.`;
       let streamingEntry: ChatEntry | null = null;
 
       for await (const chunk of agent.processUserMessageStream(userInput)) {
+        // Check if user cancelled - stop immediately
+        if (wasCancelled.current) {
+          setIsProcessing(false);
+          setIsStreaming(false);
+          return;
+        }
+
         switch (chunk.type) {
           case "content":
             if (chunk.content) {
@@ -639,7 +754,7 @@ Respond with ONLY the commit message, no additional text.`;
                 setChatHistory((prev) =>
                   prev.map((entry, idx) =>
                     idx === prev.length - 1 && entry.isStreaming
-                      ? { ...entry, content: entry.content + chunk.content }
+                      ? { ...entry, content: (entry.content || "") + chunk.content }
                       : entry
                   )
                 );
@@ -649,12 +764,13 @@ Respond with ONLY the commit message, no additional text.`;
 
           case "token_count":
             if (chunk.tokenCount !== undefined) {
+              currentTokenCount.current = chunk.tokenCount;
               setTokenCount(chunk.tokenCount);
             }
             break;
 
           case "tool_calls":
-            if (chunk.toolCalls) {
+            if (chunk.tool_calls) {
               // Stop streaming for the current assistant message
               setChatHistory((prev) =>
                 prev.map((entry) =>
@@ -662,7 +778,7 @@ Respond with ONLY the commit message, no additional text.`;
                     ? {
                         ...entry,
                         isStreaming: false,
-                        toolCalls: chunk.toolCalls,
+                        tool_calls: chunk.tool_calls,
                       }
                     : entry
                 )
@@ -670,7 +786,7 @@ Respond with ONLY the commit message, no additional text.`;
               streamingEntry = null;
 
               // Add individual tool call entries to show tools are being executed
-              chunk.toolCalls.forEach((toolCall) => {
+              chunk.tool_calls.forEach((toolCall) => {
                 const toolCallEntry: ChatEntry = {
                   type: "tool_call",
                   content: "Executing...",
@@ -719,6 +835,9 @@ Respond with ONLY the commit message, no additional text.`;
               );
             }
             setIsStreaming(false);
+            // Use the tokenCount ref that was set during streaming
+            setTotalTokenUsage(prev => prev + currentTokenCount.current);
+            currentTokenCount.current = 0; // Reset for next request
             break;
         }
       }

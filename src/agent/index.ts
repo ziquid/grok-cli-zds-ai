@@ -1,14 +1,14 @@
-import { TextEditorTool, BashTool } from '../tools/index.js';
+import { TextEditorTool, ZshTool } from '../tools/index.js';
 import { ToolResult, AgentState } from '../types/index.js';
 
 export class Agent {
   private textEditor: TextEditorTool;
-  private bash: BashTool;
+  private zsh: ZshTool;
   private state: AgentState;
 
   constructor() {
     this.textEditor = new TextEditorTool();
-    this.bash = new BashTool();
+    this.zsh = new ZshTool();
     this.state = {
       currentDirectory: process.cwd(),
       editHistory: [],
@@ -21,7 +21,7 @@ export class Agent {
     
     if (trimmedInput.startsWith('view ')) {
       const args = this.parseViewCommand(trimmedInput);
-      return this.textEditor.view(args.path, args.range);
+      return this.textEditor.viewFile(args.path, args.range);
     }
     
     if (trimmedInput.startsWith('str_replace ')) {
@@ -37,7 +37,7 @@ export class Agent {
       if (!args) {
         return { success: false, error: 'Invalid create command format' };
       }
-      return this.textEditor.create(args.path, args.content);
+      return this.textEditor.createNewFile(args.path, args.content);
     }
     
     if (trimmedInput.startsWith('insert ')) {
@@ -45,7 +45,7 @@ export class Agent {
       if (!args) {
         return { success: false, error: 'Invalid insert command format' };
       }
-      return this.textEditor.insert(args.path, args.line, args.content);
+      return this.textEditor.insertLines(args.path, args.line, args.content);
     }
     
     if (trimmedInput === 'undo_edit') {
@@ -56,13 +56,13 @@ export class Agent {
       const command = trimmedInput.startsWith('bash ') 
         ? trimmedInput.substring(5) 
         : trimmedInput.substring(2);
-      return this.bash.execute(command);
+      return this.zsh.execute(command);
     }
     
     if (trimmedInput === 'pwd') {
       return {
         success: true,
-        output: this.bash.getCurrentDirectory()
+        output: this.zsh.getCurrentDirectory()
       };
     }
     
@@ -80,7 +80,7 @@ export class Agent {
       return this.getHelp();
     }
     
-    return this.bash.execute(trimmedInput);
+    return this.zsh.execute(trimmedInput);
   }
 
   private parseViewCommand(input: string): { path: string; range?: [number, number] } {
@@ -150,7 +150,7 @@ export class Agent {
   getCurrentState(): AgentState {
     return {
       ...this.state,
-      currentDirectory: this.bash.getCurrentDirectory(),
+      currentDirectory: this.zsh.getCurrentDirectory(),
       editHistory: this.textEditor.getEditHistory()
     };
   }
