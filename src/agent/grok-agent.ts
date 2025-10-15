@@ -26,8 +26,7 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
-import { executeHook } from "../utils/hook-executor.js";
-import { detectBackendFromURL, isOllamaCloudModel } from "../utils/backend-config.js";
+import { executeOperationHook, executeToolApprovalHook } from "../utils/hook-executor.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
@@ -92,7 +91,9 @@ export class GrokAgent extends EventEmitter {
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
-    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
+    // Get display name from environment (set by zai/helpers)
+    const displayName = process.env.GROK_BACKEND_DISPLAY_NAME;
+    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, displayName);
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.zsh = new ZshTool();
@@ -589,7 +590,7 @@ Current working directory: ${process.cwd()}`;
           }
         } else if (typeof acc[key] === "string" && typeof value === "string") {
           // Don't concatenate certain properties that should remain separate
-          const nonConcatenableProps = ['id', 'type', 'name'];
+          const nonConcatenableProps = ['id', 'type', 'name', 'arguments'];
           if (nonConcatenableProps.includes(key)) {
             // For non-concatenable properties, keep the new value
             acc[key] = value;
@@ -889,6 +890,27 @@ Current working directory: ${process.cwd()}`;
     try {
       const args = JSON.parse(toolCall.function.arguments);
 
+      // Check tool approval hook if configured
+      const settings = getSettingsManager();
+      const toolApprovalHook = settings.getToolApprovalHook();
+
+      if (toolApprovalHook) {
+        const approvalResult = await executeToolApprovalHook(
+          toolApprovalHook,
+          toolCall.function.name,
+          args,
+          30000 // 30 second timeout
+        );
+
+        if (!approvalResult.approved) {
+          const reason = approvalResult.reason || "Tool execution denied by approval hook";
+          return {
+            success: false,
+            error: `Tool execution blocked: ${reason}`,
+          };
+        }
+      }
+
       switch (toolCall.function.name) {
         case "viewFile":
           { let range: [number, number] | undefined;
@@ -1124,32 +1146,77 @@ Current working directory: ${process.cwd()}`;
     return this.activeTaskColor;
   }
 
-  setPersona(persona: string, color?: string): void {
+  async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    // Execute hook if configured
+    const settings = getSettingsManager();
+    const hookPath = settings.getPersonaHook();
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "persona_change",
+        {
+          persona_old: this.persona || "",
+          persona_new: persona,
+          persona_color: color || "white"
+        },
+        30000
+      );
+
+      if (!hookResult.approved) {
+        const reason = hookResult.reason || "Hook rejected persona change";
+        this.messages.push({
+          role: 'system',
+          content: `Failed to change persona to "${persona}": ${reason}`
+        });
+        return {
+          success: false,
+          error: reason
+        };
+      }
+
+      if (hookResult.timedOut) {
+        this.messages.push({
+          role: 'system',
+          content: `Persona hook timed out (auto-approved)`
+        });
+      }
+    }
+
     const oldPersona = this.persona;
     const oldColor = this.personaColor;
     this.persona = persona;
     this.personaColor = color || "white";
 
     // Add system message for recordkeeping
+    let systemContent: string;
     if (oldPersona) {
       const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
       const newColorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
-      this.messages.push({
-        role: 'system',
-        content: `User changed the persona from "${oldPersona}"${oldColorStr} to "${this.persona}"${newColorStr}`
-      });
+      systemContent = `Assistant changed the persona from "${oldPersona}"${oldColorStr} to "${this.persona}"${newColorStr}`;
     } else {
       const colorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
-      this.messages.push({
-        role: 'system',
-        content: `User set the persona to "${this.persona}"${colorStr}`
-      });
+      systemContent = `Assistant set the persona to "${this.persona}"${colorStr}`;
     }
+
+    this.messages.push({
+      role: 'system',
+      content: systemContent
+    });
+
+    // Also add to chat history for persistence
+    this.chatHistory.push({
+      type: 'system',
+      content: systemContent,
+      timestamp: new Date()
+    });
 
     this.emit('personaChange', {
       persona: this.persona,
       color: this.personaColor
     });
+
+    return { success: true };
   }
 
   setMood(mood: string, color?: string): void {
@@ -1159,20 +1226,27 @@ Current working directory: ${process.cwd()}`;
     this.moodColor = color || "white";
 
     // Add system message for recordkeeping
+    let systemContent: string;
     if (oldMood) {
       const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
       const newColorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
-      this.messages.push({
-        role: 'system',
-        content: `Assistant changed the mood from "${oldMood}"${oldColorStr} to "${this.mood}"${newColorStr}`
-      });
+      systemContent = `Assistant changed the mood from "${oldMood}"${oldColorStr} to "${this.mood}"${newColorStr}`;
     } else {
       const colorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
-      this.messages.push({
-        role: 'system',
-        content: `Assistant set the mood to "${this.mood}"${colorStr}`
-      });
+      systemContent = `Assistant set the mood to "${this.mood}"${colorStr}`;
     }
+
+    this.messages.push({
+      role: 'system',
+      content: systemContent
+    });
+
+    // Also add to chat history for persistence
+    this.chatHistory.push({
+      type: 'system',
+      content: systemContent,
+      timestamp: new Date()
+    });
 
     this.emit('moodChange', {
       mood: this.mood,
@@ -1191,12 +1265,17 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getStartActiveTaskHook();
+    const hookPath = settings.getTaskHook();
 
     if (hookPath) {
-      const hookResult = await executeHook(
+      const hookResult = await executeOperationHook(
         hookPath,
-        [activeTask, action, color || "white"],
+        "task_start",
+        {
+          task_name: activeTask,
+          task_action: action,
+          task_color: color || "white"
+        },
         30000
       );
 
@@ -1253,12 +1332,18 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getTransitionActiveTaskStatusHook();
+    const hookPath = settings.getTaskHook();
 
     if (hookPath) {
-      const hookResult = await executeHook(
+      const hookResult = await executeOperationHook(
         hookPath,
-        [this.activeTask, this.activeTaskAction, action, color || "white"],
+        "task_transition",
+        {
+          task_name: this.activeTask,
+          task_old_action: this.activeTaskAction,
+          task_new_action: action,
+          task_color: color || "white"
+        },
         30000
       );
 
@@ -1320,12 +1405,19 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getStopActiveTaskHook();
+    const hookPath = settings.getTaskHook();
 
     if (hookPath) {
-      const hookResult = await executeHook(
+      const hookResult = await executeOperationHook(
         hookPath,
-        [this.activeTask, this.activeTaskAction, reason, documentationFile, color || "white"],
+        "task_stop",
+        {
+          task_name: this.activeTask,
+          task_action: this.activeTaskAction,
+          task_reason: reason,
+          task_documentation_file: documentationFile,
+          task_color: color || "white"
+        },
         30000
       );
 
@@ -1453,18 +1545,8 @@ Current working directory: ${process.cwd()}`;
   }
 
   getBackend(): string {
-    const baseURL = this.grokClient.getBaseURL();
-    const model = this.grokClient.getCurrentModel();
-
-    // Use centralized backend detection
-    const detected = detectBackendFromURL(baseURL);
-
-    // Special case: Ollama cloud models
-    if (detected.serviceName === 'ollama' && isOllamaCloudModel(model)) {
-      return 'ollama-cloud';
-    }
-
-    return detected.serviceName;
+    // Just return the backend name from the client (no detection)
+    return this.grokClient.getBackendName();
   }
 
   abortCurrentOperation(): void {

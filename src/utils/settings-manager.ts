@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { BACKEND_CONFIGS } from "./backend-config.js";
 
 /**
  * User-level settings stored in ~/.grok/user-settings.json
@@ -13,9 +12,9 @@ export interface UserSettings {
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
   startupHook?: string; // Command to run at startup, output added to system prompt
-  startActiveTaskHook?: string; // Command to validate starting a new active task
-  transitionActiveTaskStatusHook?: string; // Command to validate transitioning active task status
-  stopActiveTaskHook?: string; // Command to validate stopping active task
+  taskHook?: string; // Command to validate task operations (start/transition/stop)
+  toolApprovalHook?: string; // Command to validate tool execution before running
+  personaHook?: string; // Command to validate persona changes
   mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
@@ -29,11 +28,12 @@ export interface ProjectSettings {
 }
 
 /**
- * Default values for user settings (uses centralized backend config)
+ * Default values for user settings
+ * Note: baseURL and defaultModel are typically set by environment variables or helpers
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
-  baseURL: BACKEND_CONFIGS.grok.baseURL,
-  defaultModel: BACKEND_CONFIGS.grok.defaultModel,
+  baseURL: "https://api.x.ai/v1", // Grok default
+  defaultModel: "grok-code-fast-1",
   models: [
     "grok-code-fast-1",
     "grok-4-latest",
@@ -44,10 +44,10 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
 };
 
 /**
- * Default values for project settings (uses centralized backend config)
+ * Default values for project settings
  */
 const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
-  model: BACKEND_CONFIGS.grok.defaultModel,
+  model: "grok-code-fast-1",
 };
 
 /**
@@ -313,24 +313,25 @@ export class SettingsManager {
   }
 
   /**
-   * Get start active task hook command from user settings
+   * Get task hook command from user settings
+   * Used for validating all task operations (start/transition/stop)
    */
-  public getStartActiveTaskHook(): string | undefined {
-    return this.getUserSetting("startActiveTaskHook");
+  public getTaskHook(): string | undefined {
+    return this.getUserSetting("taskHook");
   }
 
   /**
-   * Get transition active task status hook command from user settings
+   * Get tool approval hook command from user settings
    */
-  public getTransitionActiveTaskStatusHook(): string | undefined {
-    return this.getUserSetting("transitionActiveTaskStatusHook");
+  public getToolApprovalHook(): string | undefined {
+    return this.getUserSetting("toolApprovalHook");
   }
 
   /**
-   * Get stop active task hook command from user settings
+   * Get persona hook command from user settings
    */
-  public getStopActiveTaskHook(): string | undefined {
-    return this.getUserSetting("stopActiveTaskHook");
+  public getPersonaHook(): string | undefined {
+    return this.getUserSetting("personaHook");
   }
 
   /**
@@ -343,11 +344,9 @@ export class SettingsManager {
       return envBaseURL;
     }
 
-    // Then check user settings
+    // Then check user settings, then use default
     const userBaseURL = this.getUserSetting("baseURL");
-    return (
-      userBaseURL || DEFAULT_USER_SETTINGS.baseURL || BACKEND_CONFIGS.grok.baseURL
-    );
+    return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1";
   }
 }
 

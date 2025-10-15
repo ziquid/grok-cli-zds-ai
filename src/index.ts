@@ -13,10 +13,6 @@ import { ConfirmationService } from "./utils/confirmation-service.js";
 import { ChatHistoryManager } from "./utils/chat-history-manager.js";
 import { createMCPCommand } from "./commands/mcp.js";
 import { getAuthConfig, validateApiKey } from "./utils/auth-helper.js";
-import {
-  getBackendBaseURL,
-  getAllBackendNames,
-} from "./utils/backend-config.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables
@@ -404,12 +400,12 @@ program
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
-    "-b, --backend <service>",
-    `Backend service (${getAllBackendNames().join(", ")})`
+    "-b, --backend <name>",
+    "Backend display name (e.g., grok, openai, claude)"
   )
   .option(
     "-u, --base-url <url>",
-    "API base URL (overrides --backend, or set GROK_BASE_URL env var)"
+    "API base URL (or set GROK_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
@@ -486,20 +482,12 @@ program
       // Get authentication and backend configuration
       const authConfig = getAuthConfig({
         apiKey: options.apiKey,
-        baseURL: options.backend ? getBackendBaseURL(options.backend.toLowerCase()) : options.baseUrl,
+        baseURL: options.baseUrl,
         model: options.model,
       });
 
       const { apiKey, baseURL, model } = authConfig;
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
-
-      // Validate backend service if provided
-      if (options.backend && !getBackendBaseURL(options.backend.toLowerCase())) {
-        console.error(
-          `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${getAllBackendNames().join(", ")}`
-        );
-        process.exit(1);
-      }
 
       // Validate API key
       try {
@@ -752,12 +740,12 @@ gitCommand
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
-    "-b, --backend <service>",
-    `Backend service (${getAllBackendNames().join(", ")})`
+    "-b, --backend <name>",
+    "Backend display name (e.g., grok, openai, claude)"
   )
   .option(
     "-u, --base-url <url>",
-    "API base URL (overrides --backend, or set GROK_BASE_URL env var)"
+    "API base URL (or set GROK_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
@@ -789,20 +777,12 @@ gitCommand
       // Get authentication and backend configuration
       const authConfig = getAuthConfig({
         apiKey: options.apiKey,
-        baseURL: options.backend ? getBackendBaseURL(options.backend.toLowerCase()) : options.baseUrl,
+        baseURL: options.baseUrl,
         model: options.model,
       });
 
       const { apiKey, baseURL, model } = authConfig;
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
-
-      // Validate backend service if provided
-      if (options.backend && !getBackendBaseURL(options.backend.toLowerCase())) {
-        console.error(
-          `❌ Error: Unknown backend service '${options.backend}'. Valid options: ${getAllBackendNames().join(", ")}`
-        );
-        process.exit(1);
-      }
 
       // Validate API key
       try {

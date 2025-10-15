@@ -25,8 +25,16 @@ export class CharacterTool implements ToolDiscovery {
         };
       }
 
-      // Set the persona
-      this.agent.setPersona(persona, color);
+      // Set the persona (now async with hook support)
+      const result = await this.agent.setPersona(persona, color);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || "Failed to set persona",
+          output: result.error || "Failed to set persona"
+        };
+      }
 
       return {
         success: true,

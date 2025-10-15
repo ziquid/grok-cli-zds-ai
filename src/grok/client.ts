@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import fs from "fs";
-import { detectBackendFromURL, getBackendDisplayNameWithModel } from "../utils/backend-config.js";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
@@ -53,7 +52,7 @@ export class GrokClient {
   private defaultMaxTokens: number;
   private backendName: string;
 
-  constructor(apiKey: string, model?: string, baseURL?: string) {
+  constructor(apiKey: string, model?: string, baseURL?: string, displayName?: string) {
     const finalBaseURL = baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1";
     this.client = new OpenAI({
       apiKey,
@@ -66,24 +65,22 @@ export class GrokClient {
       this.currentModel = model;
     }
 
-    // Detect backend from URL using centralized config
-    const detected = detectBackendFromURL(finalBaseURL);
-    this.backendName = detected.displayName;
-
-    // Update display name for Ollama Cloud models
-    this.updateBackendDisplayName();
-  }
-
-  private updateBackendDisplayName(): void {
-    // Update display name based on current model (handles Ollama Cloud)
-    const detected = detectBackendFromURL(this.client.baseURL || "https://api.x.ai/v1");
-    this.backendName = getBackendDisplayNameWithModel(detected.serviceName, this.currentModel);
+    // Use provided display name, or derive from baseURL hostname as fallback
+    if (displayName) {
+      this.backendName = displayName;
+    } else {
+      // Simple fallback: extract hostname from URL
+      try {
+        const url = new URL(finalBaseURL);
+        this.backendName = url.hostname.replace(/^api\./, '').replace(/\..*$/, '');
+      } catch {
+        this.backendName = 'AI';
+      }
+    }
   }
 
   setModel(model: string): void {
     this.currentModel = model;
-    // Update display name if model changed
-    this.updateBackendDisplayName();
   }
 
   getCurrentModel(): string {
@@ -92,6 +89,10 @@ export class GrokClient {
 
   getBaseURL(): string {
     return this.client.baseURL || "https://api.x.ai/v1";
+  }
+
+  getBackendName(): string {
+    return this.backendName;
   }
 
   async chat(
