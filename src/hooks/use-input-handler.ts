@@ -303,12 +303,11 @@ export function useInputHandler({
     }
 
     if (trimmedInput === "/clear") {
-      // Reset chat history
-      setChatHistory([]);
+      // Clear agent's internal context (messages array + chat history)
+      await agent.clearCache();
 
-      // Clear persisted history
-      const historyManager = ChatHistoryManager.getInstance();
-      historyManager.clearHistory();
+      // Reset UI chat history to match cleared agent state
+      setChatHistory(agent.getChatHistory());
 
       // Reset processing states
       setIsProcessing(false);
