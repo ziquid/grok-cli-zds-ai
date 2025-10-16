@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
 import { formatTokenCount } from "../../utils/token-counter.js";
 
@@ -25,6 +25,8 @@ const loadingTexts = [
   "Downloading...",
 ];
 
+const spinnerFrames = ["/", "-", "\\", "|"];
+
 export const LoadingSpinner = React.memo(({
   isActive,
   processingTime,
@@ -36,7 +38,6 @@ export const LoadingSpinner = React.memo(({
   useEffect(() => {
     if (!isActive) return;
 
-    const spinnerFrames = ["/", "-", "\\", "|"];
     // Reduced frequency: 1000ms to reduce flickering
     const interval = setInterval(() => {
       setSpinnerFrame((prev) => (prev + 1) % spinnerFrames.length);
@@ -60,8 +61,6 @@ export const LoadingSpinner = React.memo(({
 
   if (!isActive) return null;
 
-  const spinnerFrames = ["/", "-", "\\", "|"];
-
   return (
     <Box marginTop={1}>
       <Text color="cyan">
@@ -72,5 +71,13 @@ export const LoadingSpinner = React.memo(({
         interrupt)
       </Text>
     </Box>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  // Only re-render if props actually changed
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.processingTime === nextProps.processingTime &&
+    prevProps.tokenCount === nextProps.tokenCount
   );
 });
