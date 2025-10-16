@@ -15,6 +15,7 @@ export interface UserSettings {
   taskHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
+  personaHookMandatory?: boolean; // Whether persona hook is required
   mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
@@ -332,6 +333,13 @@ export class SettingsManager {
    */
   public getPersonaHook(): string | undefined {
     return this.getUserSetting("personaHook");
+  }
+
+  /**
+   * Check if persona hook is mandatory
+   */
+  public isPersonaHookMandatory(): boolean {
+    return this.getUserSetting("personaHookMandatory") ?? false;
   }
 
   /**

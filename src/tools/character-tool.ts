@@ -1,5 +1,7 @@
 import { ToolResult } from "../types/index.js";
 import { ToolDiscovery } from "./tool-discovery.js";
+import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
 
 export class CharacterTool implements ToolDiscovery {
   private agent: any; // Reference to the GrokAgent
@@ -9,7 +11,7 @@ export class CharacterTool implements ToolDiscovery {
   }
 
   getHandledToolNames(): string[] {
-    return ["setPersona", "setMood", "getPersona", "getMood"];
+    return ["setPersona", "setMood", "getPersona", "getMood", "getAvailablePersonas"];
   }
 
   /**
@@ -136,6 +138,83 @@ export class CharacterTool implements ToolDiscovery {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error getting mood",
         output: error instanceof Error ? error.message : "Unknown error getting mood"
+      };
+    }
+  }
+
+  /**
+   * Get available personas by calling the persona hook
+   */
+  async getAvailablePersonas(): Promise<ToolResult> {
+    try {
+      const settings = getSettingsManager();
+      const hookPath = settings.getPersonaHook();
+      const hookMandatory = settings.isPersonaHookMandatory();
+
+      if (!hookPath) {
+        if (hookMandatory) {
+          return {
+            success: false,
+            error: "Persona hook is mandatory but not configured",
+            output: "Persona hook is mandatory but not configured"
+          };
+        }
+        return {
+          success: false,
+          error: "No persona hook configured",
+          output: "No persona hook configured"
+        };
+      }
+
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "getAvailablePersonas",
+        {},
+        10000
+      );
+
+      if (!hookResult.approved) {
+        return {
+          success: false,
+          error: hookResult.reason || "Failed to get available personas",
+          output: hookResult.reason || "Failed to get available personas"
+        };
+      }
+
+      // Apply hook commands (sets ENV vars, extracts special values)
+      if (hookResult.commands) {
+        applyHookCommands(hookResult.commands);
+      }
+
+      // Extract OUTPUT commands from hook response
+      const outputLines: string[] = [];
+      if (hookResult.commands) {
+        for (const cmd of hookResult.commands) {
+          if (cmd.type === "OUTPUT") {
+            outputLines.push(cmd.value);
+          }
+        }
+      }
+
+      // If no OUTPUT commands were returned, the hook didn't provide personas
+      if (outputLines.length === 0) {
+        return {
+          success: false,
+          error: "Hook did not return available personas",
+          output: "Hook did not return available personas"
+        };
+      }
+
+      return {
+        success: true,
+        output: outputLines.join("\n"),
+        displayOutput: "Available personas retrieved"
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error getting available personas",
+        output: error instanceof Error ? error.message : "Unknown error getting available personas"
       };
     }
   }

@@ -6,11 +6,74 @@ export interface HookResult {
   approved: boolean;
   reason?: string;
   timedOut: boolean;
+  commands?: HookCommand[];
+}
+
+export interface HookCommand {
+  type: "ENV" | "OUTPUT" | "ECHO" | "RUN" | "BACKEND" | "MODEL";
+  value: string;
 }
 
 export interface ToolApprovalResult {
   approved: boolean;
   reason?: string;
+}
+
+/**
+ * Parse hook output for command directives
+ * Lines starting with "ENV ", "OUTPUT ", "ECHO ", "RUN ", "BACKEND ", or "MODEL " are commands
+ * Other lines are treated as OUTPUT if present
+ */
+function parseHookOutput(stdout: string): HookCommand[] {
+  const commands: HookCommand[] = [];
+  const lines = stdout.split("\n").filter((line) => line.trim());
+
+  for (const line of lines) {
+    if (line.startsWith("ENV ")) {
+      commands.push({ type: "ENV", value: line.slice(4) });
+    } else if (line.startsWith("OUTPUT ")) {
+      commands.push({ type: "OUTPUT", value: line.slice(7) });
+    } else if (line.startsWith("ECHO ")) {
+      commands.push({ type: "ECHO", value: line.slice(5) });
+    } else if (line.startsWith("RUN ")) {
+      commands.push({ type: "RUN", value: line.slice(4) });
+    } else if (line.startsWith("BACKEND ")) {
+      commands.push({ type: "BACKEND", value: line.slice(8) });
+    } else if (line.startsWith("MODEL ")) {
+      commands.push({ type: "MODEL", value: line.slice(6) });
+    } else if (line.trim()) {
+      // Non-empty lines without a command prefix are treated as OUTPUT
+      commands.push({ type: "OUTPUT", value: line });
+    }
+  }
+
+  return commands;
+}
+
+/**
+ * Apply hook commands to the environment and return extracted values
+ * ENV commands are applied to process.env
+ * Returns an object with any special variables extracted (e.g., ZDS_AI_AGENT_PERSONA)
+ */
+export function applyHookCommands(commands: HookCommand[]): Record<string, string> {
+  const extracted: Record<string, string> = {};
+
+  for (const cmd of commands) {
+    if (cmd.type === "ENV") {
+      // Parse "KEY=VALUE" and apply to process environment
+      const match = cmd.value.match(/^([A-Z_]+)=(.*)$/);
+      if (match) {
+        const [, key, value] = match;
+        process.env[key] = value;
+        // Also extract special variables for caller to use
+        if (key.startsWith("ZDS_AI_AGENT_")) {
+          extracted[key] = value;
+        }
+      }
+    }
+  }
+
+  return extracted;
 }
 
 /**
@@ -136,9 +199,11 @@ export async function executeOperationHook(
       }
 
       // Exit code 0 = approved
+      const commands = parseHookOutput(stdout);
       resolve({
         approved: true,
         timedOut: false,
+        commands,
       });
     });
 

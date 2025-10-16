@@ -26,7 +26,7 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
-import { executeOperationHook, executeToolApprovalHook } from "../utils/hook-executor.js";
+import { executeOperationHook, executeToolApprovalHook, applyHookCommands } from "../utils/hook-executor.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
@@ -1001,6 +1001,9 @@ Current working directory: ${process.cwd()}`;
         case "getMood":
           return await this.characterTool.getMood();
 
+        case "getAvailablePersonas":
+          return await this.characterTool.getAvailablePersonas();
+
         case "startActiveTask":
           return await this.taskTool.startActiveTask(args.activeTask, args.action, args.color);
 
@@ -1161,11 +1164,24 @@ Current working directory: ${process.cwd()}`;
     // Execute hook if configured
     const settings = getSettingsManager();
     const hookPath = settings.getPersonaHook();
+    const hookMandatory = settings.isPersonaHookMandatory();
+
+    if (!hookPath && hookMandatory) {
+      const reason = "Persona hook is mandatory but not configured";
+      this.messages.push({
+        role: 'system',
+        content: `Failed to change persona to "${persona}": ${reason}`
+      });
+      return {
+        success: false,
+        error: reason
+      };
+    }
 
     if (hookPath) {
       const hookResult = await executeOperationHook(
         hookPath,
-        "persona_change",
+        "setPersona",
         {
           persona_old: this.persona || "",
           persona_new: persona,
@@ -1191,6 +1207,14 @@ Current working directory: ${process.cwd()}`;
           role: 'system',
           content: `Persona hook timed out (auto-approved)`
         });
+      }
+
+      // Process hook commands (ENV, OUTPUT, etc.)
+      if (hookResult.commands) {
+        const extracted = applyHookCommands(hookResult.commands);
+        if (extracted.ZDS_AI_AGENT_PERSONA) {
+          persona = extracted.ZDS_AI_AGENT_PERSONA;
+        }
       }
     }
 
