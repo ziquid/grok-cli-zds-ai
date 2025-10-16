@@ -1046,6 +1046,9 @@ Current working directory: ${process.cwd()}`;
             args.move
           );
 
+        case "captionImage":
+          return await this.imageTool.captionImage(args.filename, args.prompt);
+
         default:
           // Check if this is an MCP tool
           if (toolCall.function.name.startsWith("mcp__")) {
