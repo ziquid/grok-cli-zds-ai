@@ -180,20 +180,20 @@ export class ImageTool implements ToolDiscovery {
    * Uses joycaption script.
    */
   async captionImage(
-    path: string,
+    filename: string,
     prompt?: string
   ): Promise<ToolResult> {
     try {
-      if (!path) {
+      if (!filename) {
         return {
           success: false,
-          error: "Path is required",
-          output: "Path is required"
+          error: "Filename is required",
+          output: "Filename is required"
         };
       }
 
       // Build command using joycaption
-      let command = `joycaption '${path.replace(/'/g, "'\\''")}'`;
+      let command = `joycaption '${filename.replace(/'/g, "'\\''")}'`;
 
       if (prompt) {
         command += ` --prompt "${prompt.replace(/"/g, '\\"')}"`;
@@ -201,7 +201,8 @@ export class ImageTool implements ToolDiscovery {
 
       try {
         const { stdout, stderr } = await execAsync(command, {
-          timeout: 60000 // 1 minute timeout
+          timeout: 90000, // 90 second timeout
+          shell: '/bin/zsh'
         });
 
         // If there's stderr output, include it but still return success if we got stdout
