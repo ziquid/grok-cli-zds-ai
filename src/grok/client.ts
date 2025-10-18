@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import fs from "fs";
 
 export type GrokMessage = ChatCompletionMessageParam;
@@ -123,8 +124,9 @@ export class GrokClient {
     const toolNames = (tools || []).map(t => t.function.name);
     const mcpTools = toolNames.filter(name => name.startsWith('mcp__'));
 
+    const debugLogPath = ChatHistoryManager.getDebugLogPath();
     const logEntry = `${new Date().toISOString()} - API CALL: ${toolNames.length} tools (${mcpTools.length} MCP: ${mcpTools.join(', ')})\n`;
-    fs.appendFileSync('/tmp/grok-api-tools.log', logEntry);
+    fs.appendFileSync(debugLogPath, logEntry);
 
     // Retry loop for 429 errors
     for (let attempt = 0; attempt <= maxRetries; attempt++) {

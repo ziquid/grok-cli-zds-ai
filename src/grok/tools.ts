@@ -1,6 +1,7 @@
 import { GrokTool } from "./client.js";
 import { MCPManager, MCPTool } from "../mcp/client.js";
 import { loadMCPConfig } from "../mcp/config.js";
+import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import fs from "fs";
 
 const BASE_GROK_TOOLS: GrokTool[] = [
@@ -785,14 +786,14 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
 
 export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   if (!mcpManager) {
-
-    fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
+    const debugLogPath = ChatHistoryManager.getDebugLogPath();
+    fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
     return baseTools;
   }
 
   const mcpTools = mcpManager.getTools();
-
-  fs.appendFileSync('/tmp/grok-api-tools.log', `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
+  const debugLogPath = ChatHistoryManager.getDebugLogPath();
+  fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
 
   return [...baseTools, ...grokMCPTools];
@@ -800,9 +801,11 @@ export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
 
 export async function getAllGrokTools(): Promise<GrokTool[]> {
   const manager = getMCPManager();
-  // Try to initialize servers if not already done, but don't block
-  manager.ensureServersInitialized().catch(() => {
-    // Ignore initialization errors to avoid blocking
-  });
+  // Wait for servers to initialize before returning tools
+  try {
+    await manager.ensureServersInitialized();
+  } catch (error) {
+    // Ignore initialization errors, just proceed with whatever tools we have
+  }
   return addMCPToolsToGrokTools(GROK_TOOLS);
 }

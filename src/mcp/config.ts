@@ -15,7 +15,17 @@ export function loadMCPConfig(): MCPConfig {
 
   // Use project settings if available, otherwise fall back to user settings
   const mcpServers = projectSettings.mcpServers || userSettings.mcpServers;
-  const servers = mcpServers ? Object.values(mcpServers) : [];
+  const servers = mcpServers
+    ? Object.entries(mcpServers)
+        .filter(([_, config]: [string, any]) => config.disabled !== true) // Filter out disabled servers
+        .map(([name, config]: [string, any]) => ({
+          name, // Ensure name field is set from the object key
+          transport: config.transport,
+          command: config.command,
+          args: config.args,
+          env: config.env,
+        }))
+    : [];
   return { servers };
 }
 

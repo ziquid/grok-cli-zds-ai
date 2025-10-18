@@ -6,6 +6,17 @@ import { ChatEntry } from "../agent/grok-agent.js";
 const HISTORY_FILE_NAME = "chat-history.json";
 const HISTORY_DIR = path.join(os.homedir(), ".grok");
 
+export interface SessionState {
+  persona: string;
+  personaColor: string;
+  mood: string;
+  moodColor: string;
+  activeTask: string;
+  activeTaskAction: string;
+  activeTaskColor: string;
+  cwd: string;
+}
+
 /**
  * Manages chat history persistence to ~/.grok/chat-history.json or custom path
  */
@@ -151,8 +162,58 @@ export class ChatHistoryManager {
       if (fs.existsSync(messagesFilePath)) {
         fs.unlinkSync(messagesFilePath);
       }
+      // Also clear session state
+      const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
+      if (fs.existsSync(stateFilePath)) {
+        fs.unlinkSync(stateFilePath);
+      }
     } catch (error) {
       console.warn("Failed to clear chat history:", error);
     }
+  }
+
+  /**
+   * Save session state (persona, mood, task, cwd) to file
+   */
+  saveSessionState(state: SessionState): void {
+    try {
+      const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
+      fs.writeFileSync(stateFilePath, JSON.stringify(state, null, 2));
+    } catch (error) {
+      console.warn("Failed to save session state:", error);
+    }
+  }
+
+  /**
+   * Load session state from file
+   */
+  loadSessionState(): SessionState | null {
+    try {
+      const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
+      if (!fs.existsSync(stateFilePath)) {
+        return null;
+      }
+
+      const data = fs.readFileSync(stateFilePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      console.warn("Failed to load session state:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get the debug log file path based on the context file
+   */
+  getDebugLogPath(): string {
+    return this.historyFilePath.replace('.json', '.debug.log');
+  }
+
+  /**
+   * Static method to get debug log path (for use before agent is created)
+   */
+  static getDebugLogPath(): string {
+    const instance = ChatHistoryManager.getInstance();
+    return instance.getDebugLogPath();
   }
 }
