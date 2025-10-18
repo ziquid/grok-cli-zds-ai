@@ -80,65 +80,76 @@ function ChatInterfaceWithAgent({
   });
 
   useEffect(() => {
-    // Add top padding
-    console.log("    ");
+    const initializeHistory = async () => {
+      // Add top padding
+      console.log("    ");
 
-    // Generate logo with margin to match Ink paddingX={2}
-    const logoOutput = cfonts.render("GROK", {
-      font: "3d",
-      align: "left",
-      colors: ["magenta", "gray"],
-      space: true,
-      maxLength: "0",
-      gradient: ["magenta", "cyan"],
-      independentGradient: false,
-      transitionGradient: true,
-      env: "node",
-    });
+      // Generate logo with margin to match Ink paddingX={2}
+      const logoOutput = cfonts.render("GROK", {
+        font: "3d",
+        align: "left",
+        colors: ["magenta", "gray"],
+        space: true,
+        maxLength: "0",
+        gradient: ["magenta", "cyan"],
+        independentGradient: false,
+        transitionGradient: true,
+        env: "node",
+      });
 
-    // Add horizontal margin (2 spaces) to match Ink paddingX={2}
-    const logoLines = (logoOutput as any).string.split("\n");
-    logoLines.forEach((line: string) => {
-      if (line.trim()) {
-        console.log(" " + line); // Add 2 spaces for horizontal margin
+      // Add horizontal margin (2 spaces) to match Ink paddingX={2}
+      const logoLines = (logoOutput as any).string.split("\n");
+      logoLines.forEach((line: string) => {
+        if (line.trim()) {
+          console.log(" " + line); // Add 2 spaces for horizontal margin
+        } else {
+          console.log(line); // Keep empty lines as-is
+        }
+      });
+
+      console.log(" "); // Spacing after logo
+
+      // Load chat history from file (unless fresh session is requested)
+      const historyManager = ChatHistoryManager.getInstance();
+      if (!fresh) {
+        const loadedHistory = historyManager.loadHistory();
+        setChatHistory(loadedHistory);
+        await agent.loadInitialHistory(loadedHistory);
+        // Initialize token count from loaded history
+        setTotalTokenUsage(agent.getCurrentTokenCount());
+        // Restore session state (persona, mood, task, cwd)
+        const sessionState = historyManager.loadSessionState();
+        if (sessionState) {
+          await agent.restoreSessionState(sessionState);
+        }
       } else {
-        console.log(line); // Keep empty lines as-is
+        // Clear existing history file for fresh session
+        historyManager.clearHistory();
+        // Reset confirmation service session flags
+        confirmationService.resetSession();
       }
-    });
 
-    console.log(" "); // Spacing after logo
+      // Initialize UI chatHistory with agent's complete history (including system prompts)
+      // This ensures system prompts are preserved when syncing back
+      setChatHistory(agent.getChatHistory());
+    };
 
-    // Load chat history from file (unless fresh session is requested)
-    const historyManager = ChatHistoryManager.getInstance();
-    if (!fresh) {
-      const loadedHistory = historyManager.loadHistory();
-      setChatHistory(loadedHistory);
-      agent.loadInitialHistory(loadedHistory);
-      // Initialize token count from loaded history
-      setTotalTokenUsage(agent.getCurrentTokenCount());
-    } else {
-      // Clear existing history file for fresh session
-      historyManager.clearHistory();
-      // Reset confirmation service session flags
-      confirmationService.resetSession();
-    }
-
-    // Initialize UI chatHistory with agent's complete history (including system prompts)
-    // This ensures system prompts are preserved when syncing back
-    setChatHistory(agent.getChatHistory());
+    initializeHistory();
   }, []);
    // Optimize streaming updates to reduce flickering
 
   // Sync chatHistory back to agent whenever it changes (critical for saving on Ctrl+C)
+  // But don't sync during processing/streaming - agent manages its own history during that time
   useEffect(() => {
-    if (chatHistory.length > 0) {
+    if (chatHistory.length > 0 && !isProcessing && !isStreaming) {
       agent.setChatHistory(chatHistory);
     }
-  }, [chatHistory, agent]);
+  }, [chatHistory, agent, isProcessing, isStreaming]);
 
   // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
     if (initialMessage && agent) {
+      // Add user message to UI immediately
       const userEntry: ChatEntry = {
         type: "user",
         content: initialMessage,
@@ -243,6 +254,8 @@ function ChatInterfaceWithAgent({
                     )
                   );
                 }
+                // Sync from agent to UI to capture any SYSTEM messages added during processing
+                setChatHistory(agent.getChatHistory());
                 setIsStreaming(false);
                 setTotalTokenUsage(prev => prev + tokenCount);
                 break;
@@ -301,7 +314,7 @@ function ChatInterfaceWithAgent({
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);
 
-  // Save chat history to file when it changes (but not during streaming/processing)
+  // Save chat history and session state to file when it changes (but not during streaming/processing)
   useEffect(() => {
     if (chatHistory.length > 0 && !isProcessing && !isStreaming) {
       const historyManager = ChatHistoryManager.getInstance();
@@ -311,6 +324,9 @@ function ChatInterfaceWithAgent({
       // Also save the raw messages
       const messages = agent.getMessages();
       historyManager.saveMessages(messages);
+      // Save session state (persona, mood, task, cwd)
+      const sessionState = agent.getSessionState();
+      historyManager.saveSessionState(sessionState);
     }
   }, [chatHistory, isProcessing, isStreaming]);
 

@@ -303,26 +303,47 @@ export function useInputHandler({
     }
 
     if (trimmedInput === "/clear") {
-      // Clear agent's internal context (messages array + chat history)
-      await agent.clearCache();
+      try {
+        // Set processing to true temporarily to prevent sync during clear
+        setIsProcessing(true);
 
-      // Reset UI chat history to match cleared agent state
-      setChatHistory(agent.getChatHistory());
+        // Clear agent's internal context (messages array + chat history)
+        await agent.clearCache();
 
-      // Reset processing states
-      setIsProcessing(false);
-      setIsStreaming(false);
-      setTokenCount(0);
-      setProcessingTime(0);
-      processingStartTime.current = 0;
+        // Reset UI chat history to match cleared agent state
+        setChatHistory(agent.getChatHistory());
 
-      // Reset confirmation service session flags
-      const confirmationService = ConfirmationService.getInstance();
-      confirmationService.resetSession();
+        // Reset total token usage
+        setTotalTokenUsage(0);
 
-      clearInput();
-      resetHistory();
-      return true;
+        // Reset processing states
+        setIsProcessing(false);
+        setIsStreaming(false);
+        setTokenCount(0);
+        setProcessingTime(0);
+        processingStartTime.current = 0;
+
+        // Reset confirmation service session flags
+        const confirmationService = ConfirmationService.getInstance();
+        confirmationService.resetSession();
+
+        clearInput();
+        resetHistory();
+        return true;
+      } catch (error) {
+        console.error("Error during /clear command:", error);
+        setIsProcessing(false);
+        setIsStreaming(false);
+
+        // Show error to user
+        const errorEntry: ChatEntry = {
+          type: "system",
+          content: `ERROR: Failed to clear cache: ${error instanceof Error ? error.message : String(error)}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+        return true;
+      }
     }
 
     if (trimmedInput.startsWith("/introspect")) {
@@ -496,11 +517,13 @@ Available models: ${modelNames.join(", ")}`,
 
       const mood = parts[1];
       const color = parts[2];
-      agent.setMood(mood, color);
+      const result = await agent.setMood(mood, color);
 
       const confirmEntry: ChatEntry = {
         type: "assistant",
-        content: `Mood set to: ${mood}${color ? ` (${color})` : ''}`,
+        content: result.success
+          ? `Mood set to: ${mood}${color ? ` (${color})` : ''}`
+          : `Failed to set mood: ${result.error || 'Unknown error'}`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, confirmEntry]);
@@ -715,6 +738,7 @@ Respond with ONLY the commit message, no additional text.`;
   };
 
   const processUserMessage = async (userInput: string) => {
+    // Add user message to UI immediately so it's visible
     const userEntry: ChatEntry = {
       type: "user",
       content: userInput,
@@ -834,6 +858,8 @@ Respond with ONLY the commit message, no additional text.`;
                 )
               );
             }
+            // Sync from agent to UI to capture any SYSTEM messages added during processing
+            setChatHistory(agent.getChatHistory());
             setIsStreaming(false);
             // Use the tokenCount ref that was set during streaming
             setTotalTokenUsage(prev => prev + currentTokenCount.current);

@@ -410,6 +410,18 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "getAvailablePersonas",
+      description: "Get list of your available personas",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "startActiveTask",
       description: "Start a new active task",
       parameters: {

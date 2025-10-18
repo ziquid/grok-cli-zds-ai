@@ -186,9 +186,42 @@ Current working directory: ${process.cwd()}`;
     };
   }
 
-  loadInitialHistory(history: ChatEntry[]): void {
+  async loadInitialHistory(history: ChatEntry[]): Promise<void> {
     // Load existing chat history into agent's memory
     this.chatHistory = history;
+
+    // Execute instance hook AFTER loading history (so it can see existing history)
+    const settings = getSettingsManager();
+    const instanceHookPath = settings.getInstanceHook();
+    if (instanceHookPath) {
+      const hookResult = await executeOperationHook(
+        instanceHookPath,
+        "instance",
+        {},
+        30000,
+        false  // Instance hook is not mandatory
+      );
+
+      if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+        // Apply hook commands (ENV, TOOL_RESULT, SYSTEM)
+        const results = applyHookCommands(hookResult.commands);
+
+        // TOOL_RESULT is for tool return values, not used by instance hook
+
+        // Add SYSTEM message if present
+        if (results.system) {
+          this.messages.push({
+            role: "system",
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: "system",
+            content: results.system,
+            timestamp: new Date(),
+          });
+        }
+      }
+    }
 
     // Convert history to messages format for API calls
     const historyMessages: GrokMessage[] = [];
@@ -629,13 +662,7 @@ Current working directory: ${process.cwd()}`;
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
-    // Add user message to both API conversation and chat history
-    const userEntry: ChatEntry = {
-      type: "user",
-      content: message,
-      timestamp: new Date(),
-    };
-    this.chatHistory.push(userEntry);
+    // Add user message to API conversation only (UI adds to chatHistory)
     this.messages.push({ role: "user", content: message });
     await this.emitContextChange();
 
@@ -915,10 +942,55 @@ Current working directory: ${process.cwd()}`;
 
         if (!approvalResult.approved) {
           const reason = approvalResult.reason || "Tool execution denied by approval hook";
+
+          // Process rejection commands (SYSTEM messages)
+          if (approvalResult.commands) {
+            const results = applyHookCommands(approvalResult.commands);
+            if (results.system) {
+              this.messages.push({
+                role: 'system',
+                content: results.system,
+              });
+              this.chatHistory.push({
+                type: 'system',
+                content: results.system,
+                timestamp: new Date(),
+              });
+            }
+          }
+
           return {
             success: false,
             error: `Tool execution blocked: ${reason}`,
           };
+        }
+
+        if (approvalResult.timedOut) {
+          // Log timeout for debugging (don't block)
+          console.warn(`Tool approval hook timed out for ${toolCall.function.name} (auto-approved)`);
+        }
+
+        // Process hook commands (ENV, TOOL_RESULT, BACKEND, MODEL, SYSTEM)
+        if (approvalResult.commands) {
+          const results = applyHookCommands(approvalResult.commands);
+
+          // TOOL_RESULT is for tool return values, not used by approval hook
+
+          // Add SYSTEM message if present
+          if (results.system) {
+            this.messages.push({
+              role: "system",
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: "system",
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+
+          // ENV variables are already applied to process.env by applyHookCommands
+          // They can affect tool behavior if tools read from process.env
         }
       }
 
@@ -1190,11 +1262,29 @@ Current working directory: ${process.cwd()}`;
           persona_new: persona,
           persona_color: color || "white"
         },
-        30000
+        30000,
+        hookMandatory
       );
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected persona change";
+
+        // Process rejection commands (SYSTEM messages)
+        if (hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: 'system',
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+
         this.messages.push({
           role: 'system',
           content: `Failed to change persona to "${persona}": ${reason}`
@@ -1212,11 +1302,26 @@ Current working directory: ${process.cwd()}`;
         });
       }
 
-      // Process hook commands (ENV, OUTPUT, etc.)
+      // Process hook commands (ENV, OUTPUT, SYSTEM)
       if (hookResult.commands) {
-        const extracted = applyHookCommands(hookResult.commands);
-        if (extracted.ZDS_AI_AGENT_PERSONA) {
-          persona = extracted.ZDS_AI_AGENT_PERSONA;
+        const results = applyHookCommands(hookResult.commands);
+
+        // Check for persona transformation via ENV
+        if (results.env.ZDS_AI_AGENT_PERSONA) {
+          persona = results.env.ZDS_AI_AGENT_PERSONA;
+        }
+
+        // Add SYSTEM message if present
+        if (results.system) {
+          this.messages.push({
+            role: "system",
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: "system",
+            content: results.system,
+            timestamp: new Date(),
+          });
         }
       }
     }
@@ -1257,7 +1362,97 @@ Current working directory: ${process.cwd()}`;
     return { success: true };
   }
 
-  setMood(mood: string, color?: string): void {
+  async setMood(mood: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    // Execute hook if configured
+    const settings = getSettingsManager();
+    const hookPath = settings.getMoodHook();
+    const hookMandatory = settings.isMoodHookMandatory();
+
+    if (!hookPath && hookMandatory) {
+      const reason = "Mood hook is mandatory but not configured";
+      this.messages.push({
+        role: 'system',
+        content: `Failed to change mood to "${mood}": ${reason}`
+      });
+      return {
+        success: false,
+        error: reason
+      };
+    }
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "setMood",
+        {
+          mood_old: this.mood || "",
+          mood_new: mood,
+          mood_color: color || "white"
+        },
+        30000,
+        hookMandatory
+      );
+
+      if (!hookResult.approved) {
+        const reason = hookResult.reason || "Hook rejected mood change";
+
+        // Process rejection commands (SYSTEM messages)
+        if (hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: 'system',
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+
+        this.messages.push({
+          role: 'system',
+          content: `Failed to change mood to "${mood}": ${reason}`
+        });
+        return {
+          success: false,
+          error: reason
+        };
+      }
+
+      if (hookResult.timedOut) {
+        this.messages.push({
+          role: 'system',
+          content: `Mood hook timed out (auto-approved)`
+        });
+      }
+
+      // Process hook commands (ENV, OUTPUT, SYSTEM)
+      if (hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+
+        // Check for mood transformation via ENV
+        if (results.env.ZDS_AI_AGENT_MOOD) {
+          mood = results.env.ZDS_AI_AGENT_MOOD;
+        }
+
+        // Add SYSTEM message if present
+        if (results.system) {
+          this.messages.push({
+            role: "system",
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: "system",
+            content: results.system,
+            timestamp: new Date(),
+          });
+        }
+      }
+    }
+
     const oldMood = this.mood;
     const oldColor = this.moodColor;
     this.mood = mood;
@@ -1290,6 +1485,8 @@ Current working directory: ${process.cwd()}`;
       mood: this.mood,
       color: this.moodColor
     });
+
+    return { success: true };
   }
 
   async startActiveTask(activeTask: string, action: string, color?: string): Promise<{ success: boolean; error?: string }> {
@@ -1314,11 +1511,29 @@ Current working directory: ${process.cwd()}`;
           task_action: action,
           task_color: color || "white"
         },
-        30000
+        30000,
+        false  // Task hook is not mandatory
       );
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task start";
+
+        // Process rejection commands (SYSTEM messages)
+        if (hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: 'system',
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+
         this.messages.push({
           role: 'system',
           content: `Failed to start task "${activeTask}": ${reason}`
@@ -1382,11 +1597,29 @@ Current working directory: ${process.cwd()}`;
           task_new_action: action,
           task_color: color || "white"
         },
-        30000
+        30000,
+        false  // Task hook is not mandatory
       );
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task status transition";
+
+        // Process rejection commands (SYSTEM messages)
+        if (hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: 'system',
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+
         this.messages.push({
           role: 'system',
           content: `Failed to transition task "${this.activeTask}" from ${this.activeTaskAction} to ${action}: ${reason}`
@@ -1456,11 +1689,29 @@ Current working directory: ${process.cwd()}`;
           task_documentation_file: documentationFile,
           task_color: color || "white"
         },
-        30000
+        30000,
+        false  // Task hook is not mandatory
       );
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task stop";
+
+        // Process rejection commands (SYSTEM messages)
+        if (hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: 'system',
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+
         this.messages.push({
           role: 'system',
           content: `Failed to stop task "${this.activeTask}": ${reason}`
@@ -1594,7 +1845,9 @@ Current working directory: ${process.cwd()}`;
   }
 
   async clearCache(): Promise<void> {
-    const { ChatHistoryManager } = await import("../utils/chat-history-manager");
+    const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+    const { executeStartupHook } = await import("../utils/startup-hook.js");
+    const { executeOperationHook, applyHookCommands } = await import("../utils/hook-executor.js");
     const historyManager = ChatHistoryManager.getInstance();
 
     // Backup current context to timestamped files
@@ -1607,14 +1860,144 @@ Current working directory: ${process.cwd()}`;
     this.contextWarningAt90 = false;
     this.firstMessageProcessed = false;
 
-    // Reinitialize with system message and startup hook
-    await this.initialize();
+    // Add temporary system message (will be replaced by initialize())
+    this.messages.push({
+      role: "system",
+      content: "Initializing...",
+    });
+    this.chatHistory.push({
+      type: "system",
+      content: "Initializing...",
+      timestamp: new Date(),
+    });
 
-    // Save the cleared state
+    try {
+      // Re-execute startup hook to get fresh output
+      this.startupHookOutput = await executeStartupHook();
+
+      // Reinitialize with system message and startup hook
+      await this.initialize();
+
+      // Execute instance hook (like loadInitialHistory does)
+      const settings = getSettingsManager();
+      const instanceHookPath = settings.getInstanceHook();
+      if (instanceHookPath) {
+        const hookResult = await executeOperationHook(
+          instanceHookPath,
+          "instance",
+          {},
+          30000,
+          false  // Instance hook is not mandatory
+        );
+
+        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+          // Apply hook commands (ENV, TOOL_RESULT, SYSTEM)
+          const results = applyHookCommands(hookResult.commands);
+
+          // TOOL_RESULT is for tool return values, not used by instance hook
+
+          // Add SYSTEM message if present
+          if (results.system) {
+            this.messages.push({
+              role: "system",
+              content: results.system,
+            });
+            this.chatHistory.push({
+              type: "system",
+              content: results.system,
+              timestamp: new Date(),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error during initialize() in clearCache():", error);
+      // Continue anyway - we still want to save the cleared state
+    }
+
+    // Save the cleared state FIRST before emitting (in case emit causes exit)
     historyManager.saveHistory(this.chatHistory);
     historyManager.saveMessages(this.messages);
 
-    await this.emitContextChange();
+    // Emit context change WITHOUT calling addContextWarningIfNeeded (to avoid recursive clearCache)
+    const percent = this.getContextUsagePercent();
+    this.emit('contextChange', {
+      current: this.getCurrentTokenCount(),
+      max: this.getMaxContextSize(),
+      percent
+    });
+    // Note: Intentionally NOT calling addContextWarningIfNeeded here to prevent recursion
+  }
+
+  /**
+   * Get current session state for persistence
+   */
+  getSessionState() {
+    return {
+      persona: this.persona,
+      personaColor: this.personaColor,
+      mood: this.mood,
+      moodColor: this.moodColor,
+      activeTask: this.activeTask,
+      activeTaskAction: this.activeTaskAction,
+      activeTaskColor: this.activeTaskColor,
+      cwd: process.cwd(),
+    };
+  }
+
+  /**
+   * Restore session state from persistence
+   */
+  async restoreSessionState(state: {
+    persona: string;
+    personaColor: string;
+    mood: string;
+    moodColor: string;
+    activeTask: string;
+    activeTaskAction: string;
+    activeTaskColor: string;
+    cwd: string;
+  }): Promise<void> {
+    // Restore persona
+    if (state.persona) {
+      this.persona = state.persona;
+      this.personaColor = state.personaColor;
+      this.emit('personaChange', {
+        persona: this.persona,
+        color: this.personaColor
+      });
+    }
+
+    // Restore mood
+    if (state.mood) {
+      this.mood = state.mood;
+      this.moodColor = state.moodColor;
+      this.emit('moodChange', {
+        mood: this.mood,
+        color: this.moodColor
+      });
+    }
+
+    // Restore active task
+    if (state.activeTask) {
+      this.activeTask = state.activeTask;
+      this.activeTaskAction = state.activeTaskAction;
+      this.activeTaskColor = state.activeTaskColor;
+      this.emit('activeTaskChange', {
+        activeTask: this.activeTask,
+        action: this.activeTaskAction,
+        color: this.activeTaskColor
+      });
+    }
+
+    // Restore cwd
+    if (state.cwd) {
+      try {
+        process.chdir(state.cwd);
+      } catch (error) {
+        console.warn(`Failed to restore working directory to ${state.cwd}:`, error);
+      }
+    }
   }
 
   /**
