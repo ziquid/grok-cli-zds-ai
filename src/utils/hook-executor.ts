@@ -106,7 +106,9 @@ export async function executeOperationHook(
   operation: string,
   data: Record<string, any>,
   timeoutMs: number = 30000,
-  mandatory: boolean = false
+  mandatory: boolean = false,
+  contextCurrent?: number,
+  contextMax?: number
 ): Promise<HookResult> {
   // Expand ~ to home directory
   const expandedPath = hookPath.startsWith("~/")
@@ -116,10 +118,18 @@ export async function executeOperationHook(
   // Build environment using ZDS_AI_AGENT_* naming convention
   // Note: These variables are only set in the child process and are automatically
   // cleaned up when the child process exits. They do NOT modify the parent process environment.
-  const env = {
-    ...process.env,
+  const env: Record<string, string> = {
+    ...process.env as Record<string, string>,
     ZDS_AI_AGENT_OPERATION: operation,
   };
+
+  // Add context information if provided
+  if (contextCurrent !== undefined) {
+    env.ZDS_AI_AGENT_CONTEXT_CURRENT = contextCurrent.toString();
+  }
+  if (contextMax !== undefined) {
+    env.ZDS_AI_AGENT_CONTEXT_MAX = contextMax.toString();
+  }
 
   // Add each data field as ZDS_AI_AGENT_PARAM_<KEY>=<VALUE>
   for (const [key, value] of Object.entries(data)) {
@@ -210,7 +220,9 @@ export async function executeToolApprovalHook(
   hookPath: string,
   toolName: string,
   parameters: Record<string, any>,
-  timeoutMs: number = 30000
+  timeoutMs: number = 30000,
+  contextCurrent?: number,
+  contextMax?: number
 ): Promise<HookResult> {
   // Expand ~ to home directory
   const expandedPath = hookPath.startsWith("~/")
@@ -220,10 +232,18 @@ export async function executeToolApprovalHook(
   // Build environment with tool info using ZDS_AI_AGENT_* naming convention
   // Note: These variables are only set in the child process and are automatically
   // cleaned up when the child process exits. They do NOT modify the parent process environment.
-  const env = {
-    ...process.env,
+  const env: Record<string, string> = {
+    ...process.env as Record<string, string>,
     ZDS_AI_AGENT_TOOL_NAME: toolName,
   };
+
+  // Add context information if provided
+  if (contextCurrent !== undefined) {
+    env.ZDS_AI_AGENT_CONTEXT_CURRENT = contextCurrent.toString();
+  }
+  if (contextMax !== undefined) {
+    env.ZDS_AI_AGENT_CONTEXT_MAX = contextMax.toString();
+  }
 
   // Add each parameter as ZDS_AI_AGENT_PARAM_<KEY>=<VALUE>
   for (const [key, value] of Object.entries(parameters)) {

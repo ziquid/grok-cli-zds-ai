@@ -15,6 +15,8 @@ export interface SessionState {
   activeTaskAction: string;
   activeTaskColor: string;
   cwd: string;
+  contextCurrent: number;
+  contextMax: number;
 }
 
 /**
@@ -117,7 +119,7 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Create a backup of the current chat history and messages files
+   * Create a backup of all session files (history, messages, state, debug log)
    */
   backupHistory(): string | null {
     try {
@@ -139,6 +141,20 @@ export class ChatHistoryManager {
         fs.copyFileSync(messagesFilePath, messagesBackupPath);
       }
 
+      // Backup state file
+      const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
+      if (fs.existsSync(stateFilePath)) {
+        const stateBackupPath = stateFilePath.replace('.json', backupSuffix);
+        fs.copyFileSync(stateFilePath, stateBackupPath);
+      }
+
+      // Backup debug log file
+      const debugLogPath = this.historyFilePath.replace('.json', '.debug.log');
+      if (fs.existsSync(debugLogPath)) {
+        const debugBackupPath = debugLogPath.replace('.log', `.backup-${timestamp}.log`);
+        fs.copyFileSync(debugLogPath, debugBackupPath);
+      }
+
       return backupPath;
     } catch (error) {
       console.warn("Failed to backup chat history:", error);
@@ -147,7 +163,7 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Clear chat history file and messages file with automatic backup
+   * Clear all session files (history, messages, state, debug log) with automatic backup
    */
   clearHistory(): void {
     try {
@@ -166,6 +182,11 @@ export class ChatHistoryManager {
       const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
       if (fs.existsSync(stateFilePath)) {
         fs.unlinkSync(stateFilePath);
+      }
+      // Also clear debug log
+      const debugLogPath = this.historyFilePath.replace('.json', '.debug.log');
+      if (fs.existsSync(debugLogPath)) {
+        fs.unlinkSync(debugLogPath);
       }
     } catch (error) {
       console.warn("Failed to clear chat history:", error);

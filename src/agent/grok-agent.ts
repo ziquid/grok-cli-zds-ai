@@ -202,7 +202,9 @@ Current working directory: ${process.cwd()}`;
         "instance",
         {},
         30000,
-        false  // Instance hook is not mandatory
+        false,  // Instance hook is not mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
@@ -980,7 +982,9 @@ Current working directory: ${process.cwd()}`;
           toolApprovalHook,
           toolCall.function.name,
           args,
-          30000 // 30 second timeout
+          30000, // 30 second timeout
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
         );
 
         if (!approvalResult.approved) {
@@ -1317,7 +1321,9 @@ Current working directory: ${process.cwd()}`;
           persona_color: color || "white"
         },
         30000,
-        hookMandatory
+        hookMandatory,
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
@@ -1444,7 +1450,9 @@ Current working directory: ${process.cwd()}`;
           mood_color: color || "white"
         },
         30000,
-        hookMandatory
+        hookMandatory,
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
@@ -1566,7 +1574,9 @@ Current working directory: ${process.cwd()}`;
           task_color: color || "white"
         },
         30000,
-        false  // Task hook is not mandatory
+        false,  // Task hook is not mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
@@ -1652,7 +1662,9 @@ Current working directory: ${process.cwd()}`;
           task_color: color || "white"
         },
         30000,
-        false  // Task hook is not mandatory
+        false,  // Task hook is not mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
@@ -1744,7 +1756,9 @@ Current working directory: ${process.cwd()}`;
           task_color: color || "white"
         },
         30000,
-        false  // Task hook is not mandatory
+        false,  // Task hook is not mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
@@ -1941,7 +1955,9 @@ Current working directory: ${process.cwd()}`;
           "instance",
           {},
           30000,
-          false  // Instance hook is not mandatory
+          false,  // Instance hook is not mandatory
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
         );
 
         if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
@@ -1996,6 +2012,8 @@ Current working directory: ${process.cwd()}`;
       activeTaskAction: this.activeTaskAction,
       activeTaskColor: this.activeTaskColor,
       cwd: process.cwd(),
+      contextCurrent: this.getCurrentTokenCount(),
+      contextMax: this.getMaxContextSize(),
     };
   }
 
@@ -2011,6 +2029,8 @@ Current working directory: ${process.cwd()}`;
     activeTaskAction: string;
     activeTaskColor: string;
     cwd: string;
+    contextCurrent?: number;
+    contextMax?: number;
   }): Promise<void> {
     // Restore persona
     if (state.persona) {

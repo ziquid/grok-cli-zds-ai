@@ -179,7 +179,9 @@ export class CharacterTool implements ToolDiscovery {
         "getAvailablePersonas",
         {},
         10000,
-        hookMandatory
+        hookMandatory,
+        this.agent.getCurrentTokenCount(),
+        this.agent.getMaxContextSize()
       );
 
       if (!hookResult.approved) {
