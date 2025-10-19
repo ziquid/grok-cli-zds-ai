@@ -100,7 +100,8 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    searchOptions?: SearchOptions,
+    temperature?: number
   ): Promise<GrokResponse> {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
@@ -110,7 +111,7 @@ export class GrokClient {
       messages,
       tools: tools || [],
       tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-      temperature: 0.7,
+      temperature: temperature ?? 0.7,
       max_tokens: this.defaultMaxTokens,
       think: false
     };
@@ -158,7 +159,8 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    searchOptions?: SearchOptions,
+    temperature?: number
   ): AsyncGenerator<any, void, unknown> {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
@@ -168,7 +170,7 @@ export class GrokClient {
       messages,
       tools: tools || [],
       tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-      temperature: 0.7,
+      temperature: temperature ?? 0.7,
       max_tokens: this.defaultMaxTokens,
       stream: true,
       think: false

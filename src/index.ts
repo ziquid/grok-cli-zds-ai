@@ -199,11 +199,12 @@ async function handleCommitAndPushHeadless(
   baseURL?: string,
   model?: string,
   maxToolRounds?: number,
-  debugLogFile?: string
+  debugLogFile?: string,
+  temperature?: number
 ): Promise<void> {
   try {
     const { createGrokAgent } = await import('./utils/startup-hook.js');
-    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode (auto-approve all operations)
@@ -328,11 +329,12 @@ async function processPromptHeadless(
   fresh?: boolean,
   debugLogFile?: string,
   autoApprove?: boolean,
-  autoApproveCommands?: string[]
+  autoApproveCommands?: string[],
+  temperature?: number
 ): Promise<void> {
   try {
     const { createGrokAgent } = await import('./utils/startup-hook.js');
-    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile);
+    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode
@@ -410,6 +412,11 @@ program
   .option(
     "-m, --model <model>",
     "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
+  )
+  .option(
+    "-t, --temperature <temp>",
+    "temperature for API requests (0.0-2.0, default: 0.7)",
+    "0.7"
   )
   .option(
     "-p, --prompt [prompt]",
@@ -548,6 +555,8 @@ program
               .filter(cmd => cmd.length > 0)
           : [];
 
+        const temperature = parseFloat(options.temperature) || 0.7;
+
         await processPromptHeadless(
           prompt,
           apiKey,
@@ -557,7 +566,8 @@ program
           options.fresh,
           options.debugLog,
           options.autoApprove,
-          approvedCommands
+          approvedCommands,
+          temperature
         );
         return;
       }
@@ -571,7 +581,8 @@ program
       const historyManager = ChatHistoryManager.getInstance();
       const hasHistory = !options.fresh && historyManager.loadHistory().length > 0;
       const runStartupHook = !hasHistory; // Only run hook for new sessions
-      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook);
+      const temperature = parseFloat(options.temperature) || 0.7;
+      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature);
       currentAgent = agent; // Store reference for cleanup
 
       // Configure confirmation service if auto-approve is enabled
@@ -752,6 +763,11 @@ gitCommand
     "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
+    "-t, --temperature <temp>",
+    "temperature for API requests (0.0-2.0, default: 0.7)",
+    "0.7"
+  )
+  .option(
     "--max-tool-rounds <rounds>",
     "maximum number of tool execution rounds (default: 400)",
     "400"
@@ -783,6 +799,7 @@ gitCommand
 
       const { apiKey, baseURL, model } = authConfig;
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
+      const temperature = parseFloat(options.temperature) || 0.7;
 
       // Validate API key
       try {
@@ -795,7 +812,7 @@ gitCommand
       // Note: API key from --api-key flag is NOT saved to user settings
       // It's only used for this session. Use the interactive prompt to save it permanently.
 
-      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog);
+      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog, temperature);
     } catch (error: any) {
       console.error("❌ Error during commit and push:", error.message);
       process.exit(1);

@@ -69,6 +69,7 @@ export class GrokAgent extends EventEmitter {
   private abortController: AbortController | null = null;
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
+  private temperature: number;
   private firstMessageProcessed: boolean = false;
   private contextWarningAt80: boolean = false;
   private contextWarningAt90: boolean = false;
@@ -86,13 +87,15 @@ export class GrokAgent extends EventEmitter {
     model?: string,
     maxToolRounds?: number,
     debugLogFile?: string,
-    startupHookOutput?: string
+    startupHookOutput?: string,
+    temperature?: number
   ) {
     super();
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
+    this.temperature = temperature ?? manager.getTemperature();
     // Get display name from environment (set by zai/helpers)
     const displayName = process.env.GROK_BACKEND_DISPLAY_NAME;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, displayName);
@@ -409,7 +412,8 @@ Current working directory: ${process.cwd()}`;
         undefined,
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
-          : { search_parameters: { mode: "off" } }
+          : { search_parameters: { mode: "off" } },
+        this.temperature
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -544,7 +548,8 @@ Current working directory: ${process.cwd()}`;
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
+              : { search_parameters: { mode: "off" } },
+            this.temperature
           );
         } else {
           // No tool calls in this response - only add it if there's actual content
@@ -583,7 +588,8 @@ Current working directory: ${process.cwd()}`;
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
+              : { search_parameters: { mode: "off" } },
+            this.temperature
           );
 
           const followupMessage = currentResponse.choices[0]?.message;
@@ -722,7 +728,8 @@ Current working directory: ${process.cwd()}`;
           undefined,
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
+            : { search_parameters: { mode: "off" } },
+          this.temperature
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";

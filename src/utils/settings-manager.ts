@@ -11,6 +11,7 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  temperature?: number; // Default temperature for API requests (0.0-2.0, default: 0.7)
   startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
   instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
   taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
@@ -379,6 +380,18 @@ export class SettingsManager {
     // Then check user settings, then use default
     const userBaseURL = this.getUserSetting("baseURL");
     return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1";
+  }
+
+  /**
+   * Get temperature from user settings
+   * Defaults to 0.7 if not set
+   */
+  public getTemperature(): number {
+    const temperature = this.getUserSetting("temperature");
+    if (temperature !== undefined && temperature >= 0 && temperature <= 2) {
+      return temperature;
+    }
+    return 0.7; // Default temperature
   }
 }
 
