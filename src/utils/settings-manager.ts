@@ -13,7 +13,7 @@ export interface UserSettings {
   models?: string[]; // Available models list
   startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
   instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
-  taskHook?: string; // Command to validate task operations (start/transition/stop)
+  taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
   personaHookMandatory?: boolean; // Whether persona hook is required
@@ -324,11 +324,11 @@ export class SettingsManager {
   }
 
   /**
-   * Get task hook command from user settings
+   * Get task approval hook command from user settings
    * Used for validating all task operations (start/transition/stop)
    */
-  public getTaskHook(): string | undefined {
-    return this.getUserSetting("taskHook");
+  public getTaskApprovalHook(): string | undefined {
+    return this.getUserSetting("taskApprovalHook");
   }
 
   /**

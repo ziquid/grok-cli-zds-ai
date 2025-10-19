@@ -1554,7 +1554,7 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getTaskHook();
+    const hookPath = settings.getTaskApprovalHook();
 
     if (hookPath) {
       const hookResult = await executeOperationHook(
@@ -1639,7 +1639,7 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getTaskHook();
+    const hookPath = settings.getTaskApprovalHook();
 
     if (hookPath) {
       const hookResult = await executeOperationHook(
@@ -1730,7 +1730,7 @@ Current working directory: ${process.cwd()}`;
 
     // Execute hook if configured
     const settings = getSettingsManager();
-    const hookPath = settings.getTaskHook();
+    const hookPath = settings.getTaskApprovalHook();
 
     if (hookPath) {
       const hookResult = await executeOperationHook(
