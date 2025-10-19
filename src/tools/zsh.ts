@@ -19,21 +19,6 @@ export class ZshTool implements ToolDiscovery {
     try {
       // Refuse cd and ls commands - user should use proper tools
       if (command.trim().startsWith('cd ')) {
-        // Extract the target directory from cd command
-        const targetDir = command.trim().substring(3).trim();
-        if (targetDir) {
-          const resolvedPath = expandHomeDir(targetDir);
-          const currentDir = process.cwd();
-
-          // Check if trying to cd to current directory
-          if (resolvedPath === currentDir) {
-            return {
-              success: false,
-              error: `Already in directory: ${currentDir}`
-            };
-          }
-        }
-
         return {
           success: false,
           error: "Don't use zsh to cd.  Use chdir() instead."
@@ -159,16 +144,6 @@ export class ZshTool implements ToolDiscovery {
   async chdir(path: string): Promise<ToolResult> {
     try {
       const resolvedPath = expandHomeDir(path);
-      const currentDir = process.cwd();
-
-      // Check if already in the target directory
-      if (resolvedPath === currentDir) {
-        return {
-          success: false,
-          error: `Already in directory: ${currentDir}`
-        };
-      }
-
       process.chdir(resolvedPath);
 
       // Add system message to inform LLM of CWD change
