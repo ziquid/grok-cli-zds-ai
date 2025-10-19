@@ -19,7 +19,8 @@ import {
   CharacterTool,
   TaskTool,
   InternetTool,
-  ImageTool
+  ImageTool,
+  FileConversionTool
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
@@ -61,6 +62,7 @@ export class GrokAgent extends EventEmitter {
   private taskTool: TaskTool;
   private internetTool: InternetTool;
   private imageTool: ImageTool;
+  private fileConversionTool: FileConversionTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -106,6 +108,7 @@ export class GrokAgent extends EventEmitter {
     this.taskTool = new TaskTool();
     this.internetTool = new InternetTool();
     this.imageTool = new ImageTool();
+    this.fileConversionTool = new FileConversionTool();
     this.textEditor.setAgent(this); // Give text editor access to agent for context awareness
     this.introspect.setAgent(this); // Give introspect access to agent for tool class info
     this.clearCacheTool.setAgent(this); // Give clearCache access to agent
@@ -1120,6 +1123,17 @@ Current working directory: ${process.cwd()}`;
 
         case "captionImage":
           return await this.imageTool.captionImage(args.filename, args.prompt);
+
+        case "readXlsx":
+          return await this.fileConversionTool.readXlsx(
+            args.filename,
+            args.sheetName,
+            args.outputFormat,
+            args.output
+          );
+
+        case "listXlsxSheets":
+          return await this.fileConversionTool.listXlsxSheets(args.filename);
 
         default:
           // Check if this is an MCP tool

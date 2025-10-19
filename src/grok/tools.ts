@@ -692,6 +692,53 @@ const BASE_GROK_TOOLS: GrokTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "readXlsx",
+      description: "Read an Excel/XLSX file and return its contents in various formats (text, JSON, CSV)",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the XLSX file to read",
+          },
+          sheetName: {
+            type: "string",
+            description: "Optional name of specific sheet to read (defaults to first/active sheet)",
+          },
+          outputFormat: {
+            type: "string",
+            enum: ["text", "json", "all-sheets-json", "csv"],
+            description: "Output format: 'text' for human-readable, 'json' for single sheet JSON, 'all-sheets-json' for all sheets as JSON, 'csv' to convert to CSV file (default: text)",
+          },
+          output: {
+            type: "string",
+            description: "Output filename for saving the converted data",
+          },
+        },
+        required: ["filename"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "listXlsxSheets",
+      description: "List all available sheets in an Excel/XLSX file",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the XLSX file",
+          },
+        },
+        required: ["filename"],
+      },
+    },
+  },
 ];
 
 // Morph Fast Apply tool (conditional)

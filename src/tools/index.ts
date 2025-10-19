@@ -10,3 +10,4 @@ export { CharacterTool } from "./character-tool.js";
 export { TaskTool } from "./task-tool.js";
 export { InternetTool } from "./internet-tool.js";
 export { ImageTool } from "./image-tool.js";
+export { FileConversionTool } from "./file-conversion-tool.js";
