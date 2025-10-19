@@ -119,6 +119,7 @@ export class GrokAgent extends EventEmitter {
     this.taskTool.setAgent(this); // Give task tool access to agent
     this.internetTool.setAgent(this); // Give internet tool access to agent
     this.imageTool.setAgent(this); // Give image tool access to agent
+    this.zsh.setAgent(this); // Give zsh tool access to agent for CWD tracking
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured

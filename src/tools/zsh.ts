@@ -9,7 +9,11 @@ const execAsync = promisify(exec);
 
 export class ZshTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
+  private agent: any; // Reference to the GrokAgent
 
+  setAgent(agent: any) {
+    this.agent = agent;
+  }
 
   async execute(command: string, timeout: number = 90000, skipConfirmation: boolean = false): Promise<ToolResult> {
     try {
@@ -140,7 +144,32 @@ export class ZshTool implements ToolDiscovery {
   async chdir(path: string): Promise<ToolResult> {
     try {
       const resolvedPath = expandHomeDir(path);
+      const currentDir = process.cwd();
+
+      // Check if already in the target directory
+      if (resolvedPath === currentDir) {
+        return {
+          success: false,
+          error: `Already in directory: ${currentDir}`
+        };
+      }
+
       process.chdir(resolvedPath);
+
+      // Add system message to inform LLM of CWD change
+      if (this.agent) {
+        const cwdMessage = `Current working directory changed to: ${process.cwd()}`;
+        this.agent.messages.push({
+          role: 'system',
+          content: cwdMessage
+        });
+        this.agent.chatHistory.push({
+          type: 'system',
+          content: cwdMessage,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       return {
         success: true,
         output: `Changed directory to: ${process.cwd()}`
