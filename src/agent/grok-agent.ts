@@ -941,11 +941,35 @@ Current working directory: ${process.cwd()}`;
     }
   }
 
+  /**
+   * Apply default parameter values for tools
+   * This ensures the approval hook sees the same parameters that will be used during execution
+   */
+  private applyToolParameterDefaults(toolName: string, params: any): any {
+    const result = { ...params };
+
+    switch (toolName) {
+      case "listFiles":
+        // dirname defaults to current directory
+        if (!result.dirname) {
+          result.dirname = ".";
+        }
+        break;
+
+      // Add other tools with defaults here as needed
+    }
+
+    return result;
+  }
+
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
     try {
       // Parse arguments - handle empty string as empty object for parameter-less tools
       const argsString = toolCall.function.arguments?.trim() || "{}";
-      const args = JSON.parse(argsString);
+      let args = JSON.parse(argsString);
+
+      // Apply parameter defaults before approval hook and execution
+      args = this.applyToolParameterDefaults(toolCall.function.name, args);
 
       // Check tool approval hook if configured
       const settings = getSettingsManager();
