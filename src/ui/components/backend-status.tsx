@@ -28,7 +28,7 @@ export const BackendStatus = React.memo(({ agent }: BackendStatusProps) => {
   return (
     <Box marginRight={2}>
       <Text color="yellow">
-        ≋ {display}
+        ≋&nbsp;{display}
       </Text>
     </Box>
   );
