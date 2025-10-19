@@ -2,6 +2,8 @@ import { exec } from "child_process";
 import * as path from "path";
 import * as os from "os";
 
+const ENV_PREFIX = "ZDS_AI_AGENT_";
+
 export interface HookResult {
   approved: boolean;
   reason?: string;
@@ -55,7 +57,7 @@ export interface HookCommandResults {
 
 /**
  * Apply hook commands and return extracted values
- * ENV commands are applied to process.env
+ * ENV commands are applied to process.env (auto-prefixes ENV_PREFIX if not present)
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
  * Returns extracted values for caller to use
@@ -70,10 +72,14 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       // Parse "KEY=VALUE" and apply to process environment
       const match = cmd.value.match(/^([A-Z_]+)=(.*)$/);
       if (match) {
-        const [, key, value] = match;
+        let [, key, value] = match;
+        // If key doesn't start with ENV_PREFIX, prepend it
+        if (!key.startsWith(ENV_PREFIX)) {
+          key = `${ENV_PREFIX}${key}`;
+        }
         process.env[key] = value;
         // Also extract special variables for caller to use
-        if (key.startsWith("ZDS_AI_AGENT_")) {
+        if (key.startsWith(ENV_PREFIX)) {
           env[key] = value;
         }
       }
@@ -120,20 +126,20 @@ export async function executeOperationHook(
   // cleaned up when the child process exits. They do NOT modify the parent process environment.
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
-    ZDS_AI_AGENT_OPERATION: operation,
+    [`${ENV_PREFIX}OPERATION`]: operation,
   };
 
   // Add context information if provided
   if (contextCurrent !== undefined) {
-    env.ZDS_AI_AGENT_CONTEXT_CURRENT = contextCurrent.toString();
+    env[`${ENV_PREFIX}CONTEXT_CURRENT`] = contextCurrent.toString();
   }
   if (contextMax !== undefined) {
-    env.ZDS_AI_AGENT_CONTEXT_MAX = contextMax.toString();
+    env[`${ENV_PREFIX}CONTEXT_MAX`] = contextMax.toString();
   }
 
   // Add each data field as ZDS_AI_AGENT_PARAM_<KEY>=<VALUE>
   for (const [key, value] of Object.entries(data)) {
-    const envKey = `ZDS_AI_AGENT_PARAM_${key.toUpperCase()}`;
+    const envKey = `${ENV_PREFIX}PARAM_${key.toUpperCase()}`;
     env[envKey] = typeof value === 'string' ? value : JSON.stringify(value);
   }
 
@@ -234,20 +240,20 @@ export async function executeToolApprovalHook(
   // cleaned up when the child process exits. They do NOT modify the parent process environment.
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
-    ZDS_AI_AGENT_TOOL_NAME: toolName,
+    [`${ENV_PREFIX}TOOL_NAME`]: toolName,
   };
 
   // Add context information if provided
   if (contextCurrent !== undefined) {
-    env.ZDS_AI_AGENT_CONTEXT_CURRENT = contextCurrent.toString();
+    env[`${ENV_PREFIX}CONTEXT_CURRENT`] = contextCurrent.toString();
   }
   if (contextMax !== undefined) {
-    env.ZDS_AI_AGENT_CONTEXT_MAX = contextMax.toString();
+    env[`${ENV_PREFIX}CONTEXT_MAX`] = contextMax.toString();
   }
 
   // Add each parameter as ZDS_AI_AGENT_PARAM_<KEY>=<VALUE>
   for (const [key, value] of Object.entries(parameters)) {
-    const envKey = `ZDS_AI_AGENT_PARAM_${key.toUpperCase()}`;
+    const envKey = `${ENV_PREFIX}PARAM_${key.toUpperCase()}`;
     env[envKey] = typeof value === 'string' ? value : JSON.stringify(value);
   }
 
