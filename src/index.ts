@@ -353,7 +353,7 @@ async function processPromptHeadless(
       const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
       const existingHistory = historyManager.loadHistory();
-      agent.loadInitialHistory(existingHistory);
+      await agent.loadInitialHistory(existingHistory);
     }
 
     // Process the user message

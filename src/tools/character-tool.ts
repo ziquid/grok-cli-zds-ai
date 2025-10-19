@@ -65,8 +65,16 @@ export class CharacterTool implements ToolDiscovery {
         };
       }
 
-      // Set the mood
-      this.agent.setMood(mood, color);
+      // Set the mood (now async with hook support)
+      const result = await this.agent.setMood(mood, color);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || "Failed to set mood",
+          output: result.error || "Failed to set mood"
+        };
+      }
 
       return {
         success: true,
@@ -170,7 +178,8 @@ export class CharacterTool implements ToolDiscovery {
         hookPath,
         "getAvailablePersonas",
         {},
-        10000
+        10000,
+        hookMandatory
       );
 
       if (!hookResult.approved) {
@@ -181,23 +190,13 @@ export class CharacterTool implements ToolDiscovery {
         };
       }
 
-      // Apply hook commands (sets ENV vars, extracts special values)
-      if (hookResult.commands) {
-        applyHookCommands(hookResult.commands);
-      }
+      // Apply hook commands (ENV, TOOL_RESULT, SYSTEM)
+      const results = hookResult.commands
+        ? applyHookCommands(hookResult.commands)
+        : { env: {}, toolResult: "", system: "" };
 
-      // Extract OUTPUT commands from hook response
-      const outputLines: string[] = [];
-      if (hookResult.commands) {
-        for (const cmd of hookResult.commands) {
-          if (cmd.type === "OUTPUT") {
-            outputLines.push(cmd.value);
-          }
-        }
-      }
-
-      // If no OUTPUT commands were returned, the hook didn't provide personas
-      if (outputLines.length === 0) {
+      // If no TOOL_RESULT was returned, the hook didn't provide personas
+      if (!results.toolResult) {
         return {
           success: false,
           error: "Hook did not return available personas",
@@ -207,7 +206,7 @@ export class CharacterTool implements ToolDiscovery {
 
       return {
         success: true,
-        output: outputLines.join("\n"),
+        output: results.toolResult,
         displayOutput: "Available personas retrieved"
       };
     } catch (error) {

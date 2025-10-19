@@ -11,11 +11,14 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
-  startupHook?: string; // Command to run at startup, output added to system prompt
+  startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
+  instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
   taskHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
   personaHookMandatory?: boolean; // Whether persona hook is required
+  moodHook?: string; // Command to validate mood changes
+  moodHookMandatory?: boolean; // Whether mood hook is required
   mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
@@ -314,6 +317,13 @@ export class SettingsManager {
   }
 
   /**
+   * Get instance hook command from user settings
+   */
+  public getInstanceHook(): string | undefined {
+    return this.getUserSetting("instanceHook");
+  }
+
+  /**
    * Get task hook command from user settings
    * Used for validating all task operations (start/transition/stop)
    */
@@ -340,6 +350,20 @@ export class SettingsManager {
    */
   public isPersonaHookMandatory(): boolean {
     return this.getUserSetting("personaHookMandatory") ?? false;
+  }
+
+  /**
+   * Get mood hook command from user settings
+   */
+  public getMoodHook(): string | undefined {
+    return this.getUserSetting("moodHook");
+  }
+
+  /**
+   * Check if mood hook is mandatory
+   */
+  public isMoodHookMandatory(): boolean {
+    return this.getUserSetting("moodHookMandatory") ?? false;
   }
 
   /**

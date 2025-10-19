@@ -665,7 +665,13 @@ Current working directory: ${process.cwd()}`;
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
-    // Add user message to API conversation only (UI adds to chatHistory)
+    // Add user message to both API conversation and chat history
+    const userEntry: ChatEntry = {
+      type: "user",
+      content: message,
+      timestamp: new Date(),
+    };
+    this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
     await this.emitContextChange();
 
@@ -788,6 +794,16 @@ Current working directory: ${process.cwd()}`;
           content: accumulatedMessage.content || "", // Ensure content is never null/undefined
           tool_calls: accumulatedMessage.tool_calls,
         } as any);
+
+        // Add assistant message to chat history
+        const assistantEntry: ChatEntry = {
+          type: "assistant",
+          content: accumulatedMessage.content || "",
+          timestamp: new Date(),
+          tool_calls: accumulatedMessage.tool_calls,
+        };
+        this.chatHistory.push(assistantEntry);
+
         await this.emitContextChange();
 
         // Handle tool calls if present

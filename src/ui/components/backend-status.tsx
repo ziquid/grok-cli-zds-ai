@@ -19,8 +19,11 @@ export const BackendStatus = React.memo(({ agent }: BackendStatusProps) => {
     model = model.replace('-cloud', '');
   }
 
-  // Format: backend/model
-  const display = `${backend}/${model}`;
+  // Get bot name from environment
+  const botName = process.env.ZDS_AI_AGENT_BOT_NAME;
+
+  // Format: [botName:]backend/model
+  const display = botName ? `${botName}:${backend}/${model}` : `${backend}/${model}`;
 
   return (
     <Box marginRight={2}>
