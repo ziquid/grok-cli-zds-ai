@@ -181,9 +181,14 @@ export class TextEditorTool implements ToolDiscovery {
 
       const occurrences = (content.match(new RegExp(oldStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
       
+      // If tool approval hook is configured, skip ConfirmationService (hook handles authorization)
+      const { getSettingsManager } = await import('../utils/settings-manager.js');
+      const settings = getSettingsManager();
+      const hasToolApprovalHook = !!settings.getToolApprovalHook();
+
       const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-        const previewContent = replaceAll 
+      if (!hasToolApprovalHook && !sessionFlags.fileOperations && !sessionFlags.allOperations) {
+        const previewContent = replaceAll
           ? content.split(oldStr).join(newStr)
           : content.replace(oldStr, newStr);
         const oldLines = content.split("\n");
@@ -257,9 +262,14 @@ export class TextEditorTool implements ToolDiscovery {
       const expandedPath = expandHomeDir(filePath);
       const resolvedPath = path.resolve(expandedPath);
 
+      // If tool approval hook is configured, skip ConfirmationService (hook handles authorization)
+      const { getSettingsManager } = await import('../utils/settings-manager.js');
+      const settings = getSettingsManager();
+      const hasToolApprovalHook = !!settings.getToolApprovalHook();
+
       // Check if user has already accepted file operations for this session
       const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+      if (!hasToolApprovalHook && !sessionFlags.fileOperations && !sessionFlags.allOperations) {
         // Create a diff-style preview for file creation
         const contentLines = content.split("\n");
         const diffContent = [
@@ -356,12 +366,17 @@ export class TextEditorTool implements ToolDiscovery {
         };
       }
 
+      // If tool approval hook is configured, skip ConfirmationService (hook handles authorization)
+      const { getSettingsManager } = await import('../utils/settings-manager.js');
+      const settings = getSettingsManager();
+      const hasToolApprovalHook = !!settings.getToolApprovalHook();
+
       const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+      if (!hasToolApprovalHook && !sessionFlags.fileOperations && !sessionFlags.allOperations) {
         const newLines = [...lines];
         const replacementLines = newContent.split("\n");
         newLines.splice(startLine - 1, endLine - startLine + 1, ...replacementLines);
-        
+
         const diffContent = this.generateDiff(lines, newLines, filePath);
 
         const confirmationResult =

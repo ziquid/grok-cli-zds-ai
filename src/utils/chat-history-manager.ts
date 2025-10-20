@@ -7,6 +7,7 @@ const HISTORY_FILE_NAME = "chat-history.json";
 const HISTORY_DIR = path.join(os.homedir(), ".grok");
 
 export interface SessionState {
+  session: string;
   persona: string;
   personaColor: string;
   mood: string;

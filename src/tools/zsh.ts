@@ -46,9 +46,14 @@ export class ZshTool implements ToolDiscovery {
         };
       }
 
+      // If tool approval hook is configured, skip ConfirmationService (hook handles authorization)
+      const { getSettingsManager } = await import('../utils/settings-manager.js');
+      const settings = getSettingsManager();
+      const hasToolApprovalHook = !!settings.getToolApprovalHook();
+
       // Check if user has already accepted zsh commands for this session
       const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!skipConfirmation && !sessionFlags.zshCommands && !sessionFlags.allOperations) {
+      if (!skipConfirmation && !hasToolApprovalHook && !sessionFlags.zshCommands && !sessionFlags.allOperations) {
         // Request confirmation showing the command
         const confirmationResult = await this.confirmationService.requestConfirmation({
           operation: 'Run zsh command',

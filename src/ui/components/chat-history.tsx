@@ -241,13 +241,20 @@ export function ChatHistory({
 
   return (
     <Box flexDirection="column">
-      {filteredEntries.slice(-20).map((entry, index) => (
-        <MemoizedChatEntry
-          key={`${entry.timestamp.getTime()}-${index}`}
-          entry={entry}
-          index={index}
-        />
-      ))}
+      {filteredEntries.slice(-20).map((entry, index) => {
+        // Ensure timestamp is a Date object (defensive check)
+        const timestamp = entry.timestamp instanceof Date
+          ? entry.timestamp
+          : new Date(entry.timestamp);
+
+        return (
+          <MemoizedChatEntry
+            key={`${timestamp.getTime()}-${index}`}
+            entry={entry}
+            index={index}
+          />
+        );
+      })}
     </Box>
   );
 }

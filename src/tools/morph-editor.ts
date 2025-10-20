@@ -65,9 +65,14 @@ export class MorphEditorTool implements ToolDiscovery {
       // Read the initial code
       const initialCode = await fs.readFile(resolvedPath, "utf-8");
 
+      // If tool approval hook is configured, skip ConfirmationService (hook handles authorization)
+      const { getSettingsManager } = await import('../utils/settings-manager.js');
+      const settings = getSettingsManager();
+      const hasToolApprovalHook = !!settings.getToolApprovalHook();
+
       // Check user confirmation before proceeding
       const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+      if (!hasToolApprovalHook && !sessionFlags.fileOperations && !sessionFlags.allOperations) {
         const confirmationResult = await this.confirmationService.requestConfirmation(
           {
             operation: "Edit file with Morph Fast Apply",

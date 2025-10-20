@@ -131,7 +131,12 @@ function ChatInterfaceWithAgent({
 
       // Initialize UI chatHistory with agent's complete history (including system prompts)
       // This ensures system prompts are preserved when syncing back
-      setChatHistory(agent.getChatHistory());
+      // Normalize timestamps to ensure they're Date objects
+      const agentHistory = agent.getChatHistory().map(entry => ({
+        ...entry,
+        timestamp: entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp)
+      }));
+      setChatHistory(agentHistory);
     };
 
     initializeHistory();
@@ -254,8 +259,31 @@ function ChatInterfaceWithAgent({
                     )
                   );
                 }
-                // Sync from agent to UI to capture any SYSTEM messages added during processing
-                setChatHistory(agent.getChatHistory());
+                // Sync ONLY system messages from agent that UI doesn't have
+                // This captures hook messages without duplicating user/assistant messages
+                const agentHistory = agent.getChatHistory();
+                const agentSystemMessages = agentHistory.filter(e => e.type === "system");
+
+                setChatHistory((prev) => {
+                  // Find system messages from agent that UI doesn't have
+                  const newSystemMessages = agentSystemMessages.filter(agentMsg =>
+                    !prev.some(uiMsg =>
+                      uiMsg.type === "system" &&
+                      uiMsg.content === agentMsg.content
+                    )
+                  );
+
+                  if (newSystemMessages.length > 0) {
+                    // Ensure timestamps are Date objects before adding to UI state
+                    const normalizedMessages = newSystemMessages.map(msg => ({
+                      ...msg,
+                      timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp)
+                    }));
+                    return [...prev, ...normalizedMessages];
+                  }
+                  return prev;
+                });
+
                 setIsStreaming(false);
                 setTotalTokenUsage(prev => prev + tokenCount);
                 break;
@@ -420,7 +448,7 @@ function ChatInterfaceWithAgent({
               </Text>
               <Text color="gray" dimColor>
                 {" "}
-                (shift + tab)
+                (shift+tab)
               </Text>
             </Box>
             <BackendStatus agent={agent} />

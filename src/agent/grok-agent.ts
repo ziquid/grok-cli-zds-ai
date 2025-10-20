@@ -191,13 +191,8 @@ Current working directory: ${process.cwd()}`;
       content: systemContent,
       timestamp: new Date(),
     };
-  }
 
-  async loadInitialHistory(history: ChatEntry[]): Promise<void> {
-    // Load existing chat history into agent's memory
-    this.chatHistory = history;
-
-    // Execute instance hook AFTER loading history (so it can see existing history)
+    // Execute instance hook on every startup (fresh or not)
     const settings = getSettingsManager();
     const instanceHookPath = settings.getInstanceHook();
     if (instanceHookPath) {
@@ -231,6 +226,13 @@ Current working directory: ${process.cwd()}`;
         }
       }
     }
+  }
+
+  async loadInitialHistory(history: ChatEntry[]): Promise<void> {
+    // Load existing chat history into agent's memory
+    this.chatHistory = history;
+
+    // Instance hook now runs in initialize() for both fresh and existing sessions
 
     // Convert history to messages format for API calls
     const historyMessages: GrokMessage[] = [];
@@ -978,6 +980,36 @@ Current working directory: ${process.cwd()}`;
       const argsString = toolCall.function.arguments?.trim() || "{}";
       let args = JSON.parse(argsString);
 
+      // Handle multiple layers of JSON encoding (API bug)
+      // Keep parsing until we get an object, not a string
+      let parseCount = 0;
+      while (typeof args === 'string' && parseCount < 5) {
+        parseCount++;
+        try {
+          args = JSON.parse(args);
+        } catch (e) {
+          // If parse fails, the string isn't valid JSON - stop trying
+          break;
+        }
+      }
+
+      // Log if we had to fix encoding
+      if (parseCount > 0) {
+        const bugMsg = `[BUG] Tool ${toolCall.function.name} had ${parseCount} extra layer(s) of JSON encoding`;
+        console.warn(bugMsg);
+
+        const systemMsg = `Warning: Tool arguments for ${toolCall.function.name} had ${parseCount} extra encoding layer(s) - this is an API bug`;
+        this.messages.push({
+          role: 'system',
+          content: systemMsg
+        });
+        this.chatHistory.push({
+          type: 'system',
+          content: systemMsg,
+          timestamp: new Date()
+        });
+      }
+
       // Apply parameter defaults before approval hook and execution
       args = this.applyToolParameterDefaults(toolCall.function.name, args);
 
@@ -1398,6 +1430,7 @@ Current working directory: ${process.cwd()}`;
     const oldColor = this.personaColor;
     this.persona = persona;
     this.personaColor = color || "white";
+    process.env.ZDS_AI_AGENT_PERSONA = persona;
 
     // Add system message for recordkeeping
     let systemContent: string;
@@ -1527,6 +1560,7 @@ Current working directory: ${process.cwd()}`;
     const oldColor = this.moodColor;
     this.mood = mood;
     this.moodColor = color || "white";
+    process.env.ZDS_AI_AGENT_MOOD = mood;
 
     // Add system message for recordkeeping
     let systemContent: string;
@@ -1952,42 +1986,8 @@ Current working directory: ${process.cwd()}`;
       this.startupHookOutput = await executeStartupHook();
 
       // Reinitialize with system message and startup hook
+      // Instance hook runs automatically at end of initialize()
       await this.initialize();
-
-      // Execute instance hook (like loadInitialHistory does)
-      const settings = getSettingsManager();
-      const instanceHookPath = settings.getInstanceHook();
-      if (instanceHookPath) {
-        const hookResult = await executeOperationHook(
-          instanceHookPath,
-          "instance",
-          {},
-          30000,
-          false,  // Instance hook is not mandatory
-          this.getCurrentTokenCount(),
-          this.getMaxContextSize()
-        );
-
-        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-          // Apply hook commands (ENV, TOOL_RESULT, SYSTEM)
-          const results = applyHookCommands(hookResult.commands);
-
-          // TOOL_RESULT is for tool return values, not used by instance hook
-
-          // Add SYSTEM message if present
-          if (results.system) {
-            this.messages.push({
-              role: "system",
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: "system",
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
-        }
-      }
     } catch (error) {
       console.error("Error during initialize() in clearCache():", error);
       // Continue anyway - we still want to save the cleared state
@@ -2012,6 +2012,7 @@ Current working directory: ${process.cwd()}`;
    */
   getSessionState() {
     return {
+      session: process.env.ZDS_AI_AGENT_SESSION || "",
       persona: this.persona,
       personaColor: this.personaColor,
       mood: this.mood,
@@ -2029,6 +2030,7 @@ Current working directory: ${process.cwd()}`;
    * Restore session state from persistence
    */
   async restoreSessionState(state: {
+    session?: string;
     persona: string;
     personaColor: string;
     mood: string;
@@ -2040,10 +2042,16 @@ Current working directory: ${process.cwd()}`;
     contextCurrent?: number;
     contextMax?: number;
   }): Promise<void> {
+    // Restore session
+    if (state.session) {
+      process.env.ZDS_AI_AGENT_SESSION = state.session;
+    }
+
     // Restore persona
     if (state.persona) {
       this.persona = state.persona;
       this.personaColor = state.personaColor;
+      process.env.ZDS_AI_AGENT_PERSONA = state.persona;
       this.emit('personaChange', {
         persona: this.persona,
         color: this.personaColor
@@ -2054,6 +2062,7 @@ Current working directory: ${process.cwd()}`;
     if (state.mood) {
       this.mood = state.mood;
       this.moodColor = state.moodColor;
+      process.env.ZDS_AI_AGENT_MOOD = state.mood;
       this.emit('moodChange', {
         mood: this.mood,
         color: this.moodColor
