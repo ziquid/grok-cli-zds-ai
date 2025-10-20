@@ -70,6 +70,7 @@ export class GrokAgent extends EventEmitter {
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
   private temperature: number;
+  private maxTokens: number | undefined;
   private firstMessageProcessed: boolean = false;
   private contextWarningAt80: boolean = false;
   private contextWarningAt90: boolean = false;
@@ -88,7 +89,8 @@ export class GrokAgent extends EventEmitter {
     maxToolRounds?: number,
     debugLogFile?: string,
     startupHookOutput?: string,
-    temperature?: number
+    temperature?: number,
+    maxTokens?: number
   ) {
     super();
     const manager = getSettingsManager();
@@ -96,6 +98,7 @@ export class GrokAgent extends EventEmitter {
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
     this.temperature = temperature ?? manager.getTemperature();
+    this.maxTokens = maxTokens ?? manager.getMaxTokens();
     // Get display name from environment (set by zai/helpers)
     const displayName = process.env.GROK_BACKEND_DISPLAY_NAME;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, displayName);
@@ -417,7 +420,8 @@ Current working directory: ${process.cwd()}`;
           ? { search_parameters: { mode: "auto" } }
           : { search_parameters: { mode: "off" } },
         this.temperature,
-        this.abortController?.signal
+        this.abortController?.signal,
+        this.maxTokens
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -554,7 +558,8 @@ Current working directory: ${process.cwd()}`;
               ? { search_parameters: { mode: "auto" } }
               : { search_parameters: { mode: "off" } },
             this.temperature,
-            this.abortController?.signal
+            this.abortController?.signal,
+            this.maxTokens
           );
         } else {
           // No tool calls in this response - only add it if there's actual content
@@ -595,7 +600,8 @@ Current working directory: ${process.cwd()}`;
               ? { search_parameters: { mode: "auto" } }
               : { search_parameters: { mode: "off" } },
             this.temperature,
-            this.abortController?.signal
+            this.abortController?.signal,
+            this.maxTokens
           );
 
           const followupMessage = currentResponse.choices[0]?.message;
@@ -736,7 +742,8 @@ Current working directory: ${process.cwd()}`;
             ? { search_parameters: { mode: "auto" } }
             : { search_parameters: { mode: "off" } },
           this.temperature,
-          this.abortController?.signal
+          this.abortController?.signal,
+          this.maxTokens
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";

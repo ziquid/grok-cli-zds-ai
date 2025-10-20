@@ -12,6 +12,7 @@ export interface UserSettings {
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
   temperature?: number; // Default temperature for API requests (0.0-2.0, default: 0.7)
+  maxTokens?: number; // Default max tokens for API responses (no upper limit, default: undefined = API default)
   startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
   instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
   taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
@@ -392,6 +393,30 @@ export class SettingsManager {
       return temperature;
     }
     return 0.7; // Default temperature
+  }
+
+  /**
+   * Get max tokens from user settings or environment
+   * Priority: user settings > ZDS_AI_AGENT_MAX_TOKENS env var > undefined
+   * Returns undefined if not set (allows API to use its default)
+   */
+  public getMaxTokens(): number | undefined {
+    // First check user settings
+    const settingsMaxTokens = this.getUserSetting("maxTokens");
+    if (settingsMaxTokens !== undefined && Number.isInteger(settingsMaxTokens) && settingsMaxTokens > 0) {
+      return settingsMaxTokens;
+    }
+
+    // Then check environment variable (set by hooks)
+    const envMaxTokens = process.env.ZDS_AI_AGENT_MAX_TOKENS;
+    if (envMaxTokens) {
+      const parsed = parseInt(envMaxTokens);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return undefined; // No default - let API decide
   }
 }
 

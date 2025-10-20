@@ -38,6 +38,7 @@ export async function executeStartupHook(): Promise<string | undefined> {
  * Create a GrokAgent with startup hook execution and initialization
  * @param runStartupHook - Whether to run the startup hook (default: true, set false for restored sessions)
  * @param temperature - Temperature for API requests (0.0-2.0, default: 0.7)
+ * @param maxTokens - Maximum tokens for API responses (positive integer, default: undefined = API default)
  */
 export async function createGrokAgent(
   apiKey: string,
@@ -46,10 +47,11 @@ export async function createGrokAgent(
   maxToolRounds?: number,
   debugLogFile?: string,
   runStartupHook: boolean = true,
-  temperature?: number
+  temperature?: number,
+  maxTokens?: number
 ): Promise<GrokAgent> {
   const startupHookOutput = runStartupHook ? await executeStartupHook() : undefined;
-  const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, startupHookOutput, temperature);
+  const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, startupHookOutput, temperature, maxTokens);
   await agent.initialize();
   return agent;
 }

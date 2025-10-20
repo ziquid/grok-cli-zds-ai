@@ -330,11 +330,12 @@ async function processPromptHeadless(
   debugLogFile?: string,
   autoApprove?: boolean,
   autoApproveCommands?: string[],
-  temperature?: number
+  temperature?: number,
+  maxTokens?: number
 ): Promise<void> {
   try {
     const { createGrokAgent } = await import('./utils/startup-hook.js');
-    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature);
+    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature, maxTokens);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode
@@ -417,6 +418,10 @@ program
     "-t, --temperature <temp>",
     "temperature for API requests (0.0-2.0, default: 0.7)",
     "0.7"
+  )
+  .option(
+    "--max-tokens <tokens>",
+    "maximum tokens for API responses (positive integer, no default = API default)"
   )
   .option(
     "-p, --prompt [prompt]",
@@ -556,6 +561,7 @@ program
           : [];
 
         const temperature = parseFloat(options.temperature) || 0.7;
+        const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
 
         await processPromptHeadless(
           prompt,
@@ -567,7 +573,8 @@ program
           options.debugLog,
           options.autoApprove,
           approvedCommands,
-          temperature
+          temperature,
+          maxTokens
         );
         return;
       }
@@ -582,7 +589,8 @@ program
       const hasHistory = !options.fresh && historyManager.loadHistory().length > 0;
       const runStartupHook = !hasHistory; // Only run hook for new sessions
       const temperature = parseFloat(options.temperature) || 0.7;
-      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature);
+      const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
+      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature, maxTokens);
       currentAgent = agent; // Store reference for cleanup
 
       // Configure confirmation service if auto-approve is enabled
@@ -766,6 +774,10 @@ gitCommand
     "-t, --temperature <temp>",
     "temperature for API requests (0.0-2.0, default: 0.7)",
     "0.7"
+  )
+  .option(
+    "--max-tokens <tokens>",
+    "maximum tokens for API responses (positive integer, no default = API default)"
   )
   .option(
     "--max-tool-rounds <rounds>",
