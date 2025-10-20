@@ -101,7 +101,8 @@ export class GrokClient {
     tools?: GrokTool[],
     model?: string,
     searchOptions?: SearchOptions,
-    temperature?: number
+    temperature?: number,
+    signal?: AbortSignal
   ): Promise<GrokResponse> {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
@@ -132,7 +133,10 @@ export class GrokClient {
     // Retry loop for 429 errors
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const response = await this.client.chat.completions.create(requestPayload);
+        const response = await this.client.chat.completions.create(
+          requestPayload,
+          { signal: signal as any }
+        );
         return response as GrokResponse;
       } catch (error: any) {
         // Check if it's a 429 rate limit error
@@ -160,7 +164,8 @@ export class GrokClient {
     tools?: GrokTool[],
     model?: string,
     searchOptions?: SearchOptions,
-    temperature?: number
+    temperature?: number,
+    signal?: AbortSignal
   ): AsyncGenerator<any, void, unknown> {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
@@ -185,10 +190,19 @@ export class GrokClient {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const stream = (await this.client.chat.completions.create(
-          requestPayload
+          requestPayload,
+          { signal: signal as any }
         )) as any;
 
         for await (const chunk of stream) {
+          // Check if signal was aborted
+          if (signal?.aborted) {
+            // Try to clean up the stream
+            if (stream && typeof stream.controller?.abort === 'function') {
+              stream.controller.abort();
+            }
+            break;
+          }
           yield chunk;
         }
         return; // Success, exit the generator

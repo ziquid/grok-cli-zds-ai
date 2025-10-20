@@ -416,7 +416,8 @@ Current working directory: ${process.cwd()}`;
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
           : { search_parameters: { mode: "off" } },
-        this.temperature
+        this.temperature,
+        this.abortController?.signal
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -552,7 +553,8 @@ Current working directory: ${process.cwd()}`;
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
               : { search_parameters: { mode: "off" } },
-            this.temperature
+            this.temperature,
+            this.abortController?.signal
           );
         } else {
           // No tool calls in this response - only add it if there's actual content
@@ -592,7 +594,8 @@ Current working directory: ${process.cwd()}`;
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
               : { search_parameters: { mode: "off" } },
-            this.temperature
+            this.temperature,
+            this.abortController?.signal
           );
 
           const followupMessage = currentResponse.choices[0]?.message;
@@ -732,15 +735,78 @@ Current working directory: ${process.cwd()}`;
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
             : { search_parameters: { mode: "off" } },
-          this.temperature
+          this.temperature,
+          this.abortController?.signal
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let tool_calls_yielded = false;
 
-        for await (const chunk of stream) {
-          // Check for cancellation in the streaming loop
-          if (this.abortController?.signal.aborted) {
+        try {
+          for await (const chunk of stream) {
+            // Check for cancellation in the streaming loop
+            if (this.abortController?.signal.aborted) {
+              yield {
+                type: "content",
+                content: "\n\n[Operation cancelled by user]",
+              };
+              yield { type: "done" };
+              return;
+            }
+
+            if (!chunk.choices?.[0]) continue;
+
+            // Accumulate the message using reducer
+            accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
+
+            // Check for tool calls - yield when we have complete tool calls with function names
+            if (!tool_calls_yielded && accumulatedMessage.tool_calls?.length > 0) {
+              // Check if we have at least one complete tool call with a function name
+              const hasCompleteTool = accumulatedMessage.tool_calls.some(
+                (tc: any) => tc.function?.name
+              );
+              if (hasCompleteTool) {
+                yield {
+                  type: "tool_calls",
+                  tool_calls: accumulatedMessage.tool_calls,
+                };
+                tool_calls_yielded = true;
+              }
+            }
+
+            // Stream content as it comes
+            if (chunk.choices[0].delta?.content) {
+              accumulatedContent += chunk.choices[0].delta.content;
+
+              // Update token count in real-time including accumulated content and any tool calls
+              const currentOutputTokens =
+                this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
+                (accumulatedMessage.tool_calls
+                  ? this.tokenCounter.countTokens(
+                      JSON.stringify(accumulatedMessage.tool_calls)
+                    )
+                  : 0);
+              totalOutputTokens = currentOutputTokens;
+
+              yield {
+                type: "content",
+                content: chunk.choices[0].delta.content,
+              };
+
+              // Emit token count update
+              const now = Date.now();
+              if (now - lastTokenUpdate > 250) {
+                lastTokenUpdate = now;
+                yield {
+                  type: "token_count",
+                  tokenCount: inputTokens + totalOutputTokens,
+                };
+              }
+            }
+          }
+        } catch (streamError: any) {
+          // Check if stream was aborted
+          if (this.abortController?.signal.aborted || streamError.name === 'AbortError' || streamError.code === 'ABORT_ERR') {
             yield {
               type: "content",
               content: "\n\n[Operation cancelled by user]",
@@ -748,57 +814,9 @@ Current working directory: ${process.cwd()}`;
             yield { type: "done" };
             return;
           }
-
-          if (!chunk.choices?.[0]) continue;
-
-          // Accumulate the message using reducer
-          accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
-
-          // Check for tool calls - yield when we have complete tool calls with function names
-          if (!tool_calls_yielded && accumulatedMessage.tool_calls?.length > 0) {
-            // Check if we have at least one complete tool call with a function name
-            const hasCompleteTool = accumulatedMessage.tool_calls.some(
-              (tc: any) => tc.function?.name
-            );
-            if (hasCompleteTool) {
-              yield {
-                type: "tool_calls",
-                tool_calls: accumulatedMessage.tool_calls,
-              };
-              tool_calls_yielded = true;
-            }
-          }
-
-          // Stream content as it comes
-          if (chunk.choices[0].delta?.content) {
-            accumulatedContent += chunk.choices[0].delta.content;
-
-            // Update token count in real-time including accumulated content and any tool calls
-            const currentOutputTokens =
-              this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
-              (accumulatedMessage.tool_calls
-                ? this.tokenCounter.countTokens(
-                    JSON.stringify(accumulatedMessage.tool_calls)
-                  )
-                : 0);
-            totalOutputTokens = currentOutputTokens;
-
-            yield {
-              type: "content",
-              content: chunk.choices[0].delta.content,
-            };
-
-            // Emit token count update
-            const now = Date.now();
-            if (now - lastTokenUpdate > 250) {
-              lastTokenUpdate = now;
-              yield {
-                type: "token_count",
-                tokenCount: inputTokens + totalOutputTokens,
-              };
-            }
+          // Re-throw other errors to be caught by outer catch
+          throw streamError;
         }
-      }
 
         // Add accumulated message to conversation for API context
         this.messages.push({
@@ -922,8 +940,8 @@ Current working directory: ${process.cwd()}`;
 
       yield { type: "done" };
     } catch (error: any) {
-      // Check if this was a cancellation
-      if (this.abortController?.signal.aborted) {
+      // Check if this was a cancellation (check both abort signal and error name)
+      if (this.abortController?.signal.aborted || error.name === 'AbortError' || error.code === 'ABORT_ERR') {
         yield {
           type: "content",
           content: "\n\n[Operation cancelled by user]",
