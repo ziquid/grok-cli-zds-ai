@@ -433,7 +433,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           },
           action: {
             type: "string",
-            description: "Required action describing what you're doing (e.g., 'coding', 'testing', 'researching', 'planning')",
+            description: "Required single-word action describing what you're doing (e.g., 'coding', 'testing', 'researching', 'debugging', 'planning')",
           },
           color: {
             type: "string",
@@ -454,7 +454,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
         properties: {
           action: {
             type: "string",
-            description: "New action/status (e.g., 'coding', 'testing', 'blocked', 'error', 'finished')",
+            description: "New single-word action describing ongoing work (e.g., 'coding', 'testing', 'researching', 'debugging', 'planning')",
           },
           color: {
             type: "string",

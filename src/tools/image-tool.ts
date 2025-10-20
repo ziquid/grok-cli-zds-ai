@@ -132,18 +132,20 @@ export class ImageTool implements ToolDiscovery {
         });
 
         // Parse output to find the generated file path
-        // The script should output the path to the generated image
+        // The script must output the absolute path to the generated image
         const lines = stdout.trim().split('\n');
         const lastLine = lines[lines.length - 1];
 
-        // Look for a file path in the output
-        let filepath = lastLine;
-        if (!filepath.startsWith('/')) {
-          // If no absolute path found, construct expected path
-          const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
-          const filename = name ? `${name}-${timestamp}.png` : `generated-${timestamp}.png`;
-          filepath = `${imagesDir}/${filename}`;
+        // Verify we got an absolute path
+        if (!lastLine.startsWith('/')) {
+          return {
+            success: false,
+            error: `Image generation script did not return a valid file path. Output: ${stdout}`,
+            output: `Image generation failed - no file path returned.\n\nScript output:\n${stdout}`
+          };
         }
+
+        const filepath = lastLine;
 
         // Get file size if file exists
         let fileSize = "unknown";

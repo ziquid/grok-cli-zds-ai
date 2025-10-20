@@ -1222,7 +1222,7 @@ Current working directory: ${process.cwd()}`;
         default:
           // Check if this is an MCP tool
           if (toolCall.function.name.startsWith("mcp__")) {
-            return await this.executeMCPTool(toolCall);
+            return await this.executeMCPTool(toolCall.function.name, args);
           }
 
           return {
@@ -1238,12 +1238,11 @@ Current working directory: ${process.cwd()}`;
     }
   }
 
-  private async executeMCPTool(toolCall: GrokToolCall): Promise<ToolResult> {
+  private async executeMCPTool(toolName: string, args: any): Promise<ToolResult> {
     try {
-      const args = JSON.parse(toolCall.function.arguments);
       const mcpManager = getMCPManager();
 
-      const result = await mcpManager.callTool(toolCall.function.name, args);
+      const result = await mcpManager.callTool(toolName, args);
 
       if (result.isError) {
         return {
