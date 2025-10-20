@@ -242,4 +242,69 @@ export class ImageTool implements ToolDiscovery {
       };
     }
   }
+
+  /**
+   * Extract PNG metadata (generation settings) from a PNG file.
+   * Uses exiftool to read embedded generation parameters.
+   */
+  async pngInfo(
+    filename: string
+  ): Promise<ToolResult> {
+    try {
+      if (!filename) {
+        return {
+          success: false,
+          error: "Filename is required",
+          output: "Filename is required"
+        };
+      }
+
+      const escapedFilename = filename.replace(/'/g, "'\\''");
+      const command = `exiftool -Parameters '${escapedFilename}'`;
+
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: 10000 // 10 second timeout
+        });
+
+        if (stderr && !stdout) {
+          return {
+            success: false,
+            error: `Failed to read PNG metadata: ${stderr}`,
+            output: stderr
+          };
+        }
+
+        const metadata = stdout.trim();
+        if (!metadata) {
+          return {
+            success: false,
+            error: "No generation parameters found in file",
+            output: "No generation parameters found in file"
+          };
+        }
+
+        return {
+          success: true,
+          output: metadata,
+          displayOutput: "PNG generation parameters extracted"
+        };
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error";
+        const stderr = error.stderr || "";
+
+        return {
+          success: false,
+          error: `Failed to read PNG metadata: ${errorMessage}${stderr ? '\n' + stderr : ''}`,
+          output: `Failed to read PNG metadata: ${errorMessage}${stderr ? '\n' + stderr : ''}`
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error reading PNG metadata",
+        output: error instanceof Error ? error.message : "Unknown error reading PNG metadata"
+      };
+    }
+  }
 }

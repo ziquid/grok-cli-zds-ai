@@ -58,6 +58,7 @@ export interface HookCommandResults {
 /**
  * Apply hook commands and return extracted values
  * ENV commands are applied to process.env (auto-prefixes ENV_PREFIX if not present)
+ * ENV VAR= (empty value) will unset the variable
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
  * Returns extracted values for caller to use
@@ -77,10 +78,15 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
         if (!key.startsWith(ENV_PREFIX)) {
           key = `${ENV_PREFIX}${key}`;
         }
-        process.env[key] = value;
-        // Also extract special variables for caller to use
-        if (key.startsWith(ENV_PREFIX)) {
-          env[key] = value;
+        // Empty value means unset the variable
+        if (value === '') {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+          // Also extract special variables for caller to use
+          if (key.startsWith(ENV_PREFIX)) {
+            env[key] = value;
+          }
         }
       }
     } else if (cmd.type === "TOOL_RESULT") {

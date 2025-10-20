@@ -1031,11 +1031,15 @@ Current working directory: ${process.cwd()}`;
       // Apply parameter defaults before approval hook and execution
       args = this.applyToolParameterDefaults(toolCall.function.name, args);
 
-      // Check tool approval hook if configured
+      // Task tools (startActiveTask, transitionActiveTaskStatus, stopActiveTask) have their own
+      // dedicated task approval hook, so skip the general tool approval hook for them
+      const isTaskTool = ['startActiveTask', 'transitionActiveTaskStatus', 'stopActiveTask'].includes(toolCall.function.name);
+
+      // Check tool approval hook if configured (skip for task tools)
       const settings = getSettingsManager();
       const toolApprovalHook = settings.getToolApprovalHook();
 
-      if (toolApprovalHook) {
+      if (toolApprovalHook && !isTaskTool) {
         const approvalResult = await executeToolApprovalHook(
           toolApprovalHook,
           toolCall.function.name,
@@ -1225,6 +1229,9 @@ Current working directory: ${process.cwd()}`;
 
         case "captionImage":
           return await this.imageTool.captionImage(args.filename, args.prompt);
+
+        case "pngInfo":
+          return await this.imageTool.pngInfo(args.filename);
 
         case "readXlsx":
           return await this.fileConversionTool.readXlsx(
