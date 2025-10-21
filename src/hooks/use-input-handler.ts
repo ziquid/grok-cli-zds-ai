@@ -738,13 +738,8 @@ Respond with ONLY the commit message, no additional text.`;
   };
 
   const processUserMessage = async (userInput: string) => {
-    // Add user message to UI immediately so it's visible
-    const userEntry: ChatEntry = {
-      type: "user",
-      content: userInput,
-      timestamp: new Date(),
-    };
-    setChatHistory((prev) => [...prev, userEntry]);
+    // User message will be added by agent.processUserMessageStream()
+    // Don't add it here to avoid duplicates
 
     setIsProcessing(true);
     clearInput();

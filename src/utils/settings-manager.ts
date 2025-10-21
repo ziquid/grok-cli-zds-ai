@@ -187,12 +187,17 @@ export class SettingsManager {
   public loadProjectSettings(): ProjectSettings {
     try {
       if (!fs.existsSync(this.projectSettingsPath)) {
-        // Create default project settings if file doesn't exist
-        this.saveProjectSettings(DEFAULT_PROJECT_SETTINGS);
+        // Return defaults without creating file
         return { ...DEFAULT_PROJECT_SETTINGS };
       }
 
       const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
+
+      // Handle empty files
+      if (!content.trim()) {
+        return { ...DEFAULT_PROJECT_SETTINGS };
+      }
+
       const settings = JSON.parse(content);
 
       // Merge with defaults
@@ -208,37 +213,11 @@ export class SettingsManager {
 
   /**
    * Save project settings to .grok/settings.json
+   * Note: This is a no-op - project settings are not used in ZDS agent workflow
    */
   public saveProjectSettings(settings: Partial<ProjectSettings>): void {
-    try {
-      this.ensureDirectoryExists(this.projectSettingsPath);
-
-      // Read existing settings directly to avoid recursion
-      let existingSettings: ProjectSettings = { ...DEFAULT_PROJECT_SETTINGS };
-      if (fs.existsSync(this.projectSettingsPath)) {
-        try {
-          const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
-          const parsed = JSON.parse(content);
-          existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
-        } catch (error) {
-          // If file is corrupted, use defaults
-          console.warn("Corrupted project settings file, using defaults");
-        }
-      }
-
-      const mergedSettings = { ...existingSettings, ...settings };
-
-      fs.writeFileSync(
-        this.projectSettingsPath,
-        JSON.stringify(mergedSettings, null, 2)
-      );
-    } catch (error) {
-      console.error(
-        "Failed to save project settings:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      throw error;
-    }
+    // Do nothing - all settings are stored in ~/.grok/user-settings.json
+    // This prevents creating .grok/settings.json files scattered around the filesystem
   }
 
   /**

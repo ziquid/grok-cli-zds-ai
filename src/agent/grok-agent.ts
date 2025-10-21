@@ -855,6 +855,17 @@ Current working directory: ${process.cwd()}`;
             };
           }
 
+          // Add tool_call entries to chatHistory so they persist through UI sync
+          accumulatedMessage.tool_calls.forEach((toolCall) => {
+            const toolCallEntry: ChatEntry = {
+              type: "tool_call",
+              content: "Executing...",
+              timestamp: new Date(),
+              toolCall: toolCall,
+            };
+            this.chatHistory.push(toolCallEntry);
+          });
+
           // Execute tools
           let toolIndex = 0;
           const completedToolCallIds = new Set<string>();
@@ -891,6 +902,21 @@ Current working directory: ${process.cwd()}`;
               toolCall,
               toolResult: result,
             };
+
+            // Update the tool_call entry in chatHistory to tool_result
+            const entryIndex = this.chatHistory.findIndex(
+              (entry) => entry.type === "tool_call" && entry.toolCall?.id === toolCall.id
+            );
+            if (entryIndex !== -1) {
+              this.chatHistory[entryIndex] = {
+                ...this.chatHistory[entryIndex],
+                type: "tool_result",
+                content: result.success
+                  ? (result.output?.trim() || "Success")
+                  : (result.error?.trim() || "Error occurred"),
+                toolResult: result,
+              };
+            }
 
             // Add tool result with proper format (needed for AI context)
             this.messages.push({
@@ -1640,11 +1666,11 @@ Current working directory: ${process.cwd()}`;
     if (hookPath) {
       const hookResult = await executeOperationHook(
         hookPath,
-        "task_start",
+        "startActiveTask",
         {
-          task_name: activeTask,
-          task_action: action,
-          task_color: color || "white"
+          activetask: activeTask,
+          action: action,
+          color: color || "white"
         },
         30000,
         false,  // Task hook is not mandatory
@@ -1652,24 +1678,24 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
+      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      if (hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+        if (results.system) {
+          this.messages.push({
+            role: 'system',
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: 'system',
+            content: results.system,
+            timestamp: new Date(),
+          });
+        }
+      }
+
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task start";
-
-        // Process rejection commands (SYSTEM messages)
-        if (hookResult.commands) {
-          const results = applyHookCommands(hookResult.commands);
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: 'system',
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
-        }
 
         this.messages.push({
           role: 'system',
@@ -1727,12 +1753,10 @@ Current working directory: ${process.cwd()}`;
     if (hookPath) {
       const hookResult = await executeOperationHook(
         hookPath,
-        "task_transition",
+        "transitionActiveTaskStatus",
         {
-          task_name: this.activeTask,
-          task_old_action: this.activeTaskAction,
-          task_new_action: action,
-          task_color: color || "white"
+          action: action,
+          color: color || "white"
         },
         30000,
         false,  // Task hook is not mandatory
@@ -1740,24 +1764,24 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
+      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      if (hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+        if (results.system) {
+          this.messages.push({
+            role: 'system',
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: 'system',
+            content: results.system,
+            timestamp: new Date(),
+          });
+        }
+      }
+
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task status transition";
-
-        // Process rejection commands (SYSTEM messages)
-        if (hookResult.commands) {
-          const results = applyHookCommands(hookResult.commands);
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: 'system',
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
-        }
 
         this.messages.push({
           role: 'system',
@@ -1820,13 +1844,11 @@ Current working directory: ${process.cwd()}`;
     if (hookPath) {
       const hookResult = await executeOperationHook(
         hookPath,
-        "task_stop",
+        "stopActiveTask",
         {
-          task_name: this.activeTask,
-          task_action: this.activeTaskAction,
-          task_reason: reason,
-          task_documentation_file: documentationFile,
-          task_color: color || "white"
+          reason: reason,
+          documentation_file: documentationFile,
+          color: color || "white"
         },
         30000,
         false,  // Task hook is not mandatory
@@ -1834,32 +1856,32 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      if (!hookResult.approved) {
-        const reason = hookResult.reason || "Hook rejected task stop";
-
-        // Process rejection commands (SYSTEM messages)
-        if (hookResult.commands) {
-          const results = applyHookCommands(hookResult.commands);
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: 'system',
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
+      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      if (hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+        if (results.system) {
+          this.messages.push({
+            role: 'system',
+            content: results.system,
+          });
+          this.chatHistory.push({
+            type: 'system',
+            content: results.system,
+            timestamp: new Date(),
+          });
         }
+      }
+
+      if (!hookResult.approved) {
+        const hookReason = hookResult.reason || "Hook rejected task stop";
 
         this.messages.push({
           role: 'system',
-          content: `Failed to stop task "${this.activeTask}": ${reason}`
+          content: `Failed to stop task "${this.activeTask}": ${hookReason}`
         });
         return {
           success: false,
-          error: reason
+          error: hookReason
         };
       }
 

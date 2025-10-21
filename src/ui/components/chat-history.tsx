@@ -109,8 +109,20 @@ const MemoizedChatEntry = React.memo(
           return toolName;
         };
 
-        const toolName = entry.toolCall?.function?.name || "unknown";
+        const toolName = entry.toolCall?.function?.name || "unknown tool";
         const actionName = getToolActionName(toolName);
+
+        // If toolCall is completely missing, show error state
+        if (!entry.toolCall || !entry.toolCall.function) {
+          return (
+            <Box key={index} flexDirection="column" marginTop={1}>
+              <Box>
+                <Text color="magenta">⏺</Text>
+                <Text color="red"> [Missing tool call data]</Text>
+              </Box>
+            </Box>
+          );
+        }
 
         const getFilePath = (toolCall: any) => {
           if (toolCall?.function?.arguments) {

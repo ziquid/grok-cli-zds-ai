@@ -240,8 +240,8 @@ function ChatInterfaceWithAgent({
                           ...entry,
                           type: "tool_result",
                           content: chunk.toolResult.success
-                            ? chunk.toolResult.output || "Success"
-                            : chunk.toolResult.error || "Error occurred",
+                            ? (chunk.toolResult.output?.trim() || "Success")
+                            : (chunk.toolResult.error?.trim() || "Error occurred"),
                           toolResult: chunk.toolResult,
                         };
                       }
