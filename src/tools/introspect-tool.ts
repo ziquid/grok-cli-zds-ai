@@ -22,6 +22,7 @@ export class IntrospectTool implements ToolDiscovery {
 Usage:
   /introspect tools             - Show all available tools (internal and MCP)
   /introspect tool:TOOL_NAME    - Show schema for specific tool
+  /introspect commands          - Show available slash commands
   /introspect env               - Show ZDS_AI_AGENT_* environment variables
   /introspect context           - Show context/token usage
   /introspect all               - Show tools, environment variables, and context
@@ -35,6 +36,9 @@ Examples:
 
   # Look up an internal tool's parameters
   introspect("tool:viewFile")
+
+  # See available slash commands
+  introspect("commands")
 
   # Check context/token usage
   introspect("context")
@@ -102,9 +106,26 @@ Workflow for using unknown MCP tools:
         };
       }
 
+      if (target === "commands") {
+        let output = "Available Slash Commands:\n\n";
+        output += "/context - Show context usage info\n";
+        output += "/context view - View conversation context as markdown\n";
+        output += "/context edit - Edit context JSON file\n";
+        output += "/clear - Clear chat history and start fresh\n";
+        output += "/exit or /quit - Exit the CLI\n";
+
+        return {
+          success: true,
+          output,
+          displayOutput: "Slash commands"
+        };
+      }
+
       if (target === "all") {
         // Get tools
         const toolsResult = await this.introspect("tools");
+        // Get commands
+        const commandsResult = await this.introspect("commands");
         // Get env
         const envResult = await this.introspect("env");
         // Get context
@@ -112,7 +133,7 @@ Workflow for using unknown MCP tools:
 
         return {
           success: true,
-          output: `${toolsResult.output}\n\n=== Environment Variables ===\n${envResult.output}\n\n=== Context Usage ===\n${contextResult.output}`,
+          output: `${toolsResult.output}\n\n=== Slash Commands ===\n${commandsResult.output}\n\n=== Environment Variables ===\n${envResult.output}\n\n=== Context Usage ===\n${contextResult.output}`,
           displayOutput: "Showing all introspection data"
         };
       }
@@ -230,7 +251,7 @@ Usage: ${usagePercent}%`;
 
       return {
         success: false,
-        error: `Unknown introspect target: ${target}. Available targets: tools, env, context, all`
+        error: `Unknown introspect target: ${target}. Available targets: tools, commands, env, context, all`
       };
     } catch (error: any) {
       return {

@@ -465,6 +465,7 @@ program
     "display token usage stats for the specified context file and exit"
   )
   .argument("[message...]", "Initial message to send to Grok")
+  .allowExcessArguments(true)
   .action(async (message, options) => {
     if (options.directory) {
       try {
@@ -609,14 +610,57 @@ program
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
       // Support variadic positional arguments for multi-word initial message
-      const initialMessage = Array.isArray(message)
-        ? message.join(" ")
-        : message;
+      let messageArray = Array.isArray(message) ? message : (message ? [message] : []);
+
+      // Trim all elements (Commander may add spaces)
+      messageArray = messageArray.map(arg => arg.trim());
+
+      // Check if --no-ink is in the message array (happens when flag comes after message due to variadic args)
+      const hasNoInkInMessage = messageArray.includes('--no-ink');
+
+      // If --no-ink was in message array, manually set option (Commander didn't parse it as flag)
+      if (hasNoInkInMessage) {
+        options.ink = false;
+      }
+
+      // Filter out any CLI flags from message array (in case they leaked through)
+      messageArray = messageArray.filter(arg => !arg.startsWith('-'));
+
+      // Join message
+      const initialMessage = messageArray.join(" ").trim();
    // Optimize console output for plain mode to reduce flickering
 
       if (!options.ink) {
         // Plain console mode
         const prompts = await import('prompts');
+
+        // Load chat history if not a fresh session
+        // IMPORTANT: Must load history BEFORE initialize() to preserve instance hook output
+        if (!options.fresh) {
+          const loadedHistory = historyManager.loadHistory();
+          if (loadedHistory.length > 0) {
+            // Save any instance hook messages that were added during initialize()
+            const currentHistory = agent.getChatHistory();
+            const instanceHookMessages = currentHistory.filter(entry =>
+              entry.type === 'system' && entry.timestamp > new Date(Date.now() - 1000)
+            );
+
+            // Load old history
+            await agent.loadInitialHistory(loadedHistory);
+
+            // Re-append fresh instance hook messages
+            if (instanceHookMessages.length > 0) {
+              const agentHistory = agent.getChatHistory();
+              agent.setChatHistory([...agentHistory, ...instanceHookMessages]);
+            }
+
+            // Restore session state
+            const sessionState = historyManager.loadSessionState();
+            if (sessionState) {
+              await agent.restoreSessionState(sessionState);
+            }
+          }
+        }
 
         // Helper function to save context
         const saveContext = () => {
@@ -624,6 +668,10 @@ program
           const messages = agent.getMessages();
           historyManager.saveHistory(chatHistory);
           historyManager.saveMessages(messages);
+
+          // Save session state
+          const sessionState = agent.getSessionState();
+          historyManager.saveSessionState(sessionState);
         };
 
         // Process initial message if provided
@@ -693,9 +741,165 @@ program
             }
 
             const input = result.input.trim();
+
+            // Check for pending context edit confirmation
+            const pendingEdit = agent.getPendingContextEdit();
+            if (pendingEdit) {
+              const trimmed = input.toLowerCase();
+              const { tmpJsonPath, contextFilePath } = pendingEdit;
+
+              if (trimmed === 'y' || trimmed === 'yes') {
+                // User confirmed - replace context
+                const fs = await import('fs');
+                const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
+
+                fs.copyFileSync(tmpJsonPath, contextFilePath);
+
+                // Reload context from file
+                const historyManager = ChatHistoryManager.getInstance();
+                const reloadedHistory = historyManager.loadHistory();
+
+                // Update agent's chat history
+                agent.setChatHistory(reloadedHistory);
+
+                console.log('✓ Context replaced with edited version');
+
+                // Clean up temp file
+                try {
+                  fs.unlinkSync(tmpJsonPath);
+                } catch (err) {
+                  // Ignore cleanup errors
+                }
+              } else {
+                // User cancelled
+                const fs = await import('fs');
+                console.log('Context edit cancelled');
+
+                // Clean up temp file
+                try {
+                  fs.unlinkSync(tmpJsonPath);
+                } catch (err) {
+                  // Ignore cleanup errors
+                }
+              }
+
+              // Clear pending state
+              agent.clearPendingContextEdit();
+              continue;
+            }
+
             if (input === 'exit' || input === 'quit') {
               console.log('👋 Goodbye!');
               process.exit(0);
+            }
+
+            // Handle /context commands
+            if (input.startsWith('/context ')) {
+              const subcommand = input.substring(9).trim();
+
+              if (subcommand === 'view') {
+                try {
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const os = await import('os');
+                  const { spawn } = await import('child_process');
+
+                  // Convert context to markdown
+                  const markdown = await agent.convertContextToMarkdown();
+                  const tmpMdPath = path.join(os.tmpdir(), `grok-context-${Date.now()}.md`);
+                  fs.writeFileSync(tmpMdPath, markdown, 'utf-8');
+
+                  // Get viewer command
+                  const settings = await import('./utils/settings-manager.js');
+                  const settingsManager = settings.getSettingsManager();
+                  const viewerCommand = settingsManager.getContextViewHelper();
+
+                  // Spawn viewer
+                  const viewerProcess = spawn(viewerCommand, [tmpMdPath], {
+                    stdio: 'inherit',
+                    shell: true,
+                  });
+
+                  await new Promise<void>((resolve) => {
+                    viewerProcess.on('close', () => {
+                      try {
+                        fs.unlinkSync(tmpMdPath);
+                      } catch (err) {
+                        // Ignore cleanup errors
+                      }
+                      resolve();
+                    });
+                  });
+
+                  continue;
+                } catch (error) {
+                  console.error('❌ Failed to view context:', error instanceof Error ? error.message : String(error));
+                  continue;
+                }
+              } else if (subcommand === 'edit') {
+                try {
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const { spawn } = await import('child_process');
+
+                  // Get context file path
+                  const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
+                  const historyManager = ChatHistoryManager.getInstance();
+                  const contextFilePath = historyManager.getContextFilePath();
+
+                  // Create temp copy
+                  const tmpJsonPath = `${contextFilePath}.tmp`;
+                  fs.copyFileSync(contextFilePath, tmpJsonPath);
+
+                  // Get editor command
+                  const settings = await import('./utils/settings-manager.js');
+                  const settingsManager = settings.getSettingsManager();
+                  const editorCommand = settingsManager.getContextEditHelper();
+
+                  // Spawn editor
+                  const editorProcess = spawn(editorCommand, [tmpJsonPath], {
+                    stdio: 'inherit',
+                    shell: true,
+                  });
+
+                  await new Promise<void>((resolve) => {
+                    editorProcess.on('close', () => {
+                      resolve();
+                    });
+                  });
+
+                  // Validate edited JSON
+                  let isValid = false;
+                  let validationError = '';
+                  try {
+                    const editedContent = fs.readFileSync(tmpJsonPath, 'utf-8');
+                    JSON.parse(editedContent);
+                    isValid = true;
+                  } catch (error) {
+                    validationError = error instanceof Error ? error.message : String(error);
+                  }
+
+                  if (!isValid) {
+                    console.log(`❌ Edited context file contains invalid JSON: ${validationError}`);
+                    try {
+                      fs.unlinkSync(tmpJsonPath);
+                    } catch (err) {
+                      // Ignore cleanup errors
+                    }
+                    continue;
+                  }
+
+                  // Store pending edit in agent
+                  agent.setPendingContextEdit(tmpJsonPath, contextFilePath);
+
+                  // Print prompt
+                  console.log('🔧 System:   Editor closed. Replace context with edited version? (y/n)');
+                  continue;
+                } catch (error) {
+                  console.error('❌ Failed to edit context:', error instanceof Error ? error.message : String(error));
+                  continue;
+                }
+              }
             }
 
             if (input) {
@@ -732,16 +936,23 @@ program
             process.exit(0);
           }
         }
+
+        // Plain console mode loop exited (shouldn't happen, but just in case)
+        return;
       }
 
+      // Ink mode (GUI) - only reached if options.ink is true
       // Clear terminal screen for ink mode
       process.stdout.write('\x1b[2J\x1b[0f');
 
-      render(React.createElement(ChatInterface, {
+      const inkInstance = render(React.createElement(ChatInterface, {
         agent,
         initialMessage,
         fresh: options.fresh
       }));
+
+      // Store Ink instance globally so components can unmount/remount for external processes
+      (global as any).inkInstance = inkInstance;
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
       process.exit(1);

@@ -47,6 +47,13 @@ export class ChatHistoryManager {
     return ChatHistoryManager.instance;
   }
 
+  /**
+   * Get the context file path (main history JSON file)
+   */
+  getContextFilePath(): string {
+    return this.historyFilePath;
+  }
+
   private ensureHistoryDirExists(): void {
     const dir = path.dirname(this.historyFilePath);
     if (!fs.existsSync(dir)) {

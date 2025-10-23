@@ -197,6 +197,66 @@ export function useInputHandler({
       return;
     }
 
+    // Check for pending context edit confirmation (stored in agent, survives re-renders)
+    const pendingEdit = agent.getPendingContextEdit();
+    if (pendingEdit) {
+      const trimmed = userInput.trim().toLowerCase();
+      const { tmpJsonPath, contextFilePath } = pendingEdit;
+
+      if (trimmed === "y" || trimmed === "yes") {
+        // User confirmed - replace context
+        const fs = await import("fs");
+        const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+
+        fs.copyFileSync(tmpJsonPath, contextFilePath);
+
+        // Reload context from file
+        const historyManager = ChatHistoryManager.getInstance();
+        const reloadedHistory = historyManager.loadHistory();
+
+        // Update agent's chat history
+        agent.setChatHistory(reloadedHistory);
+
+        // Sync UI with reloaded context
+        setChatHistory(agent.getChatHistory());
+
+        const successEntry: ChatEntry = {
+          type: "system",
+          content: "✓ Context replaced with edited version",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, successEntry]);
+
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tmpJsonPath);
+        } catch (err) {
+          // Ignore cleanup errors
+        }
+      } else {
+        // User cancelled or said no
+        const fs = await import("fs");
+        const cancelEntry: ChatEntry = {
+          type: "system",
+          content: "Context edit cancelled",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, cancelEntry]);
+
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tmpJsonPath);
+        } catch (err) {
+          // Ignore cleanup errors
+        }
+      }
+
+      // Clear pending state
+      agent.clearPendingContextEdit();
+      clearInput();
+      return;
+    }
+
     if (userInput.trim()) {
       wasCancelled.current = false;
       const directCommandResult = await handleDirectCommand(userInput);
@@ -255,6 +315,8 @@ export function useInputHandler({
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/context", description: "Show context usage info" },
+    { command: "/context view", description: "View context in pager" },
+    { command: "/context edit", description: "Edit context JSON" },
     { command: "/introspect", description: "Show available tools" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
@@ -369,6 +431,8 @@ export function useInputHandler({
 Built-in Commands:
   /clear      - Clear chat history (current session + persisted)
   /context    - Show context usage info
+  /context view - View full context in pager (markdown format)
+  /context edit - Edit context JSON file (opens in $EDITOR)
   /help       - Show this help
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
@@ -462,17 +526,248 @@ Available models: ${modelNames.join(", ")}`,
       return true;
     }
 
-    if (trimmedInput === "/context") {
-      // Redirect to /introspect context for consistency
-      const toolResult = await agent["introspect"].introspect("context");
-      const contextEntry: ChatEntry = {
-        type: "assistant",
-        content: toolResult.success ? toolResult.output! : toolResult.error!,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, contextEntry]);
-      clearInput();
-      return true;
+    if (trimmedInput.startsWith("/context")) {
+      const parts = trimmedInput.split(" ");
+      const subcommand = parts[1];
+
+      if (subcommand === "view") {
+        // View context as markdown in pager
+        try {
+          const { spawn } = await import("child_process");
+          const fs = await import("fs");
+          const path = await import("path");
+
+          // Get context file path
+          const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+          const historyManager = ChatHistoryManager.getInstance();
+          const contextFilePath = historyManager.getContextFilePath();
+
+          // Create temp files
+          const tmpDir = path.dirname(contextFilePath);
+          const tmpMdPath = `${contextFilePath}.md.tmp`;
+
+          // Convert context to markdown
+          const markdown = await agent.convertContextToMarkdown();
+          fs.writeFileSync(tmpMdPath, markdown, "utf-8");
+
+          // Get viewer command and check if we need to suspend Ink UI
+          const settings = await import("../utils/settings-manager.js");
+          const settingsManager = settings.getSettingsManager();
+          const viewerCommand = settingsManager.getContextViewHelper();
+
+          // Determine if we're in text mode (need to suspend Ink) or GUI mode (don't suspend)
+          const inkInstance = (global as any).inkInstance;
+          const needsSuspend = inkInstance && !settingsManager.isGuiAvailable();
+
+          if (needsSuspend) {
+            // Unmount Ink UI before spawning text-mode viewer
+            inkInstance.unmount();
+            inkInstance.waitUntilExit();
+          }
+
+          // Spawn viewer as blocking process
+          const viewerProcess = spawn(viewerCommand, [tmpMdPath], {
+            stdio: "inherit",
+            shell: true,
+          });
+
+          await new Promise<void>((resolve) => {
+            viewerProcess.on("close", () => {
+              // Clean up temp file
+              try {
+                fs.unlinkSync(tmpMdPath);
+              } catch (err) {
+                // Ignore cleanup errors
+              }
+              resolve();
+            });
+          });
+
+          // Re-render Ink UI after external process exits (only if we suspended it)
+          if (needsSuspend) {
+            const React = await import("react");
+            const { render } = await import("ink");
+            const { default: ChatInterface } = await import("../ui/components/chat-interface.js");
+
+            // Clear screen
+            process.stdout.write('\x1b[2J\x1b[0f');
+
+            // Re-render with current state (don't reload from file)
+            const newInstance = render(React.createElement(ChatInterface, {
+              agent,
+              initialMessage: undefined,
+              fresh: true
+            }));
+
+            // Update global instance
+            (global as any).inkInstance = newInstance;
+          }
+
+          clearInput();
+          return true;
+        } catch (error) {
+          const errorEntry: ChatEntry = {
+            type: "system",
+            content: `ERROR: Failed to view context: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          clearInput();
+          return true;
+        }
+      } else if (subcommand === "edit") {
+        // Edit context JSON in editor
+        try {
+          const { spawn } = await import("child_process");
+          const fs = await import("fs");
+          const path = await import("path");
+
+          // Get context file path
+          const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+          const historyManager = ChatHistoryManager.getInstance();
+          const contextFilePath = historyManager.getContextFilePath();
+
+          // Create temp copy
+          const tmpJsonPath = `${contextFilePath}.tmp`;
+          fs.copyFileSync(contextFilePath, tmpJsonPath);
+
+          // Get editor command and check if we need to suspend Ink UI
+          const settings = await import("../utils/settings-manager.js");
+          const settingsManager = settings.getSettingsManager();
+          const editorCommand = settingsManager.getContextEditHelper();
+
+          // Determine if we're in text mode (need to suspend Ink) or GUI mode (don't suspend)
+          const inkInstance = (global as any).inkInstance;
+          const isGui = settingsManager.isGuiAvailable();
+          const needsSuspend = inkInstance && !isGui;
+
+          if (needsSuspend) {
+            // Unmount Ink UI before spawning text-mode editor
+            inkInstance.unmount();
+            inkInstance.waitUntilExit();
+          }
+
+          // Spawn editor as blocking process
+          const editorProcess = spawn(editorCommand, [tmpJsonPath], {
+            stdio: "inherit",
+            shell: true,
+          });
+
+          await new Promise<void>((resolve) => {
+            editorProcess.on("close", () => {
+              resolve();
+            });
+          });
+
+          // Validate edited JSON BEFORE re-rendering
+          let isValid = false;
+          let validationError = "";
+          try {
+            const editedContent = fs.readFileSync(tmpJsonPath, "utf-8");
+            JSON.parse(editedContent); // Will throw if invalid
+            isValid = true;
+          } catch (error) {
+            validationError = error instanceof Error ? error.message : String(error);
+          }
+
+          if (!isValid) {
+            // Re-render Ink UI first (only if we suspended it)
+            if (needsSuspend) {
+              const React = await import("react");
+              const { render } = await import("ink");
+              const { default: ChatInterface } = await import("../ui/components/chat-interface.js");
+
+              process.stdout.write('\x1b[2J\x1b[0f');
+              const newInstance = render(React.createElement(ChatInterface, {
+                agent,
+                initialMessage: undefined,
+                fresh: true  // Don't reload from file
+              }));
+              (global as any).inkInstance = newInstance;
+            }
+
+            const errorEntry: ChatEntry = {
+              type: "system",
+              content: `ERROR: Edited context file contains invalid JSON: ${validationError}`,
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, errorEntry]);
+
+            // Clean up temp file
+            try {
+              fs.unlinkSync(tmpJsonPath);
+            } catch (err) {
+              // Ignore cleanup errors
+            }
+
+            clearInput();
+            return true;
+          }
+
+          // Store pending edit info in agent (survives re-renders)
+          agent.setPendingContextEdit(tmpJsonPath, contextFilePath);
+
+          // Add prompt to both agent history and React state BEFORE re-rendering
+          const promptEntry: ChatEntry = {
+            type: "system",
+            content: "Editor closed. Replace context with edited version? (y/n)",
+            timestamp: new Date(),
+          };
+
+          // Add to agent's history first
+          const agentHistory = agent.getChatHistory();
+          agent.setChatHistory([...agentHistory, promptEntry]);
+
+          // Re-render Ink UI with updated history (only if we suspended it)
+          if (needsSuspend) {
+            const React = await import("react");
+            const { render } = await import("ink");
+            const { default: ChatInterface } = await import("../ui/components/chat-interface.js");
+
+            // Clear screen
+            process.stdout.write('\x1b[2J\x1b[0f');
+
+            // Re-render - ChatInterface should not reload from file (we have pending state)
+            const newInstance = render(React.createElement(ChatInterface, {
+              agent,
+              initialMessage: undefined,
+              fresh: true  // Don't reload from file - use agent's current history
+            }));
+
+            // Update global instance
+            (global as any).inkInstance = newInstance;
+          } else {
+            // GUI mode or no Ink - just update React state
+            setChatHistory(agent.getChatHistory());
+          }
+
+          // Don't clean up temp file yet - we need it for confirmation
+          // Cleanup will happen after user confirms or denies
+
+          clearInput();
+          return true;
+        } catch (error) {
+          const errorEntry: ChatEntry = {
+            type: "system",
+            content: `ERROR: Failed to edit context: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          clearInput();
+          return true;
+        }
+      } else {
+        // Default: show context usage info (redirect to /introspect context)
+        const toolResult = await agent["introspect"].introspect("context");
+        const contextEntry: ChatEntry = {
+          type: "assistant",
+          content: toolResult.success ? toolResult.output! : toolResult.error!,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, contextEntry]);
+        clearInput();
+        return true;
+      }
     }
 
     if (trimmedInput.startsWith("/persona")) {

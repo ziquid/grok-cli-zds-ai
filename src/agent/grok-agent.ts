@@ -81,6 +81,7 @@ export class GrokAgent extends EventEmitter {
   private activeTask: string = "";
   private activeTaskAction: string = "";
   private activeTaskColor: string = "white";
+  private pendingContextEdit: { tmpJsonPath: string; contextFilePath: string } | null = null;
 
   constructor(
     apiKey: string,
@@ -1362,6 +1363,66 @@ Current working directory: ${process.cwd()}`;
     return (current / max) * 100;
   }
 
+  /**
+   * Convert context messages to markdown format for viewing
+   * Format: (N) Name (role) - timestamp
+   */
+  async convertContextToMarkdown(): Promise<string> {
+    const lines: string[] = [];
+
+    // Header
+    const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+    const historyManager = ChatHistoryManager.getInstance();
+    const contextFilePath = historyManager.getContextFilePath();
+
+    lines.push("# Conversation Context");
+    lines.push(`Context File: ${contextFilePath}`);
+    lines.push(`Session: ${process.env.ZDS_AI_AGENT_SESSION || "N/A"}`);
+    lines.push(`Tokens: ${this.getCurrentTokenCount()} / ${this.getMaxContextSize()} (${this.getContextUsagePercent().toFixed(1)}%)`);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+
+    // Get agent name from environment or default
+    const agentName = process.env.ZDS_AI_AGENT_BOT_NAME || "Assistant";
+    const userName = process.env.ZDS_AI_AGENT_MESSAGE_AUTHOR || "User";
+
+    // Process messages
+    this.chatHistory.forEach((entry, index) => {
+      const msgNum = index + 1;
+      const timestamp = entry.timestamp.toLocaleTimeString();
+
+      if (entry.type === 'user') {
+        lines.push(`(${msgNum}) ${userName} (user) - ${timestamp}`);
+        lines.push(entry.content || "");
+        lines.push("");
+      } else if (entry.type === 'assistant') {
+        lines.push(`(${msgNum}) ${agentName} (assistant) - ${timestamp}`);
+        lines.push(entry.content || "");
+        lines.push("");
+      } else if (entry.type === 'system') {
+        lines.push(`(${msgNum}) System (system) - ${timestamp}`);
+        lines.push(entry.content || "");
+        lines.push("");
+      } else if (entry.type === 'tool_call') {
+        const toolCall = entry.toolCall;
+        const toolName = toolCall?.function?.name || "unknown";
+        const params = toolCall?.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
+        lines.push(`(${msgNum}) ${agentName} (tool_call: ${toolName}) - ${timestamp}`);
+        lines.push(`Parameters: ${JSON.stringify(params, null, 2)}`);
+        lines.push("");
+      } else if (entry.type === 'tool_result') {
+        const toolCall = entry.toolCall;
+        const toolName = toolCall?.function?.name || "unknown";
+        lines.push(`(${msgNum}) System (tool_result: ${toolName}) - ${timestamp}`);
+        lines.push(entry.content || "");
+        lines.push("");
+      }
+    });
+
+    return lines.join("\n");
+  }
+
   getPersona(): string {
     return this.persona;
   }
@@ -1388,6 +1449,18 @@ Current working directory: ${process.cwd()}`;
 
   getActiveTaskColor(): string {
     return this.activeTaskColor;
+  }
+
+  setPendingContextEdit(tmpJsonPath: string, contextFilePath: string): void {
+    this.pendingContextEdit = { tmpJsonPath, contextFilePath };
+  }
+
+  getPendingContextEdit(): { tmpJsonPath: string; contextFilePath: string } | null {
+    return this.pendingContextEdit;
+  }
+
+  clearPendingContextEdit(): void {
+    this.pendingContextEdit = null;
   }
 
   async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {

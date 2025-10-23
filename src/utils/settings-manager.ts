@@ -21,6 +21,10 @@ export interface UserSettings {
   personaHookMandatory?: boolean; // Whether persona hook is required
   moodHook?: string; // Command to validate mood changes
   moodHookMandatory?: boolean; // Whether mood hook is required
+  contextViewHelper?: string; // Helper for viewing context in text mode (default: $PAGER or less)
+  contextViewHelperGui?: string; // Helper for viewing context in GUI mode (default: open on macOS, xdg-open on Linux)
+  contextEditHelper?: string; // Helper for editing context in text mode (default: $EDITOR or nano)
+  contextEditHelperGui?: string; // Helper for editing context in GUI mode (default: open -e on macOS, xdg-open on Linux)
   mcpServers?: Record<string, any>; // MCP server configurations (fallback from user settings)
 }
 
@@ -345,6 +349,112 @@ export class SettingsManager {
    */
   public isMoodHookMandatory(): boolean {
     return this.getUserSetting("moodHookMandatory") ?? false;
+  }
+
+  /**
+   * Detect if we're running in a GUI environment or text-only (SSH/terminal)
+   * Returns true if GUI is available, false for text-only
+   */
+  public isGuiAvailable(): boolean {
+    // Check if SSH session
+    if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY) {
+      return false;
+    }
+
+    // Check platform-specific GUI indicators
+    if (process.platform === "darwin") {
+      // macOS: Check if we have GUI session (not ssh, not screen/tmux)
+      return !process.env.STY && !process.env.TMUX;
+    } else if (process.platform === "linux") {
+      // Linux: Check for X11 or Wayland display
+      return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+    } else if (process.platform === "win32") {
+      // Windows: Assume GUI available unless in WSL SSH
+      return true;
+    }
+
+    // Default to text-only if uncertain
+    return false;
+  }
+
+  /**
+   * Get context view helper command from user settings
+   * Auto-detects GUI vs text-only environment
+   */
+  public getContextViewHelper(): string {
+    const isGui = this.isGuiAvailable();
+
+    if (isGui) {
+      // GUI mode
+      const guiHelper = this.getUserSetting("contextViewHelperGui");
+      if (guiHelper) {
+        return guiHelper;
+      }
+
+      // Platform-specific GUI defaults
+      if (process.platform === "darwin") {
+        return "open"; // macOS: open in default app
+      } else if (process.platform === "linux") {
+        return "xdg-open"; // Linux: open in default app
+      } else if (process.platform === "win32") {
+        return "start"; // Windows: open in default app
+      }
+    }
+
+    // Text mode
+    const textHelper = this.getUserSetting("contextViewHelper");
+    if (textHelper) {
+      return textHelper;
+    }
+
+    // Fall back to environment variable
+    const pager = process.env.PAGER;
+    if (pager) {
+      return pager;
+    }
+
+    // Fall back to common pagers
+    return "less -R"; // -R for color support
+  }
+
+  /**
+   * Get context edit helper command from user settings
+   * Auto-detects GUI vs text-only environment
+   */
+  public getContextEditHelper(): string {
+    const isGui = this.isGuiAvailable();
+
+    if (isGui) {
+      // GUI mode
+      const guiHelper = this.getUserSetting("contextEditHelperGui");
+      if (guiHelper) {
+        return guiHelper;
+      }
+
+      // Platform-specific GUI defaults
+      if (process.platform === "darwin") {
+        return "open -e"; // macOS: open in TextEdit
+      } else if (process.platform === "linux") {
+        return "xdg-open"; // Linux: open in default editor
+      } else if (process.platform === "win32") {
+        return "notepad"; // Windows: Notepad
+      }
+    }
+
+    // Text mode
+    const textHelper = this.getUserSetting("contextEditHelper");
+    if (textHelper) {
+      return textHelper;
+    }
+
+    // Fall back to environment variables
+    const editor = process.env.EDITOR || process.env.VISUAL;
+    if (editor) {
+      return editor;
+    }
+
+    // Fall back to common editors
+    return "nano";
   }
 
   /**
