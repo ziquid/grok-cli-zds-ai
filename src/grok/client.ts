@@ -193,7 +193,8 @@ export class GrokClient {
     // Venice uses venice_parameters.disable_thinking
     if (backendLower === 'venice') {
       requestPayload.venice_parameters = {
-        disable_thinking: false
+        disable_thinking: false,
+        include_venice_system_prompt: false
       };
     }
 
