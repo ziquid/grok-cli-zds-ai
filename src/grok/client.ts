@@ -176,12 +176,30 @@ export class GrokClient {
       model: model || this.currentModel,
       messages,
       tools: tools || [],
-      tool_choice: tools && tools.length > 0 ? "auto" : undefined,
       temperature: temperature ?? 0.7,
       max_tokens: maxTokens ?? this.defaultMaxTokens,
-      stream: true,
-      think: false
+      stream: true
     };
+
+    // Only add think parameter for backends that support it (Grok, Ollama)
+    const backendLower = this.backendName.toLowerCase();
+    const supportsThink = backendLower === 'grok' ||
+                          backendLower === 'ollama' ||
+                          this.client.baseURL?.includes('x.ai');
+    if (supportsThink) {
+      requestPayload.think = false;
+    }
+
+    // Only add tool_choice for backends that support it (OpenAI, Grok, OpenRouter)
+    const supportsToolChoice = backendLower === 'grok' ||
+                               backendLower === 'openai' ||
+                               backendLower === 'openrouter' ||
+                               this.client.baseURL?.includes('x.ai') ||
+                               this.client.baseURL?.includes('openai.com') ||
+                               this.client.baseURL?.includes('openrouter.ai');
+    if (supportsToolChoice && tools && tools.length > 0) {
+      requestPayload.tool_choice = "auto";
+    }
 
     // Add search parameters if specified and using Grok API (x.ai)
     if (searchOptions?.search_parameters && this.client.baseURL?.includes('x.ai')) {
