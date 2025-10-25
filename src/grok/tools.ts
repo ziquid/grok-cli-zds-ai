@@ -666,6 +666,10 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             type: "boolean",
             description: "Move the generated image to ZAI folder (default: false)",
           },
+          seed: {
+            type: "number",
+            description: "Random seed for reproducible image generation (optional)",
+          },
         },
         required: ["prompt"],
       },

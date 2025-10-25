@@ -184,6 +184,11 @@ export class ConfirmationService extends EventEmitter {
   private normalizeOperation(operation: string, filename: string): string {
     const op = operation.toLowerCase();
 
+    // Guard against undefined/null filename
+    if (!filename) {
+      return op;
+    }
+
     // Map common operations to their command names
     if (op.includes('run zsh command') || op.includes('execute')) {
       // Extract actual command from filename for zsh operations

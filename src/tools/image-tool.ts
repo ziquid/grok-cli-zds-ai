@@ -31,7 +31,8 @@ export class ImageTool implements ToolDiscovery {
     numSteps?: number,
     nsfw?: boolean,
     name?: string,
-    move?: boolean
+    move?: boolean,
+    seed?: number
   ): Promise<ToolResult> {
     try {
       if (!prompt) {
@@ -120,6 +121,10 @@ export class ImageTool implements ToolDiscovery {
       }
 
       command += ` --width ${finalWidth} --height ${finalHeight} --cfg-scale ${finalConfigScale} --steps ${finalNumSteps} --sampler '${finalSampler}' --model '${finalModel}'`;
+
+      if (seed !== undefined) {
+        command += ` --seed ${seed}`;
+      }
 
       if (name) {
         const escapedName = name.replace(/'/g, "'\\''");

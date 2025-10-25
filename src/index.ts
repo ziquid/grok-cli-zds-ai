@@ -359,7 +359,7 @@ async function processPromptHeadless(
       await agent.loadInitialHistory(existingHistory);
     }
 
-    // Process the user message
+    // Process the user message (silently, no tool output in headless mode)
     const chatEntries = await agent.processUserMessage(prompt);
 
     // Collect all assistant responses with content (excluding the user prompt entry)
