@@ -191,12 +191,13 @@ export class GrokClient {
     }
 
     // Venice uses venice_parameters.disable_thinking
-    if (backendLower === 'venice') {
-      requestPayload.venice_parameters = {
-        disable_thinking: false,
-        include_venice_system_prompt: false
-      };
-    }
+    // DISABLED: Venice parameters may be causing API response issues
+    // if (backendLower === 'venice') {
+    //   requestPayload.venice_parameters = {
+    //     disable_thinking: false,
+    //     include_venice_system_prompt: false
+    //   };
+    // }
 
     // Only add tool_choice for backends that support it (OpenAI, Grok, OpenRouter)
     const supportsToolChoice = backendLower === 'grok' ||
