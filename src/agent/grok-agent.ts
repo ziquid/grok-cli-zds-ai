@@ -760,6 +760,7 @@ Current working directory: ${process.cwd()}`;
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let tool_calls_yielded = false;
+        let streamFinished = false;
 
         try {
           for await (const chunk of stream) {
@@ -774,6 +775,11 @@ Current working directory: ${process.cwd()}`;
             }
 
             if (!chunk.choices?.[0]) continue;
+
+            // Check if stream is finished (Venice sends garbage after this)
+            if (chunk.choices[0].finish_reason === "stop" || chunk.choices[0].finish_reason === "tool_calls") {
+              streamFinished = true;
+            }
 
             // Accumulate the message using reducer
             accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
@@ -793,8 +799,8 @@ Current working directory: ${process.cwd()}`;
               }
             }
 
-            // Stream content as it comes
-            if (chunk.choices[0].delta?.content) {
+            // Stream content as it comes (but ignore content after stream is finished to avoid Venice garbage)
+            if (chunk.choices[0].delta?.content && !streamFinished) {
               accumulatedContent += chunk.choices[0].delta.content;
 
               // Update token count in real-time including accumulated content and any tool calls
