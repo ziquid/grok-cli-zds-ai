@@ -631,11 +631,11 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Text description of what to avoid in the image (optional)",
           },
           width: {
-            type: "number",
+            type: "integer",
             description: "Image width in pixels (default: 480)",
           },
           height: {
-            type: "number",
+            type: "integer",
             description: "Image height in pixels (default: 720)",
           },
           model: {
@@ -651,7 +651,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Guidance scale - how closely to follow the prompt (default: 5.0)",
           },
           numSteps: {
-            type: "number",
+            type: "integer",
             description: "Number of inference steps (default: 30)",
           },
           nsfw: {
@@ -667,7 +667,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             description: "Move the generated image to ZAI folder (default: false)",
           },
           seed: {
-            type: "number",
+            type: "integer",
             description: "Random seed for reproducible image generation (optional)",
           },
         },

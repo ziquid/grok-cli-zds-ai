@@ -77,11 +77,11 @@ export class ImageTool implements ToolDiscovery {
       // Set defaults
       const defaultNegativePrompt = "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs";
       const finalModel = model || "cyberrealisticPony_v130";
-      const finalWidth = width || 480;
-      const finalHeight = height || 720;
+      const finalWidth = Math.floor(width || 480);
+      const finalHeight = Math.floor(height || 720);
       const finalSampler = sampler || "DPM++ 2M Karras";
       const finalConfigScale = configScale || 5.0;
-      const finalNumSteps = numSteps || 30;
+      const finalNumSteps = Math.floor(numSteps || 30);
       const finalNsfw = nsfw !== undefined ? nsfw : false;
       const finalMove = move !== undefined ? move : false;
       const finalNegativePrompt = negativePrompt || defaultNegativePrompt;
@@ -123,7 +123,7 @@ export class ImageTool implements ToolDiscovery {
       command += ` --width ${finalWidth} --height ${finalHeight} --cfg-scale ${finalConfigScale} --steps ${finalNumSteps} --sampler '${finalSampler}' --model '${finalModel}'`;
 
       if (seed !== undefined) {
-        command += ` --seed ${seed}`;
+        command += ` --seed ${Math.floor(seed)}`;
       }
 
       if (name) {
