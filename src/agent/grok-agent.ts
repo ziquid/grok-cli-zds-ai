@@ -646,7 +646,8 @@ Current working directory: ${process.cwd()}`;
 
   private messageReducer(previous: any, item: any): any {
     const reduce = (acc: any, delta: any) => {
-      acc = { ...acc };
+      // Ensure acc is always an object before spreading (handles null/undefined)
+      acc = { ...(acc || {}) };
       for (const [key, value] of Object.entries(delta)) {
         if (acc[key] === undefined || acc[key] === null) {
           acc[key] = value;
