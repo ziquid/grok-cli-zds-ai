@@ -773,6 +773,16 @@ Current working directory: ${process.cwd()}`;
 
             if (!chunk.choices?.[0]) continue;
 
+            // Debug logging for Venice backend
+            const backendName = this.grokClient.getBackendName().toLowerCase();
+            if (backendName === 'venice') {
+              const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+              const debugLogPath = ChatHistoryManager.getDebugLogPath();
+              fs.appendFileSync(debugLogPath,
+                `${new Date().toISOString()} - Venice chunk: ${JSON.stringify(chunk.choices[0])}\n`
+              );
+            }
+
             // Accumulate the message using reducer
             accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
 
