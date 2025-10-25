@@ -1304,9 +1304,14 @@ Current working directory: ${process.cwd()}`;
           };
       }
     } catch (error: any) {
+      // Log full error details for debugging
+      console.error(`Tool execution error in ${toolCall.function.name}:`, error);
+      console.error('Stack trace:', error.stack);
+      console.error('Tool arguments (raw):', toolCall.function.arguments);
+
       return {
         success: false,
-        error: `Tool execution error: ${error.message}`,
+        error: `Tool execution error: ${error.message}\nStack: ${error.stack}`,
       };
     }
   }
