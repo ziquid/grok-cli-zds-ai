@@ -761,6 +761,7 @@ Current working directory: ${process.cwd()}`;
         let accumulatedContent = "";
         let tool_calls_yielded = false;
         let streamFinished = false;
+        let insideThinkTag = false;
 
         try {
           for await (const chunk of stream) {
@@ -803,11 +804,29 @@ Current working directory: ${process.cwd()}`;
             if (chunk.choices[0].delta?.content && !streamFinished) {
               let deltaContent = chunk.choices[0].delta.content;
 
-              // Strip out thinking tags and NO_RESPONSE tokens (Ollama/DeepSeek send these even with think: false)
-              deltaContent = deltaContent
-                .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove <think>...</think> blocks
-                .replace(/<\/think>/g, '') // Remove stray closing tags
-                .replace(/NO_RESPONSE/g, ''); // Remove NO_RESPONSE tokens
+              // Handle thinking tags that may span multiple chunks
+              // First, remove complete <think>...</think> blocks within this chunk
+              deltaContent = deltaContent.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+              // Check for opening <think> tag
+              if (deltaContent.includes('<think>')) {
+                insideThinkTag = true;
+                // Remove everything from <think> onwards in this chunk
+                deltaContent = deltaContent.substring(0, deltaContent.indexOf('<think>'));
+              }
+
+              // If we're inside a think tag, remove everything up to and including </think>
+              if (insideThinkTag) {
+                if (deltaContent.includes('</think>')) {
+                  // Found closing tag - remove everything up to and including it
+                  const closeIndex = deltaContent.indexOf('</think>');
+                  deltaContent = deltaContent.substring(closeIndex + 8); // 8 = length of '</think>'
+                  insideThinkTag = false;
+                } else {
+                  // Still inside think block - remove entire chunk
+                  deltaContent = '';
+                }
+              }
 
               // Skip completely empty chunks after filtering (but keep spaces!)
               if (deltaContent === '') continue;
