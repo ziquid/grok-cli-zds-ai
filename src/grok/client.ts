@@ -181,14 +181,20 @@ export class GrokClient {
       stream: true
     };
 
-    // Only add think parameter for backends that support it (Grok, Ollama, Venice)
+    // Only add think parameter for backends that support it (Grok, Ollama)
     const backendLower = this.backendName.toLowerCase();
     const supportsThink = backendLower === 'grok' ||
                           backendLower === 'ollama' ||
-                          backendLower === 'venice' ||
                           this.client.baseURL?.includes('x.ai');
     if (supportsThink) {
       requestPayload.think = false;
+    }
+
+    // Venice uses venice_parameters.disable_thinking
+    if (backendLower === 'venice') {
+      requestPayload.venice_parameters = {
+        disable_thinking: false
+      };
     }
 
     // Only add tool_choice for backends that support it (OpenAI, Grok, OpenRouter)
