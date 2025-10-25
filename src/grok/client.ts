@@ -181,10 +181,11 @@ export class GrokClient {
       stream: true
     };
 
-    // Only add think parameter for backends that support it (Grok, Ollama)
+    // Only add think parameter for backends that support it (Grok, Ollama, Venice)
     const backendLower = this.backendName.toLowerCase();
     const supportsThink = backendLower === 'grok' ||
                           backendLower === 'ollama' ||
+                          backendLower === 'venice' ||
                           this.client.baseURL?.includes('x.ai');
     if (supportsThink) {
       requestPayload.think = false;
