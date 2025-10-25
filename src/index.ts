@@ -676,12 +676,16 @@ program
 
         // Process initial message if provided
         if (initialMessage) {
-          console.log(`> ${initialMessage}`);
-
           try {
 
             for await (const chunk of agent.processUserMessageStream(initialMessage)) {
               switch (chunk.type) {
+                case 'user_message':
+                  // Display user message when agent yields it
+                  if (chunk.userEntry) {
+                    console.log(`> ${chunk.userEntry.content}`);
+                  }
+                  break;
                 case 'content':
                   if (chunk.content) {
                     process.stdout.write(chunk.content);
@@ -905,6 +909,9 @@ program
             if (input) {
               for await (const chunk of agent.processUserMessageStream(input)) {
                 switch (chunk.type) {
+                  case 'user_message':
+                    // User message already displayed by prompts library, skip
+                    break;
                   case 'content':
                     if (chunk.content) {
                       process.stdout.write(chunk.content);

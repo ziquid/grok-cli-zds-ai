@@ -1039,6 +1039,7 @@ Respond with ONLY the commit message, no additional text.`;
     try {
       setIsStreaming(true);
       let streamingEntry: ChatEntry | null = null;
+      let userMessageAdded = false; // Track if we've added the user message
 
       for await (const chunk of agent.processUserMessageStream(userInput)) {
         // Check if user cancelled - stop immediately
@@ -1051,8 +1052,20 @@ Respond with ONLY the commit message, no additional text.`;
         switch (chunk.type) {
           case "user_message":
             // Add user message to UI immediately when agent yields it
-            if (chunk.userEntry) {
-              setChatHistory((prev) => [...prev, chunk.userEntry!]);
+            // Only add if not already in history (prevents duplicates)
+            if (chunk.userEntry && !userMessageAdded) {
+              setChatHistory((prev) => {
+                // Check if this exact message is already in history
+                const alreadyExists = prev.some(entry =>
+                  entry.type === "user" &&
+                  entry.content === chunk.userEntry!.content
+                );
+                if (!alreadyExists) {
+                  userMessageAdded = true;
+                  return [...prev, chunk.userEntry!];
+                }
+                return prev;
+              });
             }
             break;
 
@@ -1152,8 +1165,26 @@ Respond with ONLY the commit message, no additional text.`;
                 )
               );
             }
-            // Sync from agent to UI to capture any SYSTEM messages added during processing
-            setChatHistory(agent.getChatHistory());
+            // Sync ONLY system messages from agent that UI doesn't have
+            // This captures hook messages without duplicating user/assistant messages
+            const agentHistory = agent.getChatHistory();
+            const agentSystemMessages = agentHistory.filter(e => e.type === "system");
+
+            setChatHistory((prev) => {
+              // Find system messages from agent that UI doesn't have
+              const newSystemMessages = agentSystemMessages.filter(agentMsg =>
+                !prev.some(uiMsg =>
+                  uiMsg.type === "system" &&
+                  uiMsg.content === agentMsg.content
+                )
+              );
+
+              if (newSystemMessages.length > 0) {
+                return [...prev, ...newSystemMessages];
+              }
+              return prev;
+            });
+
             setIsStreaming(false);
             // Use the tokenCount ref that was set during streaming
             setTotalTokenUsage(prev => prev + currentTokenCount.current);

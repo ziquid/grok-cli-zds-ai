@@ -160,12 +160,25 @@ function ChatInterfaceWithAgent({
 
         try {
           let streamingEntry: ChatEntry | null = null;
+          let userMessageAdded = false; // Track if we've added the user message
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
             switch (chunk.type) {
               case "user_message":
                 // Add user message to UI immediately when agent yields it
-                if (chunk.userEntry) {
-                  setChatHistory((prev) => [...prev, chunk.userEntry!]);
+                // Only add if not already in history (prevents duplicates)
+                if (chunk.userEntry && !userMessageAdded) {
+                  setChatHistory((prev) => {
+                    // Check if this exact message is already in history
+                    const alreadyExists = prev.some(entry =>
+                      entry.type === "user" &&
+                      entry.content === chunk.userEntry!.content
+                    );
+                    if (!alreadyExists) {
+                      userMessageAdded = true;
+                      return [...prev, chunk.userEntry!];
+                    }
+                    return prev;
+                  });
                 }
                 break;
               case "content":
