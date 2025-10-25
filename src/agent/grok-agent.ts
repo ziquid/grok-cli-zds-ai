@@ -1036,10 +1036,18 @@ Current working directory: ${process.cwd()}`;
   }
 
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+    const debugLogPath = ChatHistoryManager.getDebugLogPath();
+
     try {
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - executeTool called for ${toolCall.function.name}\n`);
+
       // Parse arguments - handle empty string as empty object for parameter-less tools
       const argsString = toolCall.function.arguments?.trim() || "{}";
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - argsString: ${argsString}\n`);
+
       let args = JSON.parse(argsString);
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - Parsed args: ${JSON.stringify(args)}\n`);
 
       // Handle multiple layers of JSON encoding (API bug)
       // Keep parsing until we get an object, not a string
@@ -1071,13 +1079,18 @@ Current working directory: ${process.cwd()}`;
         });
       }
 
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - After multi-layer parse, args type: ${typeof args}, isArray: ${Array.isArray(args)}\n`);
+
       // Ensure args is always an object (API might send null)
       if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - args was null/non-object, setting to {}\n`);
         args = {};
       }
 
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - About to call applyToolParameterDefaults\n`);
       // Apply parameter defaults before approval hook and execution
       args = this.applyToolParameterDefaults(toolCall.function.name, args);
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - After applyToolParameterDefaults\n`);
 
       // Task tools (startActiveTask, transitionActiveTaskStatus, stopActiveTask) have their own
       // dedicated task approval hook, so skip the general tool approval hook for them
