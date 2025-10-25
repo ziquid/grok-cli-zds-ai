@@ -1017,7 +1017,8 @@ Current working directory: ${process.cwd()}`;
    * This ensures the approval hook sees the same parameters that will be used during execution
    */
   private applyToolParameterDefaults(toolName: string, params: any): any {
-    const result = { ...params };
+    // Handle null/undefined params (can happen if API sends "null" as arguments string)
+    const result = { ...(params || {}) };
 
     switch (toolName) {
       case "listFiles":
@@ -1067,6 +1068,11 @@ Current working directory: ${process.cwd()}`;
           content: systemMsg,
           timestamp: new Date()
         });
+      }
+
+      // Ensure args is always an object (API might send null)
+      if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        args = {};
       }
 
       // Apply parameter defaults before approval hook and execution
@@ -1265,7 +1271,8 @@ Current working directory: ${process.cwd()}`;
             args.numSteps,
             args.nsfw,
             args.name,
-            args.move
+            args.move,
+            args.seed
           );
 
         case "captionImage":
