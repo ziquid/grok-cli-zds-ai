@@ -807,11 +807,10 @@ Current working directory: ${process.cwd()}`;
               deltaContent = deltaContent
                 .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove <think>...</think> blocks
                 .replace(/<\/think>/g, '') // Remove stray closing tags
-                .replace(/NO_RESPONSE/g, '') // Remove NO_RESPONSE tokens
-                .trim();
+                .replace(/NO_RESPONSE/g, ''); // Remove NO_RESPONSE tokens
 
-              // Skip empty chunks after filtering
-              if (!deltaContent) continue;
+              // Skip completely empty chunks after filtering (but keep spaces!)
+              if (deltaContent === '') continue;
 
               accumulatedContent += deltaContent;
 
