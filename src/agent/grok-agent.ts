@@ -649,6 +649,9 @@ Current working directory: ${process.cwd()}`;
       // Ensure acc is always an object before spreading (handles null/undefined)
       acc = { ...(acc || {}) };
       for (const [key, value] of Object.entries(delta)) {
+        // Skip null values in delta (Venice sends tool_calls: null which breaks Object.entries)
+        if (value === null) continue;
+
         if (acc[key] === undefined || acc[key] === null) {
           acc[key] = value;
           // Clean up index properties from tool calls
