@@ -1033,14 +1033,6 @@ Respond with ONLY the commit message, no additional text.`;
   };
 
   const processUserMessage = async (userInput: string) => {
-    // Add user message to chat history immediately so it's visible
-    const userEntry: ChatEntry = {
-      type: "user",
-      content: userInput,
-      timestamp: new Date(),
-    };
-    setChatHistory((prev) => [...prev, userEntry]);
-
     setIsProcessing(true);
     clearInput();
 
@@ -1057,6 +1049,13 @@ Respond with ONLY the commit message, no additional text.`;
         }
 
         switch (chunk.type) {
+          case "user_message":
+            // Add user message to UI immediately when agent yields it
+            if (chunk.userEntry) {
+              setChatHistory((prev) => [...prev, chunk.userEntry!]);
+            }
+            break;
+
           case "content":
             if (chunk.content) {
               if (!streamingEntry) {

@@ -40,12 +40,13 @@ export interface ChatEntry {
 }
 
 export interface StreamingChunk {
-  type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
+  type: "content" | "tool_calls" | "tool_result" | "done" | "token_count" | "user_message";
   content?: string;
   tool_calls?: GrokToolCall[];
   toolCall?: GrokToolCall;
   toolResult?: ToolResult;
   tokenCount?: number;
+  userEntry?: ChatEntry;
 }
 
 export class GrokAgent extends EventEmitter {
@@ -695,6 +696,12 @@ Current working directory: ${process.cwd()}`;
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
     await this.emitContextChange();
+
+    // Yield user message so UI can display it immediately
+    yield {
+      type: "user_message",
+      userEntry: userEntry,
+    };
 
     // Calculate input tokens
     let inputTokens = this.tokenCounter.countMessageTokens(

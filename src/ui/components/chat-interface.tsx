@@ -154,14 +154,6 @@ function ChatInterfaceWithAgent({
   // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
     if (initialMessage && agent) {
-      // Add user message to UI immediately
-      const userEntry: ChatEntry = {
-        type: "user",
-        content: initialMessage,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, userEntry]);
-
       const processInitialMessage = async () => {
         setIsProcessing(true);
         setIsStreaming(true);
@@ -170,6 +162,12 @@ function ChatInterfaceWithAgent({
           let streamingEntry: ChatEntry | null = null;
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
             switch (chunk.type) {
+              case "user_message":
+                // Add user message to UI immediately when agent yields it
+                if (chunk.userEntry) {
+                  setChatHistory((prev) => [...prev, chunk.userEntry!]);
+                }
+                break;
               case "content":
                 if (chunk.content) {
                   if (!streamingEntry) {
