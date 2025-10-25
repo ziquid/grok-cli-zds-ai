@@ -801,7 +801,19 @@ Current working directory: ${process.cwd()}`;
 
             // Stream content as it comes (but ignore content after stream is finished to avoid Venice garbage)
             if (chunk.choices[0].delta?.content && !streamFinished) {
-              accumulatedContent += chunk.choices[0].delta.content;
+              let deltaContent = chunk.choices[0].delta.content;
+
+              // Strip out thinking tags and NO_RESPONSE tokens (Ollama/DeepSeek send these even with think: false)
+              deltaContent = deltaContent
+                .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove <think>...</think> blocks
+                .replace(/<\/think>/g, '') // Remove stray closing tags
+                .replace(/NO_RESPONSE/g, '') // Remove NO_RESPONSE tokens
+                .trim();
+
+              // Skip empty chunks after filtering
+              if (!deltaContent) continue;
+
+              accumulatedContent += deltaContent;
 
               // Update token count in real-time including accumulated content and any tool calls
               const currentOutputTokens =
@@ -815,7 +827,7 @@ Current working directory: ${process.cwd()}`;
 
               yield {
                 type: "content",
-                content: chunk.choices[0].delta.content,
+                content: deltaContent,
               };
 
               // Emit token count update
