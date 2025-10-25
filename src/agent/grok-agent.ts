@@ -682,7 +682,7 @@ Current working directory: ${process.cwd()}`;
       return acc;
     };
 
-    return reduce(previous, item.choices[0]?.delta || {});
+    return reduce(previous, item.choices?.[0]?.delta || {});
   }
 
   async *processUserMessageStream(
