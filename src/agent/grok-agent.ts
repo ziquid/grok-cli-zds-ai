@@ -28,6 +28,7 @@ import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { executeOperationHook, executeToolApprovalHook, applyHookCommands } from "../utils/hook-executor.js";
+import fs from "fs";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
@@ -1304,10 +1305,14 @@ Current working directory: ${process.cwd()}`;
           };
       }
     } catch (error: any) {
-      // Log full error details for debugging
-      console.error(`Tool execution error in ${toolCall.function.name}:`, error);
-      console.error('Stack trace:', error.stack);
-      console.error('Tool arguments (raw):', toolCall.function.arguments);
+      // Log full error details to debug log file
+      const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+      const debugLogPath = ChatHistoryManager.getDebugLogPath();
+      const errorLog = `${new Date().toISOString()} - Tool execution error in ${toolCall.function.name}:\n` +
+        `Error: ${error.message}\n` +
+        `Stack: ${error.stack}\n` +
+        `Tool arguments (raw): ${toolCall.function.arguments}\n\n`;
+      fs.appendFileSync(debugLogPath, errorLog);
 
       return {
         success: false,
