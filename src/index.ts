@@ -500,6 +500,12 @@ program
       });
 
       const { apiKey, baseURL, model } = authConfig;
+
+      // Set backend display name if provided via -b flag
+      if (options.backend) {
+        process.env.GROK_BACKEND_DISPLAY_NAME = options.backend;
+      }
+
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       // Validate API key
@@ -1028,6 +1034,12 @@ gitCommand
       });
 
       const { apiKey, baseURL, model } = authConfig;
+
+      // Set backend display name if provided via -b flag
+      if (options.backend) {
+        process.env.GROK_BACKEND_DISPLAY_NAME = options.backend;
+      }
+
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
       const temperature = parseFloat(options.temperature) || 0.7;
 

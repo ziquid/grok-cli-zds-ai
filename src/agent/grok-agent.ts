@@ -212,23 +212,10 @@ Current working directory: ${process.cwd()}`;
       );
 
       if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-        // Apply hook commands (ENV, TOOL_RESULT, SYSTEM)
+        // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
         const results = applyHookCommands(hookResult.commands);
-
         // TOOL_RESULT is for tool return values, not used by instance hook
-
-        // Add SYSTEM message if present
-        if (results.system) {
-          this.messages.push({
-            role: "system",
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: "system",
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
     }
   }
@@ -1139,20 +1126,10 @@ Current working directory: ${process.cwd()}`;
         if (!approvalResult.approved) {
           const reason = approvalResult.reason || "Tool execution denied by approval hook";
 
-          // Process rejection commands (SYSTEM messages)
+          // Process rejection commands (MODEL, SYSTEM)
           if (approvalResult.commands) {
             const results = applyHookCommands(approvalResult.commands);
-            if (results.system) {
-              this.messages.push({
-                role: 'system',
-                content: results.system,
-              });
-              this.chatHistory.push({
-                type: 'system',
-                content: results.system,
-                timestamp: new Date(),
-              });
-            }
+            await this.processHookCommands(results);
           }
 
           return {
@@ -1166,25 +1143,11 @@ Current working directory: ${process.cwd()}`;
           console.warn(`Tool approval hook timed out for ${toolCall.function.name} (auto-approved)`);
         }
 
-        // Process hook commands (ENV, TOOL_RESULT, BACKEND, MODEL, SYSTEM)
+        // Process hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
         if (approvalResult.commands) {
           const results = applyHookCommands(approvalResult.commands);
-
           // TOOL_RESULT is for tool return values, not used by approval hook
-
-          // Add SYSTEM message if present
-          if (results.system) {
-            this.messages.push({
-              role: "system",
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: "system",
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
-
+          await this.processHookCommands(results);
           // ENV variables are already applied to process.env by applyHookCommands
           // They can affect tool behavior if tools read from process.env
         }
@@ -1553,20 +1516,10 @@ Current working directory: ${process.cwd()}`;
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected persona change";
 
-        // Process rejection commands (SYSTEM messages)
+        // Process rejection commands (MODEL, SYSTEM)
         if (hookResult.commands) {
           const results = applyHookCommands(hookResult.commands);
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: 'system',
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
+          await this.processHookCommands(results);
         }
 
         this.messages.push({
@@ -1586,7 +1539,7 @@ Current working directory: ${process.cwd()}`;
         });
       }
 
-      // Process hook commands (ENV, OUTPUT, SYSTEM)
+      // Process hook commands (ENV, MODEL, SYSTEM)
       if (hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
 
@@ -1595,18 +1548,7 @@ Current working directory: ${process.cwd()}`;
           persona = results.env.ZDS_AI_AGENT_PERSONA;
         }
 
-        // Add SYSTEM message if present
-        if (results.system) {
-          this.messages.push({
-            role: "system",
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: "system",
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
     }
 
@@ -1683,20 +1625,10 @@ Current working directory: ${process.cwd()}`;
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected mood change";
 
-        // Process rejection commands (SYSTEM messages)
+        // Process rejection commands (MODEL, SYSTEM)
         if (hookResult.commands) {
           const results = applyHookCommands(hookResult.commands);
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system,
-            });
-            this.chatHistory.push({
-              type: 'system',
-              content: results.system,
-              timestamp: new Date(),
-            });
-          }
+          await this.processHookCommands(results);
         }
 
         this.messages.push({
@@ -1716,7 +1648,7 @@ Current working directory: ${process.cwd()}`;
         });
       }
 
-      // Process hook commands (ENV, OUTPUT, SYSTEM)
+      // Process hook commands (ENV, MODEL, SYSTEM)
       if (hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
 
@@ -1725,18 +1657,7 @@ Current working directory: ${process.cwd()}`;
           mood = results.env.ZDS_AI_AGENT_MOOD;
         }
 
-        // Add SYSTEM message if present
-        if (results.system) {
-          this.messages.push({
-            role: "system",
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: "system",
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
     }
 
@@ -1805,20 +1726,10 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
       if (hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
-        if (results.system) {
-          this.messages.push({
-            role: 'system',
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: 'system',
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
 
       if (!hookResult.approved) {
@@ -1891,20 +1802,10 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
       if (hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
-        if (results.system) {
-          this.messages.push({
-            role: 'system',
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: 'system',
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
 
       if (!hookResult.approved) {
@@ -1983,20 +1884,10 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (SYSTEM messages, ENV variables) for both approval and rejection
+      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
       if (hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
-        if (results.system) {
-          this.messages.push({
-            role: 'system',
-            content: results.system,
-          });
-          this.chatHistory.push({
-            type: 'system',
-            content: results.system,
-            timestamp: new Date(),
-          });
-        }
+        await this.processHookCommands(results);
       }
 
       if (!hookResult.approved) {
@@ -2121,6 +2012,101 @@ Current working directory: ${process.cwd()}`;
     // Update token counter for new model
     this.tokenCounter.dispose();
     this.tokenCounter = createTokenCounter(model);
+  }
+
+  /**
+   * Test a model change by making a minimal API call
+   * Rolls back to previous model if test fails
+   * @param newModel Model to test
+   * @returns Promise with success status and optional error message
+   */
+  async testModel(newModel: string): Promise<{ success: boolean; error?: string }> {
+    const previousModel = this.getCurrentModel();
+    const previousTokenCounter = this.tokenCounter;
+
+    try {
+      // Temporarily set the new model
+      this.grokClient.setModel(newModel);
+      this.tokenCounter = createTokenCounter(newModel);
+
+      // Make a minimal test call with a simple message
+      const testMessages: GrokMessage[] = [
+        {
+          role: "user",
+          content: "test"
+        }
+      ];
+
+      // Attempt the API call with a short timeout
+      const response = await this.grokClient.chat(
+        testMessages,
+        [],
+        newModel,
+        undefined,
+        this.temperature,
+        undefined,
+        10
+      );
+
+      // Check if response is valid
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("Invalid response from API");
+      }
+
+      // Test succeeded - keep the new model
+      previousTokenCounter.dispose();
+      return { success: true };
+
+    } catch (error: any) {
+      // Test failed - roll back to previous model
+      this.grokClient.setModel(previousModel);
+      this.tokenCounter.dispose();
+      this.tokenCounter = previousTokenCounter;
+
+      const errorMessage = error.message || "Unknown error during model test";
+      return {
+        success: false,
+        error: `Model test failed: ${errorMessage}`
+      };
+    }
+  }
+
+  /**
+   * Process hook commands (MODEL, SYSTEM, ENV)
+   * Handles model testing and error messaging
+   * @param commands Hook commands from applyHookCommands()
+   */
+  private async processHookCommands(commands: ReturnType<typeof applyHookCommands>): Promise<void> {
+    // Apply MODEL change if present
+    if (commands.model) {
+      const testResult = await this.testModel(commands.model);
+      if (!testResult.success) {
+        // Add error message to chat
+        const errorMsg = `Failed to change model to "${commands.model}": ${testResult.error}`;
+        this.messages.push({
+          role: "system",
+          content: errorMsg,
+        });
+        this.chatHistory.push({
+          type: "system",
+          content: errorMsg,
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    // Add SYSTEM message if present
+    if (commands.system) {
+      this.messages.push({
+        role: "system",
+        content: commands.system,
+      });
+      this.chatHistory.push({
+        type: "system",
+        content: commands.system,
+        timestamp: new Date(),
+      });
+    }
   }
 
   getBackend(): string {

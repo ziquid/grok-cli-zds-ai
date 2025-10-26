@@ -53,6 +53,7 @@ export interface HookCommandResults {
   env: Record<string, string>;
   toolResult: string;
   system: string;
+  model?: string;
 }
 
 /**
@@ -61,12 +62,14 @@ export interface HookCommandResults {
  * ENV VAR= (empty value) will unset the variable
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
+ * MODEL commands set the model to use (last one wins if multiple)
  * Returns extracted values for caller to use
  */
 export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
   const env: Record<string, string> = {};
   const toolResultLines: string[] = [];
   const systemLines: string[] = [];
+  let model: string | undefined = undefined;
 
   for (const cmd of commands) {
     if (cmd.type === "ENV") {
@@ -93,6 +96,8 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       toolResultLines.push(cmd.value);
     } else if (cmd.type === "SYSTEM") {
       systemLines.push(cmd.value);
+    } else if (cmd.type === "MODEL") {
+      model = cmd.value.trim();
     }
   }
 
@@ -100,6 +105,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     env,
     toolResult: toolResultLines.join("\n"),
     system: systemLines.join("\n"),
+    model,
   };
 }
 
