@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { GrokAgent } from "../../agent/grok-agent.js";
 
@@ -54,26 +54,50 @@ function truncateBackendModel(display: string, maxLength: number = 38): string {
 }
 
 export const BackendStatus = React.memo(({ agent }: BackendStatusProps) => {
+  const [model, setModel] = useState<string>("");
+
+  useEffect(() => {
+    if (!agent) {
+      return;
+    }
+
+    // Get initial value
+    const initialModel = agent.getCurrentModel();
+    setModel(initialModel);
+
+    // Listen for model changes
+    const handleModelChange = (data: { model: string }) => {
+      setModel(data.model);
+    };
+
+    agent.on('modelChange', handleModelChange);
+
+    // Cleanup listener on unmount
+    return () => {
+      agent.off('modelChange', handleModelChange);
+    };
+  }, [agent]);
+
   if (!agent) {
     return null;
   }
 
   const backend = agent.getBackend();
-  let model = agent.getCurrentModel();
+  let displayModel = model || agent.getCurrentModel();
 
   // Strip -cloud suffix from model name only if backend is ollama-cloud
-  if (backend === 'ollama-cloud' && model.includes('-cloud')) {
-    model = model.replace('-cloud', '');
+  if (backend === 'ollama-cloud' && displayModel.includes('-cloud')) {
+    displayModel = displayModel.replace('-cloud', '');
   }
 
   // Get bot name from environment
   const botName = process.env.ZDS_AI_AGENT_BOT_NAME;
 
   // Build backend/model part
-  let backendModel = `${backend}/${model}`;
+  let backendModel = `${backend}/${displayModel}`;
 
   // Truncate backend/model if needed (accounting for botName if present)
-  const maxBackendModelLength = botName ? 38 - botName.length - 1 : 38; // -1 for the ":"
+  const maxBackendModelLength = botName ? 37 - botName.length : 38;
   backendModel = truncateBackendModel(backendModel, maxBackendModelLength);
 
   // Format: [botName:]backend/model

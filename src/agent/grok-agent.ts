@@ -2092,6 +2092,23 @@ Current working directory: ${process.cwd()}`;
           content: errorMsg,
           timestamp: new Date(),
         });
+      } else {
+        // Add success message to chat
+        const successMsg = `Model changed to "${commands.model}"`;
+        this.messages.push({
+          role: "system",
+          content: successMsg,
+        });
+        this.chatHistory.push({
+          type: "system",
+          content: successMsg,
+          timestamp: new Date(),
+        });
+
+        // Emit modelChange event for UI updates
+        this.emit('modelChange', {
+          model: commands.model
+        });
       }
     }
 

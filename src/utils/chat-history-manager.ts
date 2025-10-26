@@ -207,7 +207,7 @@ export class ChatHistoryManager {
   saveSessionState(state: SessionState): void {
     try {
       const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
-      fs.writeFileSync(stateFilePath, JSON.stringify(state, null, 2));
+      fs.writeFileSync(stateFilePath, JSON.stringify(state, null, 2) + '\n');
     } catch (error) {
       console.warn("Failed to save session state:", error);
     }
