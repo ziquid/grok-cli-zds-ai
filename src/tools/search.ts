@@ -210,10 +210,12 @@ export class SearchTool implements ToolDiscovery {
         "!*.log"
       );
 
-      // Add query and search directory
-      args.push(query, this.currentDirectory);
+      // Add query (search current directory)
+      args.push(query, ".");
 
-      const rg = spawn("rg", args);
+      const rg = spawn("rg", args, {
+        cwd: this.currentDirectory,
+      });
       let output = "";
       let errorOutput = "";
 
@@ -228,6 +230,11 @@ export class SearchTool implements ToolDiscovery {
       rg.on("close", (code) => {
         if (code === 0 || code === 1) {
           // 0 = found, 1 = not found
+          const results = this.parseRipgrepOutput(output);
+          resolve(results);
+        } else if (code === 2) {
+          // Code 2 means an error occurred (e.g., file path issues)
+          // Return partial results if we have them, otherwise fail silently
           const results = this.parseRipgrepOutput(output);
           resolve(results);
         } else {
