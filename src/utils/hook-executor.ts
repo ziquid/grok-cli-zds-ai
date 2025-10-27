@@ -12,13 +12,13 @@ export interface HookResult {
 }
 
 export interface HookCommand {
-  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM";
+  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "BASE_URL" | "API_KEY_ENV_VAR";
   value: string;
 }
 
 /**
  * Parse hook output for command directives
- * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", or "SYSTEM " are commands
+ * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "BASE_URL ", or "API_KEY_ENV_VAR " are commands
  * Other lines are treated as TOOL_RESULT if present
  */
 function parseHookOutput(stdout: string): HookCommand[] {
@@ -40,6 +40,10 @@ function parseHookOutput(stdout: string): HookCommand[] {
       commands.push({ type: "MODEL", value: line.slice(6) });
     } else if (line.startsWith("SYSTEM ")) {
       commands.push({ type: "SYSTEM", value: line.slice(7) });
+    } else if (line.startsWith("BASE_URL ")) {
+      commands.push({ type: "BASE_URL", value: line.slice(9) });
+    } else if (line.startsWith("API_KEY_ENV_VAR ")) {
+      commands.push({ type: "API_KEY_ENV_VAR", value: line.slice(16) });
     } else if (line.trim()) {
       // Non-empty lines without a command prefix are treated as TOOL_RESULT
       commands.push({ type: "TOOL_RESULT", value: line });
@@ -54,6 +58,9 @@ export interface HookCommandResults {
   toolResult: string;
   system: string;
   model?: string;
+  backend?: string;
+  baseUrl?: string;
+  apiKeyEnvVar?: string;
 }
 
 /**
@@ -63,6 +70,9 @@ export interface HookCommandResults {
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
  * MODEL commands set the model to use (last one wins if multiple)
+ * BACKEND commands set the backend to use (last one wins if multiple)
+ * BASE_URL commands set the base URL to use (last one wins if multiple)
+ * API_KEY_ENV_VAR commands set the env var name for API key (last one wins if multiple)
  * Returns extracted values for caller to use
  */
 export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
@@ -70,10 +80,13 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
   const toolResultLines: string[] = [];
   const systemLines: string[] = [];
   let model: string | undefined = undefined;
+  let backend: string | undefined = undefined;
+  let baseUrl: string | undefined = undefined;
+  let apiKeyEnvVar: string | undefined = undefined;
 
   for (const cmd of commands) {
     if (cmd.type === "ENV") {
-      // Parse "KEY=VALUE" and apply to process environment
+      // Parse "KEY=VALUE" - DO NOT apply to process.env yet, just extract
       const match = cmd.value.match(/^([A-Z_]+)=(.*)$/);
       if (match) {
         let [, key, value] = match;
@@ -81,16 +94,8 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
         if (!key.startsWith(ENV_PREFIX)) {
           key = `${ENV_PREFIX}${key}`;
         }
-        // Empty value means unset the variable
-        if (value === '') {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-          // Also extract special variables for caller to use
-          if (key.startsWith(ENV_PREFIX)) {
-            env[key] = value;
-          }
-        }
+        // Store ALL env variables for caller to apply after test succeeds
+        env[key] = value;
       }
     } else if (cmd.type === "TOOL_RESULT") {
       toolResultLines.push(cmd.value);
@@ -98,6 +103,12 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       systemLines.push(cmd.value);
     } else if (cmd.type === "MODEL") {
       model = cmd.value.trim();
+    } else if (cmd.type === "BACKEND") {
+      backend = cmd.value.trim();
+    } else if (cmd.type === "BASE_URL") {
+      baseUrl = cmd.value.trim();
+    } else if (cmd.type === "API_KEY_ENV_VAR") {
+      apiKeyEnvVar = cmd.value.trim();
     }
   }
 
@@ -106,7 +117,26 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     toolResult: toolResultLines.join("\n"),
     system: systemLines.join("\n"),
     model,
+    backend,
+    baseUrl,
+    apiKeyEnvVar,
   };
+}
+
+/**
+ * Apply extracted ENV variables to process.env
+ * Should be called AFTER model/backend tests succeed
+ * @param env Environment variables to apply
+ */
+export function applyEnvVariables(env: Record<string, string>): void {
+  for (const [key, value] of Object.entries(env)) {
+    if (value === '') {
+      // Empty value means unset the variable
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 }
 
 /**

@@ -18,6 +18,10 @@ export interface SessionState {
   cwd: string;
   contextCurrent: number;
   contextMax: number;
+  backend: string;
+  baseUrl: string;
+  apiKeyEnvVar: string;
+  model: string;
 }
 
 /**

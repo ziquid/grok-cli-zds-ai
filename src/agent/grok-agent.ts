@@ -82,6 +82,7 @@ export class GrokAgent extends EventEmitter {
   private activeTask: string = "";
   private activeTaskAction: string = "";
   private activeTaskColor: string = "white";
+  private apiKeyEnvVar: string = "GROK_API_KEY";
   private pendingContextEdit: { tmpJsonPath: string; contextFilePath: string } | null = null;
 
   constructor(
@@ -213,9 +214,7 @@ Current working directory: ${process.cwd()}`;
 
       if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
         // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
-        const results = applyHookCommands(hookResult.commands);
-        // TOOL_RESULT is for tool return values, not used by instance hook
-        await this.processHookCommands(results);
+        await this.processHookResult(hookResult);
       }
     }
   }
@@ -1126,11 +1125,8 @@ Current working directory: ${process.cwd()}`;
         if (!approvalResult.approved) {
           const reason = approvalResult.reason || "Tool execution denied by approval hook";
 
-          // Process rejection commands (MODEL, SYSTEM)
-          if (approvalResult.commands) {
-            const results = applyHookCommands(approvalResult.commands);
-            await this.processHookCommands(results);
-          }
+          // Process rejection commands (MODEL, SYSTEM, BACKEND, etc.)
+          await this.processHookResult(approvalResult);
 
           return {
             success: false,
@@ -1143,14 +1139,10 @@ Current working directory: ${process.cwd()}`;
           console.warn(`Tool approval hook timed out for ${toolCall.function.name} (auto-approved)`);
         }
 
-        // Process hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
-        if (approvalResult.commands) {
-          const results = applyHookCommands(approvalResult.commands);
-          // TOOL_RESULT is for tool return values, not used by approval hook
-          await this.processHookCommands(results);
-          // ENV variables are already applied to process.env by applyHookCommands
-          // They can affect tool behavior if tools read from process.env
-        }
+        // Process hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, BACKEND, etc.)
+        // TOOL_RESULT is for tool return values, not used by approval hook
+        // ENV variables can affect tool behavior if tools read from process.env
+        await this.processHookResult(approvalResult);
       }
 
       switch (toolCall.function.name) {
@@ -1517,10 +1509,9 @@ Current working directory: ${process.cwd()}`;
         const reason = hookResult.reason || "Hook rejected persona change";
 
         // Process rejection commands (MODEL, SYSTEM)
-        if (hookResult.commands) {
-          const results = applyHookCommands(hookResult.commands);
-          await this.processHookCommands(results);
-        }
+        // Even in rejection, we process commands (might have MODEL change)
+        await this.processHookResult(hookResult);
+        // Note: We ignore the return value here since we're already rejecting the persona
 
         this.messages.push({
           role: 'system',
@@ -1540,15 +1531,18 @@ Current working directory: ${process.cwd()}`;
       }
 
       // Process hook commands (ENV, MODEL, SYSTEM)
-      if (hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
+      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_PERSONA');
+      if (!result.success) {
+        // Model/backend test failed - don't apply persona change
+        return {
+          success: false,
+          error: "Persona change rejected due to failed model/backend test"
+        };
+      }
 
-        // Check for persona transformation via ENV
-        if (results.env.ZDS_AI_AGENT_PERSONA) {
-          persona = results.env.ZDS_AI_AGENT_PERSONA;
-        }
-
-        await this.processHookCommands(results);
+      // Apply persona transformation if present
+      if (result.transformedValue) {
+        persona = result.transformedValue;
       }
     }
 
@@ -1626,10 +1620,7 @@ Current working directory: ${process.cwd()}`;
         const reason = hookResult.reason || "Hook rejected mood change";
 
         // Process rejection commands (MODEL, SYSTEM)
-        if (hookResult.commands) {
-          const results = applyHookCommands(hookResult.commands);
-          await this.processHookCommands(results);
-        }
+        await this.processHookResult(hookResult);
 
         this.messages.push({
           role: 'system',
@@ -1649,15 +1640,18 @@ Current working directory: ${process.cwd()}`;
       }
 
       // Process hook commands (ENV, MODEL, SYSTEM)
-      if (hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
+      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_MOOD');
+      if (!result.success) {
+        // Model/backend test failed - don't apply mood change
+        return {
+          success: false,
+          error: "Mood change rejected due to failed model/backend test"
+        };
+      }
 
-        // Check for mood transformation via ENV
-        if (results.env.ZDS_AI_AGENT_MOOD) {
-          mood = results.env.ZDS_AI_AGENT_MOOD;
-        }
-
-        await this.processHookCommands(results);
+      // Apply mood transformation if present
+      if (result.transformedValue) {
+        mood = result.transformedValue;
       }
     }
 
@@ -1726,11 +1720,8 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
-      if (hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-        await this.processHookCommands(results);
-      }
+      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
+      await this.processHookResult(hookResult);
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task start";
@@ -1802,11 +1793,8 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
-      if (hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-        await this.processHookCommands(results);
-      }
+      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
+      await this.processHookResult(hookResult);
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task status transition";
@@ -1884,11 +1872,8 @@ Current working directory: ${process.cwd()}`;
         this.getMaxContextSize()
       );
 
-      // Process hook commands (MODEL, SYSTEM, ENV variables) for both approval and rejection
-      if (hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-        await this.processHookCommands(results);
-      }
+      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
+      await this.processHookResult(hookResult);
 
       if (!hookResult.approved) {
         const hookReason = hookResult.reason || "Hook rejected task stop";
@@ -2072,16 +2057,180 @@ Current working directory: ${process.cwd()}`;
   }
 
   /**
-   * Process hook commands (MODEL, SYSTEM, ENV)
-   * Handles model testing and error messaging
+   * Test backend/baseUrl/model changes by making a minimal API call
+   * Rolls back all changes if test fails
+   * @param backend Backend display name
+   * @param baseUrl Base URL for API calls
+   * @param apiKeyEnvVar Name of environment variable containing API key
+   * @param model Model to use (optional, uses current model if not specified)
+   * @returns Promise with success status and optional error message
+   */
+  async testBackendModelChange(
+    backend: string,
+    baseUrl: string,
+    apiKeyEnvVar: string,
+    model?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const previousClient = this.grokClient;
+    const previousApiKeyEnvVar = this.apiKeyEnvVar;
+
+    try {
+      // Get API key from environment
+      const apiKey = process.env[apiKeyEnvVar];
+      if (!apiKey) {
+        throw new Error(`API key not found in environment variable: ${apiKeyEnvVar}`);
+      }
+
+      // Use current model if not specified
+      const newModel = model || this.getCurrentModel();
+
+      // Create new client with new configuration
+      this.grokClient = new GrokClient(apiKey, newModel, baseUrl, backend);
+      // Store the API key env var name for session persistence
+      this.apiKeyEnvVar = apiKeyEnvVar;
+
+      // Make a minimal test call
+      const testMessages: GrokMessage[] = [
+        {
+          role: "user",
+          content: "test"
+        }
+      ];
+
+      const response = await this.grokClient.chat(
+        testMessages,
+        [],
+        newModel,
+        undefined,
+        this.temperature,
+        undefined,
+        10
+      );
+
+      // Check if response is valid
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("Invalid response from API");
+      }
+
+      // Test succeeded - new client is now active
+      return { success: true };
+
+    } catch (error: any) {
+      // Test failed - restore previous client and API key env var
+      this.grokClient = previousClient;
+      this.apiKeyEnvVar = previousApiKeyEnvVar;
+
+      const errorMessage = error.message || "Unknown error during backend/model test";
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
+  /**
+   * Process hook result including commands and transformations
+   * Handles ENV transformations, model/backend testing, and error messaging
+   * @param hookResult Hook execution result
+   * @param envKey Optional ENV key to check for transformation (e.g., ZDS_AI_AGENT_PERSONA)
+   * @returns Object with success status and transformed value (if any)
+   */
+  private async processHookResult(
+    hookResult: { commands?: any[] },
+    envKey?: string
+  ): Promise<{ success: boolean; transformedValue?: string }> {
+    if (!hookResult.commands) {
+      return { success: true };
+    }
+
+    const results = applyHookCommands(hookResult.commands);
+
+    // Check for transformation via ENV if key provided
+    let transformedValue: string | undefined;
+    if (envKey && results.env[envKey]) {
+      transformedValue = results.env[envKey];
+    }
+
+    // Process commands (test model/backend, apply ENV vars, add SYSTEM messages)
+    const success = await this.processHookCommands(results);
+
+    return { success, transformedValue };
+  }
+
+  /**
+   * Process hook commands (MODEL, BACKEND, BASE_URL, SYSTEM, ENV)
+   * Handles model/backend testing and error messaging
    * @param commands Hook commands from applyHookCommands()
    */
-  private async processHookCommands(commands: ReturnType<typeof applyHookCommands>): Promise<void> {
-    // Apply MODEL change if present
-    if (commands.model) {
-      const testResult = await this.testModel(commands.model);
+  private async processHookCommands(commands: ReturnType<typeof applyHookCommands>): Promise<boolean> {
+    // Import the helper function
+    const { applyEnvVariables } = await import('../utils/hook-executor.js');
+
+    // Check if backend or model change is requested
+    const hasBackendChange = commands.backend && commands.baseUrl && commands.apiKeyEnvVar;
+    const hasModelChange = commands.model;
+
+    // Test backend/model changes FIRST before applying anything
+    if (hasBackendChange) {
+      // Backend change - test backend/baseUrl/model together
+      const testResult = await this.testBackendModelChange(
+        commands.backend!,
+        commands.baseUrl!,
+        commands.apiKeyEnvVar!,
+        commands.model
+      );
+
       if (!testResult.success) {
-        // Add error message to chat
+        // Test failed - don't apply ANYTHING
+        const parts = [];
+        if (commands.backend) parts.push(`backend to "${commands.backend}"`);
+        if (commands.model) parts.push(`model to "${commands.model}"`);
+        const errorMsg = `Failed to change ${parts.join(' and ')}: ${testResult.error}`;
+        this.messages.push({
+          role: "system",
+          content: errorMsg,
+        });
+        this.chatHistory.push({
+          type: "system",
+          content: errorMsg,
+          timestamp: new Date(),
+        });
+        return false; // Signal failure - caller should not apply other changes
+      }
+
+      // Test succeeded - apply ENV variables and add success message
+      applyEnvVariables(commands.env);
+
+      const parts = [];
+      if (commands.backend) parts.push(`backend to "${commands.backend}"`);
+      if (commands.model) parts.push(`model to "${commands.model}"`);
+      const successMsg = `Changed ${parts.join(' and ')}`;
+      this.messages.push({
+        role: "system",
+        content: successMsg,
+      });
+      this.chatHistory.push({
+        type: "system",
+        content: successMsg,
+        timestamp: new Date(),
+      });
+
+      // Emit events for UI updates
+      if (commands.backend) {
+        this.emit('backendChange', {
+          backend: commands.backend
+        });
+      }
+      if (commands.model) {
+        this.emit('modelChange', {
+          model: commands.model
+        });
+      }
+    } else if (hasModelChange) {
+      // Model-only change
+      const testResult = await this.testModel(commands.model!);
+      if (!testResult.success) {
+        // Test failed - don't apply ANYTHING
         const errorMsg = `Failed to change model to "${commands.model}": ${testResult.error}`;
         this.messages.push({
           role: "system",
@@ -2092,24 +2241,30 @@ Current working directory: ${process.cwd()}`;
           content: errorMsg,
           timestamp: new Date(),
         });
-      } else {
-        // Add success message to chat
-        const successMsg = `Model changed to "${commands.model}"`;
-        this.messages.push({
-          role: "system",
-          content: successMsg,
-        });
-        this.chatHistory.push({
-          type: "system",
-          content: successMsg,
-          timestamp: new Date(),
-        });
-
-        // Emit modelChange event for UI updates
-        this.emit('modelChange', {
-          model: commands.model
-        });
+        return false; // Signal failure - caller should not apply other changes
       }
+
+      // Test succeeded - apply ENV variables and add success message
+      applyEnvVariables(commands.env);
+
+      const successMsg = `Model changed to "${commands.model}"`;
+      this.messages.push({
+        role: "system",
+        content: successMsg,
+      });
+      this.chatHistory.push({
+        type: "system",
+        content: successMsg,
+        timestamp: new Date(),
+      });
+
+      // Emit modelChange event for UI updates
+      this.emit('modelChange', {
+        model: commands.model
+      });
+    } else {
+      // No model or backend change - just apply ENV variables
+      applyEnvVariables(commands.env);
     }
 
     // Add SYSTEM message if present
@@ -2124,6 +2279,8 @@ Current working directory: ${process.cwd()}`;
         timestamp: new Date(),
       });
     }
+
+    return true; // Signal success - caller can apply other changes
   }
 
   getBackend(): string {
@@ -2206,6 +2363,10 @@ Current working directory: ${process.cwd()}`;
       cwd: process.cwd(),
       contextCurrent: this.getCurrentTokenCount(),
       contextMax: this.getMaxContextSize(),
+      backend: this.grokClient.getBackendName(),
+      baseUrl: this.grokClient.getBaseURL(),
+      apiKeyEnvVar: this.apiKeyEnvVar,
+      model: this.getCurrentModel(),
     };
   }
 
@@ -2224,10 +2385,40 @@ Current working directory: ${process.cwd()}`;
     cwd: string;
     contextCurrent?: number;
     contextMax?: number;
+    backend?: string;
+    baseUrl?: string;
+    apiKeyEnvVar?: string;
+    model?: string;
   }): Promise<void> {
     // Restore session
     if (state.session) {
       process.env.ZDS_AI_AGENT_SESSION = state.session;
+    }
+
+    // Restore backend/baseUrl/apiKeyEnvVar/model if present
+    if (state.backend && state.baseUrl && state.apiKeyEnvVar) {
+      try {
+        // Get API key from environment
+        const apiKey = process.env[state.apiKeyEnvVar];
+        if (apiKey) {
+          // Create new client with restored configuration
+          const model = state.model || this.getCurrentModel();
+          this.grokClient = new GrokClient(apiKey, model, state.baseUrl, state.backend);
+          this.apiKeyEnvVar = state.apiKeyEnvVar;
+
+          // Dispose old token counter and create new one for the restored model
+          this.tokenCounter.dispose();
+          this.tokenCounter = createTokenCounter(model);
+
+          // Emit events for UI updates
+          this.emit('backendChange', { backend: state.backend });
+          this.emit('modelChange', { model });
+        } else {
+          console.warn(`Failed to restore backend: API key not found in environment variable ${state.apiKeyEnvVar}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to restore backend configuration:`, error);
+      }
     }
 
     // Restore persona
