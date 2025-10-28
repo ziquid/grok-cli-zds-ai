@@ -344,6 +344,18 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "restart",
+      description: "Restart the application. Use this when you need to reload the application with updated configuration or to apply changes.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "setPersona",
       description: "Set agent's current persona",
       parameters: {

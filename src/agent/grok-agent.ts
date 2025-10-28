@@ -20,7 +20,8 @@ import {
   TaskTool,
   InternetTool,
   ImageTool,
-  FileConversionTool
+  FileConversionTool,
+  RestartTool
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
@@ -64,6 +65,7 @@ export class GrokAgent extends EventEmitter {
   private internetTool: InternetTool;
   private imageTool: ImageTool;
   private fileConversionTool: FileConversionTool;
+  private restartTool: RestartTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -113,6 +115,7 @@ export class GrokAgent extends EventEmitter {
     this.env = new EnvTool();
     this.introspect = new IntrospectTool();
     this.clearCacheTool = new ClearCacheTool();
+    this.restartTool = new RestartTool();
     this.characterTool = new CharacterTool();
     this.taskTool = new TaskTool();
     this.internetTool = new InternetTool();
@@ -412,6 +415,11 @@ Current working directory: ${process.cwd()}`;
         this.maxTokens
       );
 
+      // Parse XML tool calls from response if present
+      if (currentResponse.choices[0]?.message) {
+        currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
+      }
+
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         const assistantMessage = currentResponse.choices[0]?.message;
@@ -592,6 +600,11 @@ Current working directory: ${process.cwd()}`;
             this.maxTokens
           );
 
+          // Parse XML tool calls from followup response if present
+          if (currentResponse.choices[0]?.message) {
+            currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
+          }
+
           const followupMessage = currentResponse.choices[0]?.message;
           if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
             break; // AI doesn't want to continue
@@ -627,6 +640,67 @@ Current working directory: ${process.cwd()}`;
 
       return [userEntry, errorEntry];
     }
+  }
+
+  /**
+   * Parse XML-formatted tool calls from message content (x.ai format)
+   * Converts <xai:function_call> elements to standard GrokToolCall format
+   */
+  private parseXMLToolCalls(message: any): any {
+    if (!message.content || typeof message.content !== 'string') {
+      return message;
+    }
+
+    const content = message.content;
+    const xmlToolCallRegex = /<xai:function_call\s+name="([^"]+)">([\s\S]*?)<\/xai:function_call>/g;
+    const matches = Array.from(content.matchAll(xmlToolCallRegex));
+
+    if (matches.length === 0) {
+      return message;
+    }
+
+    // Parse each XML tool call
+    const toolCalls: GrokToolCall[] = [];
+    let cleanedContent = content;
+
+    for (const match of matches) {
+      const functionName = match[1];
+      const paramsXML = match[2];
+
+      // Parse parameters
+      const paramRegex = /<parameter\s+name="([^"]+)">([^<]*)<\/parameter>/g;
+      const paramMatches = Array.from(paramsXML.matchAll(paramRegex));
+
+      const args: Record<string, any> = {};
+      for (const paramMatch of paramMatches) {
+        args[paramMatch[1]] = paramMatch[2];
+      }
+
+      // Generate a unique ID for this tool call
+      const toolCallId = `call_xml_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      toolCalls.push({
+        id: toolCallId,
+        type: "function",
+        function: {
+          name: functionName,
+          arguments: JSON.stringify(args)
+        }
+      });
+
+      // Remove this XML block from content
+      cleanedContent = cleanedContent.replace(match[0], '');
+    }
+
+    // Trim any extra whitespace
+    cleanedContent = cleanedContent.trim();
+
+    // Return modified message with tool_calls and cleaned content
+    return {
+      ...message,
+      content: cleanedContent || null,
+      tool_calls: [...(message.tool_calls || []), ...toolCalls]
+    };
   }
 
   private messageReducer(previous: any, item: any): any {
@@ -858,6 +932,9 @@ Current working directory: ${process.cwd()}`;
           // Re-throw other errors to be caught by outer catch
           throw streamError;
         }
+
+        // Parse XML tool calls from accumulated message if present
+        accumulatedMessage = this.parseXMLToolCalls(accumulatedMessage);
 
         // Add accumulated message to conversation for API context
         this.messages.push({
@@ -1211,6 +1288,9 @@ Current working directory: ${process.cwd()}`;
 
         case "clearCache":
           return await this.clearCacheTool.clearCache(args.confirmationCode);
+
+        case "restart":
+          return await this.restartTool.restart();
 
         case "setPersona":
           return await this.characterTool.setPersona(args.persona, args.color);

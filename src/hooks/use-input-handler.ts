@@ -322,6 +322,7 @@ export function useInputHandler({
     { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
     { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
+    { command: "/restart", description: "Restart the application (exit code 51)" },
     { command: "/exit", description: "Exit the application" },
   ];
 
@@ -436,6 +437,7 @@ Built-in Commands:
   /help       - Show this help
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
+  /restart    - Restart the application (exit code 51)
   /exit       - Exit application
   exit, quit  - Exit application
 
@@ -484,6 +486,12 @@ Examples:
       setChatHistory((prev) => [...prev, helpEntry]);
       clearInput();
       return true;
+    }
+
+    if (trimmedInput === "/restart") {
+      // Call the restart tool which exits with code 51
+      await agent["restartTool"].restart();
+      return true; // This line won't be reached but TypeScript needs it
     }
 
     if (trimmedInput === "/exit") {
