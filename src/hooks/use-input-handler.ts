@@ -1138,8 +1138,8 @@ Respond with ONLY the commit message, no additional text.`;
 
           case "tool_result":
             if (chunk.toolCall && chunk.toolResult) {
-              setChatHistory((prev) =>
-                prev.map((entry) => {
+              setChatHistory((prev) => {
+                const updated = prev.map((entry): ChatEntry => {
                   if (entry.isStreaming) {
                     return { ...entry, isStreaming: false };
                   }
@@ -1150,7 +1150,7 @@ Respond with ONLY the commit message, no additional text.`;
                   ) {
                     return {
                       ...entry,
-                      type: "tool_result",
+                      type: "tool_result" as const,
                       toolCall: chunk.toolCall, // Use the new toolCall from chunk with complete arguments
                       content: chunk.toolResult.success
                         ? chunk.toolResult.output || "Success"
@@ -1159,8 +1159,14 @@ Respond with ONLY the commit message, no additional text.`;
                     };
                   }
                   return entry;
-                })
-              );
+                });
+
+                // Add any system messages that came with this tool result (from hooks)
+                if (chunk.systemMessages && chunk.systemMessages.length > 0) {
+                  return [...updated, ...chunk.systemMessages];
+                }
+                return updated;
+              });
               streamingEntry = null;
             }
             break;
@@ -1173,8 +1179,8 @@ Respond with ONLY the commit message, no additional text.`;
                 )
               );
             }
-            // Sync ONLY system messages from agent that UI doesn't have
-            // This captures hook messages without duplicating user/assistant messages
+            // Note: System messages are now added immediately with tool_result chunks
+            // Only sync system messages that weren't already added during tool execution
             const agentHistory = agent.getChatHistory();
             const agentSystemMessages = agentHistory.filter(e => e.type === "system");
 
@@ -1187,6 +1193,7 @@ Respond with ONLY the commit message, no additional text.`;
                 )
               );
 
+              // Only add if there are truly new messages (e.g., from startup hooks)
               if (newSystemMessages.length > 0) {
                 return [...prev, ...newSystemMessages];
               }

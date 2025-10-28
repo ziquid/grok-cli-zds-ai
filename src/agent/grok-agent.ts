@@ -48,6 +48,7 @@ export interface StreamingChunk {
   toolResult?: ToolResult;
   tokenCount?: number;
   userEntry?: ChatEntry;
+  systemMessages?: ChatEntry[];
 }
 
 export class GrokAgent extends EventEmitter {
@@ -1006,12 +1007,24 @@ Current working directory: ${process.cwd()}`;
                 return;
               }
 
+              // Capture chatHistory length before tool execution to detect new system messages
+              const chatHistoryLengthBefore = this.chatHistory.length;
+
               const result = await this.executeTool(toolCall);
+
+            // Collect any new system messages added during tool execution (from hooks)
+            const newSystemMessages: ChatEntry[] = [];
+            for (let i = chatHistoryLengthBefore; i < this.chatHistory.length; i++) {
+              if (this.chatHistory[i].type === "system") {
+                newSystemMessages.push(this.chatHistory[i]);
+              }
+            }
 
             yield {
               type: "tool_result",
               toolCall,
               toolResult: result,
+              systemMessages: newSystemMessages.length > 0 ? newSystemMessages : undefined,
             };
 
             // Update the tool_call entry in chatHistory to tool_result
