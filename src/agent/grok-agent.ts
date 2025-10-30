@@ -1153,7 +1153,42 @@ Current working directory: ${process.cwd()}`;
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
     try {
       // Parse arguments - handle empty string as empty object for parameter-less tools
-      const argsString = toolCall.function.arguments?.trim() || "{}";
+      let argsString = toolCall.function.arguments?.trim() || "{}";
+
+      // Handle duplicate/concatenated JSON objects (LLM bug)
+      // Pattern: {"key":"val"}{"key":"val"}
+      let hadDuplicateJson = false;
+      if (argsString.includes('}{')) {
+        try {
+          // Find the end of the first complete JSON object
+          let depth = 0;
+          let firstObjEnd = -1;
+          for (let i = 0; i < argsString.length; i++) {
+            if (argsString[i] === '{') depth++;
+            if (argsString[i] === '}') {
+              depth--;
+              if (depth === 0) {
+                firstObjEnd = i + 1;
+                break;
+              }
+            }
+          }
+
+          if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
+            // Extract and validate first object
+            const firstObj = argsString.substring(0, firstObjEnd);
+            JSON.parse(firstObj); // Validate it's valid JSON
+
+            // Use only the first object
+            hadDuplicateJson = true;
+            argsString = firstObj;
+          }
+        } catch (e) {
+          // If extraction fails, continue with original string
+          // The error will be caught by the main JSON.parse below
+        }
+      }
+
       let args = JSON.parse(argsString);
 
       // Handle multiple layers of JSON encoding (API bug)
@@ -1175,6 +1210,23 @@ Current working directory: ${process.cwd()}`;
         console.warn(bugMsg);
 
         const systemMsg = `Warning: Tool arguments for ${toolCall.function.name} had ${parseCount} extra encoding layer(s) - this is an API bug`;
+        this.messages.push({
+          role: 'system',
+          content: systemMsg
+        });
+        this.chatHistory.push({
+          type: 'system',
+          content: systemMsg,
+          timestamp: new Date()
+        });
+      }
+
+      // Log if we had to fix duplicate JSON
+      if (hadDuplicateJson) {
+        const bugMsg = `[BUG] Tool ${toolCall.function.name} had duplicate/concatenated JSON objects`;
+        console.warn(bugMsg);
+
+        const systemMsg = `Warning: Tool arguments for ${toolCall.function.name} had duplicate JSON objects (used first object only) - this is an LLM bug`;
         this.messages.push({
           role: 'system',
           content: systemMsg
