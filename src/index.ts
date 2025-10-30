@@ -359,7 +359,23 @@ async function processPromptHeadless(
       await agent.loadInitialHistory(existingHistory);
     }
 
-    // Process the user message (silently, no tool output in headless mode)
+    // Check if this is a slash command first
+    const { processSlashCommand } = await import('./utils/slash-commands.js');
+    const slashCommandHandled = await processSlashCommand(prompt, {
+      agent,
+      addChatEntry: (entry) => {
+        // In headless mode, we don't maintain a UI chat history
+        // Output is handled directly by the slash command processor
+      },
+      isHeadless: true
+    });
+
+    // If slash command was handled, exit cleanly
+    if (slashCommandHandled) {
+      process.exit(0);
+    }
+
+    // Otherwise, process as normal user message
     const chatEntries = await agent.processUserMessage(prompt);
 
     // Collect all assistant responses with content (excluding the user prompt entry)
@@ -803,7 +819,25 @@ program
               process.exit(0);
             }
 
-            // Handle /context commands
+            // Handle slash commands
+            const { processSlashCommand } = await import('./utils/slash-commands.js');
+            const slashCommandHandled = await processSlashCommand(input, {
+              agent,
+              addChatEntry: (entry) => {
+                // In no-ink mode, output directly to console
+                if (entry.type === 'assistant' || entry.type === 'system') {
+                  console.log(entry.content);
+                }
+              },
+              isHeadless: false  // no-ink is interactive, not headless
+            });
+
+            if (slashCommandHandled) {
+              // Command was handled, continue to next prompt
+              continue;
+            }
+
+            // Legacy: Handle /context commands that need special UI handling
             if (input.startsWith('/context ')) {
               const subcommand = input.substring(9).trim();
 
