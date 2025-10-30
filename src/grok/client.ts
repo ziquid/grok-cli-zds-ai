@@ -114,9 +114,17 @@ export class GrokClient {
       tools: tools || [],
       tool_choice: tools && tools.length > 0 ? "auto" : undefined,
       temperature: temperature ?? 0.7,
-      max_tokens: maxTokens ?? this.defaultMaxTokens,
-      think: false
+      max_tokens: maxTokens ?? this.defaultMaxTokens
     };
+
+    // Only add think parameter for backends that support it (Grok, Ollama)
+    const backendLower = this.backendName.toLowerCase();
+    const supportsThink = backendLower === 'grok' ||
+                          backendLower === 'ollama' ||
+                          this.client.baseURL?.includes('x.ai');
+    if (supportsThink) {
+      requestPayload.think = false;
+    }
 
     // Add search parameters if specified and using Grok API (x.ai)
     if (searchOptions?.search_parameters && this.client.baseURL?.includes('x.ai')) {
