@@ -1150,6 +1150,54 @@ Current working directory: ${process.cwd()}`;
     return result;
   }
 
+  /**
+   * Validate tool arguments against the tool's schema
+   * Returns null if valid, or an error message if invalid
+   */
+  private async validateToolArguments(toolName: string, args: any): Promise<string | null> {
+    try {
+      // Get all tools (including MCP tools)
+      const allTools = await getAllGrokTools();
+
+      // Find the tool schema
+      const toolSchema = allTools.find(t => t.function.name === toolName);
+      if (!toolSchema) {
+        return `Unknown tool: ${toolName}`;
+      }
+
+      const schema = toolSchema.function.parameters;
+      const properties = schema.properties || {};
+      const required = schema.required || [];
+
+      // Check if tool accepts no parameters
+      const acceptsNoParams = Object.keys(properties).length === 0;
+      const hasArgs = args && typeof args === 'object' && Object.keys(args).length > 0;
+
+      if (acceptsNoParams && hasArgs) {
+        return `Tool ${toolName} accepts no parameters, but received: ${JSON.stringify(args)}`;
+      }
+
+      // Check for unknown parameters
+      for (const argKey of Object.keys(args || {})) {
+        if (!properties[argKey]) {
+          return `Tool ${toolName} does not accept parameter '${argKey}'. Valid parameters: ${Object.keys(properties).join(', ') || 'none'}`;
+        }
+      }
+
+      // Check for missing required parameters
+      for (const requiredParam of required) {
+        if (!(requiredParam in (args || {}))) {
+          return `Tool ${toolName} missing required parameter '${requiredParam}'`;
+        }
+      }
+
+      return null; // Valid
+    } catch (error) {
+      console.error(`Error validating tool arguments for ${toolName}:`, error);
+      return null; // Allow execution if validation itself fails
+    }
+  }
+
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
     try {
       // Parse arguments - handle empty string as empty object for parameter-less tools
@@ -1243,8 +1291,31 @@ Current working directory: ${process.cwd()}`;
         args = {};
       }
 
-      // Apply parameter defaults before approval hook and execution
+      // Apply parameter defaults before validation and execution
       args = this.applyToolParameterDefaults(toolCall.function.name, args);
+
+      // Validate tool arguments against schema
+      const validationError = await this.validateToolArguments(toolCall.function.name, args);
+      if (validationError) {
+        // Add system message explaining the validation error
+        const systemMsg = `Tool call validation failed: ${validationError}. Please try again with correct parameters.`;
+        console.warn(`[VALIDATION ERROR] ${systemMsg}`);
+
+        this.messages.push({
+          role: 'system',
+          content: systemMsg
+        });
+        this.chatHistory.push({
+          type: 'system',
+          content: systemMsg,
+          timestamp: new Date()
+        });
+
+        return {
+          success: false,
+          error: validationError
+        };
+      }
 
       // Task tools (startActiveTask, transitionActiveTaskStatus, stopActiveTask) have their own
       // dedicated task approval hook, so skip the general tool approval hook for them

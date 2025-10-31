@@ -85,6 +85,20 @@ zsh tests/test-slash-commands-headless.zsh
 - `/context view` in headless mode (error expected)
 - `/context edit` in headless mode (error expected)
 
+### test-tool-validation.md
+**Purpose:** Documentation of tool argument validation feature (bug fix documentation)
+**Coverage:** Explains how tool arguments are validated against schemas to prevent Ollama 400 errors
+
+**Context:**
+- When LLMs return duplicate JSON tool arguments, the duplicate-JSON fix extracts the first object
+- If the tool was called with wrong parameters (e.g., `getAvailablePersonas` with a `persona` parameter), Ollama rejects with `400 invalid tool call arguments`
+- Tool validation catches these errors before sending to Ollama, providing clear feedback to the LLM
+
+**Implementation:**
+- `validateToolArguments()` method validates against tool schemas
+- Checks for: no-parameter tools with arguments, unknown parameters, missing required parameters
+- Returns helpful error messages instead of Ollama 400 errors
+
 ## Running Tests
 
 Tests use mock settings to avoid API dependencies and should be executed in the project root directory.
