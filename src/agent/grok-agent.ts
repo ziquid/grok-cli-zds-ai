@@ -447,11 +447,50 @@ Current working directory: ${process.cwd()}`;
           this.chatHistory.push(assistantEntry);
           newEntries.push(assistantEntry);
 
+          // Clean up tool call arguments before adding to conversation history
+          // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
+          const cleanedToolCalls = assistantMessage.tool_calls.map(toolCall => {
+            let argsString = toolCall.function.arguments?.trim() || "{}";
+
+            // Handle duplicate/concatenated JSON objects (LLM bug)
+            if (argsString.includes('}{')) {
+              try {
+                let depth = 0;
+                let firstObjEnd = -1;
+                for (let i = 0; i < argsString.length; i++) {
+                  if (argsString[i] === '{') depth++;
+                  if (argsString[i] === '}') {
+                    depth--;
+                    if (depth === 0) {
+                      firstObjEnd = i + 1;
+                      break;
+                    }
+                  }
+                }
+                if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
+                  const firstObj = argsString.substring(0, firstObjEnd);
+                  JSON.parse(firstObj); // Validate
+                  argsString = firstObj; // Use cleaned version
+                }
+              } catch (e) {
+                // Keep original if cleaning fails
+              }
+            }
+
+            return {
+              ...toolCall,
+              function: {
+                ...toolCall.function,
+                arguments: argsString
+              }
+            };
+          });
+
           // Add assistant message to conversation
           this.messages.push({
             role: "assistant",
             content: assistantMessage.content || "", // Ensure content is never null/undefined
-            tool_calls: assistantMessage.tool_calls,
+            tool_calls: cleanedToolCalls,
           } as any);
 
           // Create initial tool call entries to show tools are being executed
@@ -937,11 +976,50 @@ Current working directory: ${process.cwd()}`;
         // Parse XML tool calls from accumulated message if present
         accumulatedMessage = this.parseXMLToolCalls(accumulatedMessage);
 
+        // Clean up tool call arguments before adding to conversation history
+        // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
+        const cleanedToolCalls = accumulatedMessage.tool_calls?.map(toolCall => {
+          let argsString = toolCall.function.arguments?.trim() || "{}";
+
+          // Handle duplicate/concatenated JSON objects (LLM bug)
+          if (argsString.includes('}{')) {
+            try {
+              let depth = 0;
+              let firstObjEnd = -1;
+              for (let i = 0; i < argsString.length; i++) {
+                if (argsString[i] === '{') depth++;
+                if (argsString[i] === '}') {
+                  depth--;
+                  if (depth === 0) {
+                    firstObjEnd = i + 1;
+                    break;
+                  }
+                }
+              }
+              if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
+                const firstObj = argsString.substring(0, firstObjEnd);
+                JSON.parse(firstObj); // Validate
+                argsString = firstObj; // Use cleaned version
+              }
+            } catch (e) {
+              // Keep original if cleaning fails
+            }
+          }
+
+          return {
+            ...toolCall,
+            function: {
+              ...toolCall.function,
+              arguments: argsString
+            }
+          };
+        });
+
         // Add accumulated message to conversation for API context
         this.messages.push({
           role: "assistant",
           content: accumulatedMessage.content || "", // Ensure content is never null/undefined
-          tool_calls: accumulatedMessage.tool_calls,
+          tool_calls: cleanedToolCalls,
         } as any);
 
         // Add assistant message to chat history
