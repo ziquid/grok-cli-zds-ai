@@ -18,7 +18,7 @@ export class TokenCounter {
    */
   countTokens(text: string): number {
     if (!text) return 0;
-    return this.encoder.encode(text).length;
+    return this.encoder.encode(text, "all").length;
   }
 
   /**
