@@ -494,7 +494,8 @@ Current working directory: ${process.cwd()}`;
           } as any);
 
           // Create initial tool call entries to show tools are being executed
-          assistantMessage.tool_calls.forEach((toolCall) => {
+          // Use cleanedToolCalls to preserve arguments in chatHistory
+          cleanedToolCalls.forEach((toolCall) => {
             const toolCallEntry: ChatEntry = {
               type: "tool_call",
               content: "Executing...",
@@ -510,14 +511,14 @@ Current working directory: ${process.cwd()}`;
           const completedToolCallIds = new Set<string>();
 
           try {
-            for (const toolCall of assistantMessage.tool_calls) {
+            for (const toolCall of cleanedToolCalls) {
               // Check for cancellation before executing each tool
               if (this.abortController?.signal.aborted) {
-                console.error(`Tool execution cancelled after ${toolIndex}/${assistantMessage.tool_calls.length} tools`);
+                console.error(`Tool execution cancelled after ${toolIndex}/${cleanedToolCalls.length} tools`);
 
                 // Add cancelled responses for remaining uncompleted tools
-                for (let i = toolIndex; i < assistantMessage.tool_calls.length; i++) {
-                  const remainingToolCall = assistantMessage.tool_calls[i];
+                for (let i = toolIndex; i < cleanedToolCalls.length; i++) {
+                  const remainingToolCall = cleanedToolCalls[i];
                   this.messages.push({
                     role: "tool",
                     content: "[Cancelled by user]",
@@ -574,7 +575,7 @@ Current working directory: ${process.cwd()}`;
           }
           } finally {
             // Ensure ALL tool calls in this.messages have results, even if we crashed/errored
-            for (const toolCall of assistantMessage.tool_calls) {
+            for (const toolCall of cleanedToolCalls) {
               if (!completedToolCallIds.has(toolCall.id)) {
                 this.messages.push({
                   role: "tool",
@@ -1046,7 +1047,8 @@ Current working directory: ${process.cwd()}`;
           }
 
           // Add tool_call entries to chatHistory so they persist through UI sync
-          accumulatedMessage.tool_calls.forEach((toolCall) => {
+          // Use cleanedToolCalls to preserve arguments in chatHistory
+          cleanedToolCalls.forEach((toolCall) => {
             const toolCallEntry: ChatEntry = {
               type: "tool_call",
               content: "Executing...",
@@ -1061,14 +1063,14 @@ Current working directory: ${process.cwd()}`;
           const completedToolCallIds = new Set<string>();
 
           try {
-            for (const toolCall of accumulatedMessage.tool_calls) {
+            for (const toolCall of cleanedToolCalls) {
               // Check for cancellation before executing each tool
               if (this.abortController?.signal.aborted) {
-                console.error(`Tool execution cancelled after ${toolIndex}/${accumulatedMessage.tool_calls.length} tools`);
+                console.error(`Tool execution cancelled after ${toolIndex}/${cleanedToolCalls.length} tools`);
 
                 // Add cancelled responses for remaining uncompleted tools
-                for (let i = toolIndex; i < accumulatedMessage.tool_calls.length; i++) {
-                  const remainingToolCall = accumulatedMessage.tool_calls[i];
+                for (let i = toolIndex; i < cleanedToolCalls.length; i++) {
+                  const remainingToolCall = cleanedToolCalls[i];
                   this.messages.push({
                     role: "tool",
                     content: "[Cancelled by user]",
@@ -1134,7 +1136,7 @@ Current working directory: ${process.cwd()}`;
           }
           } finally {
             // Ensure ALL tool calls in this.messages have results, even if we crashed/errored
-            for (const toolCall of accumulatedMessage.tool_calls) {
+            for (const toolCall of cleanedToolCalls) {
               if (!completedToolCallIds.has(toolCall.id)) {
                 this.messages.push({
                   role: "tool",
