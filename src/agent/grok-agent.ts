@@ -108,6 +108,11 @@ export class GrokAgent extends EventEmitter {
     // Get display name from environment (set by zai/helpers)
     const displayName = process.env.GROK_BACKEND_DISPLAY_NAME;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, displayName);
+
+    // Set apiKeyEnvVar based on backend name
+    const backendName = this.grokClient.getBackendName().toUpperCase();
+    this.apiKeyEnvVar = `${backendName}_API_KEY`;
+
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.zsh = new ZshTool();
