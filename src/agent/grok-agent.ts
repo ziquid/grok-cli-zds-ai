@@ -140,12 +140,6 @@ export class GrokAgent extends EventEmitter {
     // Initialize MCP servers if configured
     this.initializeMCP(debugLogFile);
 
-    // Load custom instructions
-    const customInstructions = loadCustomInstructions();
-    const customInstructionsSection = customInstructions
-      ? `${customInstructions}`
-      : "";
-
     // System message will be set after async initialization
     this.messages.push({
       role: "system",
@@ -161,11 +155,9 @@ export class GrokAgent extends EventEmitter {
 
     // Store startup hook output for later use
     this.startupHookOutput = startupHookOutput;
-    this.customInstructions = customInstructions;
   }
 
   private startupHookOutput?: string;
-  private customInstructions?: string;
 
   /**
    * Initialize the agent with dynamic system prompt
@@ -202,11 +194,7 @@ export class GrokAgent extends EventEmitter {
   private async buildSystemMessage(): Promise<void> {
     // Add startup hook output if provided
     const startupHookSection = this.startupHookOutput
-      ? `\nSTARTUP HOOK OUTPUT:\n${this.startupHookOutput}\n`
-      : "";
-
-    const customInstructionsSection = this.customInstructions
-      ? `${this.customInstructions}`
+      ? `${this.startupHookOutput}\n`
       : "";
 
     // Generate dynamic tool list using introspect tool
@@ -214,10 +202,7 @@ export class GrokAgent extends EventEmitter {
     const toolsSection = toolsResult.success ? toolsResult.output : "Tools: Unknown";
 
     // Build the system message
-    const systemContent = `You are a clever, helpful AI assistant.
-${startupHookSection}
-${customInstructionsSection}
-
+    const systemContent = `${startupHookSection}
 ${toolsSection}
 
 Current working directory: ${process.cwd()}`;
