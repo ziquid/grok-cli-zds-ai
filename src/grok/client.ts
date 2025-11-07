@@ -52,6 +52,7 @@ export class GrokClient {
   private currentModel: string = "grok-code-fast-1";
   private defaultMaxTokens: number;
   private backendName: string;
+  private supportsTools: boolean = true;
 
   constructor(apiKey: string, model?: string, baseURL?: string, displayName?: string) {
     const finalBaseURL = baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1";
@@ -80,8 +81,32 @@ export class GrokClient {
     }
   }
 
-  setModel(model: string): void {
+  async setModel(model: string): Promise<void> {
     this.currentModel = model;
+    // Reset tool support flag when switching models
+    await this.enableTools();
+  }
+
+  private async enableTools(): Promise<void> {
+    if (this.supportsTools) {
+      return; // Already enabled
+    }
+
+    this.supportsTools = true;
+
+    // Reinitialize MCP servers
+    try {
+      const { getMCPManager, initializeMCPServers } = await import('../grok/tools.js');
+      const { loadMCPConfig } = await import('../mcp/config.js');
+      const config = loadMCPConfig();
+
+      if (config.servers.length > 0) {
+        await initializeMCPServers();
+        console.error(`MCP servers reinitialized.`);
+      }
+    } catch (mcpError: any) {
+      console.warn("MCP reinitialization failed:", mcpError);
+    }
   }
 
   getCurrentModel(): string {
@@ -94,6 +119,10 @@ export class GrokClient {
 
   getBackendName(): string {
     return this.backendName;
+  }
+
+  getSupportsTools(): boolean {
+    return this.supportsTools;
   }
 
   async chat(
@@ -111,11 +140,15 @@ export class GrokClient {
     const requestPayload: any = {
       model: model || this.currentModel,
       messages,
-      tools: tools || [],
-      tool_choice: tools && tools.length > 0 ? "auto" : undefined,
       temperature: temperature ?? 0.7,
       max_tokens: maxTokens ?? this.defaultMaxTokens
     };
+
+    // Only include tools if the model supports them
+    if (this.supportsTools) {
+      requestPayload.tools = tools || [];
+      requestPayload.tool_choice = tools && tools.length > 0 ? "auto" : undefined;
+    }
 
     // Only add think parameter for backends that support it (Grok, Ollama)
     const backendLower = this.backendName.toLowerCase();
@@ -148,6 +181,33 @@ export class GrokClient {
         );
         return response as GrokResponse;
       } catch (error: any) {
+        // Check if model doesn't support tools
+        const isToolsNotSupported = error.status === 400 &&
+                                    error.message &&
+                                    error.message.toLowerCase().includes('does not support tools');
+
+        if (isToolsNotSupported && this.supportsTools) {
+          // Disable tools for this model and rebuild request without tools
+          this.supportsTools = false;
+          console.error(`Model does not support tools.  Retrying without tools...`);
+
+          // Shutdown MCP servers since they won't be usable without tools
+          try {
+            const { getMCPManager } = await import('../grok/tools.js');
+            const mcpManager = getMCPManager();
+            await mcpManager.shutdown();
+            console.error(`MCP servers shut down.`);
+          } catch (mcpError: any) {
+            console.warn("MCP shutdown failed:", mcpError);
+          }
+
+          // Rebuild request payload without tools
+          delete requestPayload.tools;
+          delete requestPayload.tool_choice;
+
+          continue;
+        }
+
         // Check if it's a 429 rate limit error
         const is429 = error.status === 429 ||
                       error.code === 'rate_limit_exceeded' ||
@@ -183,11 +243,15 @@ export class GrokClient {
     const requestPayload: any = {
       model: model || this.currentModel,
       messages,
-      tools: tools || [],
       temperature: temperature ?? 0.7,
       max_tokens: maxTokens ?? this.defaultMaxTokens,
       stream: true
     };
+
+    // Only include tools if the model supports them
+    if (this.supportsTools) {
+      requestPayload.tools = tools || [];
+    }
 
     // Only add think parameter for backends that support it (Grok, Ollama)
     const backendLower = this.backendName.toLowerCase();
@@ -214,7 +278,7 @@ export class GrokClient {
                                this.client.baseURL?.includes('x.ai') ||
                                this.client.baseURL?.includes('openai.com') ||
                                this.client.baseURL?.includes('openrouter.ai');
-    if (supportsToolChoice && tools && tools.length > 0) {
+    if (this.supportsTools && supportsToolChoice && tools && tools.length > 0) {
       requestPayload.tool_choice = "auto";
     }
 
@@ -244,6 +308,33 @@ export class GrokClient {
         }
         return; // Success, exit the generator
       } catch (error: any) {
+        // Check if model doesn't support tools
+        const isToolsNotSupported = error.status === 400 &&
+                                    error.message &&
+                                    error.message.toLowerCase().includes('does not support tools');
+
+        if (isToolsNotSupported && this.supportsTools) {
+          // Disable tools for this model and rebuild request without tools
+          this.supportsTools = false;
+          console.error(`Model does not support tools.  Retrying without tools...`);
+
+          // Shutdown MCP servers since they won't be usable without tools
+          try {
+            const { getMCPManager } = await import('../grok/tools.js');
+            const mcpManager = getMCPManager();
+            await mcpManager.shutdown();
+            console.error(`MCP servers shut down.`);
+          } catch (mcpError: any) {
+            console.warn("MCP shutdown failed:", mcpError);
+          }
+
+          // Rebuild request payload without tools
+          delete requestPayload.tools;
+          delete requestPayload.tool_choice;
+
+          continue;
+        }
+
         // Check if it's a 429 rate limit error
         const is429 = error.status === 429 ||
                       error.code === 'rate_limit_exceeded' ||

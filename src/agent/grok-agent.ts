@@ -407,11 +407,12 @@ Current working directory: ${process.cwd()}`;
       // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
       // For subsequent messages, fetch once and cache for the entire message processing
       const shouldRefreshTools = !this.firstMessageProcessed;
-      const tools = shouldRefreshTools ? null : await getAllGrokTools();
+      const supportsTools = this.grokClient.getSupportsTools();
+      const tools = shouldRefreshTools ? null : (supportsTools ? await getAllGrokTools() : []);
 
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        shouldRefreshTools ? await getAllGrokTools() : tools!,
+        shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
         undefined,
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
@@ -594,7 +595,7 @@ Current working directory: ${process.cwd()}`;
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            shouldRefreshTools ? await getAllGrokTools() : tools!,
+            shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -636,7 +637,7 @@ Current working directory: ${process.cwd()}`;
           // Short/empty response, give AI another chance
           currentResponse = await this.grokClient.chat(
             this.messages,
-            shouldRefreshTools ? await getAllGrokTools() : tools!,
+            shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -832,7 +833,8 @@ Current working directory: ${process.cwd()}`;
       // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
       // For subsequent messages, fetch once and cache for the entire message processing
       const shouldRefreshTools = !this.firstMessageProcessed;
-      const tools = shouldRefreshTools ? null : await getAllGrokTools();
+      const supportsTools = this.grokClient.getSupportsTools();
+      const tools = shouldRefreshTools ? null : (supportsTools ? await getAllGrokTools() : []);
 
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
@@ -854,7 +856,7 @@ Current working directory: ${process.cwd()}`;
         // Stream response and accumulate
         const stream = this.grokClient.chatStream(
           this.messages,
-          shouldRefreshTools ? await getAllGrokTools() : tools!,
+          shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
           undefined,
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
@@ -1242,7 +1244,8 @@ Current working directory: ${process.cwd()}`;
   private async validateToolArguments(toolName: string, args: any): Promise<string | null> {
     try {
       // Get all tools (including MCP tools)
-      const allTools = await getAllGrokTools();
+      const supportsTools = this.grokClient.getSupportsTools();
+      const allTools = supportsTools ? await getAllGrokTools() : [];
 
       // Find the tool schema
       const toolSchema = allTools.find(t => t.function.name === toolName);
@@ -2390,6 +2393,16 @@ Current working directory: ${process.cwd()}`;
       // Store the API key env var name for session persistence
       this.apiKeyEnvVar = apiKeyEnvVar;
 
+      // Reinitialize MCP servers since we're switching to a new backend/model
+      try {
+        const config = loadMCPConfig();
+        if (config.servers.length > 0) {
+          await initializeMCPServers();
+        }
+      } catch (mcpError: any) {
+        console.warn("MCP reinitialization failed:", mcpError);
+      }
+
       // Make a minimal test call
       const testMessages: GrokMessage[] = [
         {
@@ -2706,6 +2719,16 @@ Current working directory: ${process.cwd()}`;
           const model = state.model || this.getCurrentModel();
           this.grokClient = new GrokClient(apiKey, model, state.baseUrl, state.backend);
           this.apiKeyEnvVar = state.apiKeyEnvVar;
+
+          // Reinitialize MCP servers when restoring session
+          try {
+            const config = loadMCPConfig();
+            if (config.servers.length > 0) {
+              await initializeMCPServers();
+            }
+          } catch (mcpError: any) {
+            console.warn("MCP reinitialization failed:", mcpError);
+          }
 
           // Dispose old token counter and create new one for the restored model
           this.tokenCounter.dispose();

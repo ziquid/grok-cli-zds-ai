@@ -145,6 +145,21 @@ export function useInputHandler({
           return true;
         }
         if (key.tab || key.return) {
+          // Check if Enter was pressed and input exactly matches a command
+          // If so, allow it to submit instead of forcing autocomplete selection
+          if (key.return) {
+            const exactMatch = commandSuggestions.some(
+              (cmd) => cmd.command === input.trim()
+            );
+            if (exactMatch) {
+              // Let Enter submit the command
+              setShowCommandSuggestions(false);
+              setSelectedCommandIndex(0);
+              return false; // Allow normal Enter handling to proceed
+            }
+          }
+
+          // Otherwise, autocomplete with selected suggestion
           const safeIndex = Math.min(
             selectedCommandIndex,
             filteredSuggestions.length - 1
@@ -317,8 +332,10 @@ export function useInputHandler({
     { command: "/context", description: "Show context usage info" },
     { command: "/context view", description: "View context in pager" },
     { command: "/context edit", description: "Edit context JSON" },
+    { command: "/ink", description: "Switch to Ink UI mode (restart required)" },
     { command: "/introspect", description: "Show available tools" },
     { command: "/models", description: "Switch Grok Model" },
+    { command: "/no-ink", description: "Switch to plain console mode (restart required)" },
     { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
     { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
@@ -435,8 +452,10 @@ Built-in Commands:
   /context view - View full context in pager (markdown format)
   /context edit - Edit context JSON file (opens in $EDITOR)
   /help       - Show this help
+  /ink        - Switch to Ink UI mode (restart required)
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
+  /no-ink     - Switch to plain console mode (restart required)
   /restart    - Restart the application (exit code 51)
   /exit       - Exit application
   exit, quit  - Exit application
@@ -492,6 +511,32 @@ Examples:
       // Call the restart tool which exits with code 51
       await agent["restartTool"].restart();
       return true; // This line won't be reached but TypeScript needs it
+    }
+
+    if (trimmedInput === "/ink") {
+      // Already in ink mode - show message
+      const alreadyEntry: ChatEntry = {
+        type: "system",
+        content: "You are already in Ink UI mode",
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, alreadyEntry]);
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput === "/no-ink") {
+      // Switch to plain console mode
+      const switchEntry: ChatEntry = {
+        type: "assistant",
+        content: "Switching to plain console mode...",
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, switchEntry]);
+
+      // Exit with code 53 - wrapper will add --no-ink and restart
+      process.exit(53);
+      return true;
     }
 
     if (trimmedInput === "/exit") {

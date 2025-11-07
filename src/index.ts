@@ -830,7 +830,8 @@ program
                   console.log(entry.content);
                 }
               },
-              isHeadless: false  // no-ink is interactive, not headless
+              isHeadless: false,  // no-ink is interactive, not headless
+              isInkMode: false    // plain console mode
             });
 
             if (slashCommandHandled) {

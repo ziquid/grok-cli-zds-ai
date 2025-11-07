@@ -178,6 +178,16 @@ Usage: ${usagePercent}%`;
       }
 
       if (target === "tools") {
+        // Check if the current model supports tools
+        const supportsTools = this.agent?.grokClient?.getSupportsTools();
+        if (supportsTools === false) {
+          return {
+            success: true,
+            output: "This model does not support tools.\n\nNo tools are available in chat-only mode.",
+            displayOutput: "This model does not support tools."
+          };
+        }
+
         const allTools = await getAllGrokTools();
 
         // Separate internal and MCP tools

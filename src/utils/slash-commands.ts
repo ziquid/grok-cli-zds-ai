@@ -18,6 +18,7 @@ export interface SlashCommandContext {
   }) => void;
   setTotalTokenUsage?: (updater: number | ((prev: number) => number)) => void;
   isHeadless?: boolean;
+  isInkMode?: boolean;
 }
 
 /**
@@ -28,7 +29,7 @@ export async function processSlashCommand(
   input: string,
   context: SlashCommandContext
 ): Promise<boolean> {
-  const { agent, addChatEntry, clearInput, resetHistory, setProcessingStates, setTotalTokenUsage, isHeadless } = context;
+  const { agent, addChatEntry, clearInput, resetHistory, setProcessingStates, setTotalTokenUsage, isHeadless, isInkMode } = context;
   const trimmedInput = input.trim();
 
   // /clear command
@@ -129,8 +130,10 @@ Built-in Commands:
   /context view - View full context in pager (markdown format)
   /context edit - Edit context JSON file (opens in $EDITOR)
   /help       - Show this help
+  /ink        - Switch to Ink UI mode (restart required)
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
+  /no-ink     - Switch to plain console mode (restart required)
   /restart    - Restart the application (exit code 51)
   /exit       - Exit application
   exit, quit  - Exit application
@@ -198,6 +201,68 @@ Examples:
     return true; // This line won't be reached but TypeScript needs it
   }
 
+  // /ink command - switch to Ink UI mode
+  if (trimmedInput === "/ink") {
+    if (isHeadless) {
+      console.error("ERROR: /ink requires interactive mode");
+      return true;
+    }
+
+    // Check if already in ink mode
+    if (isInkMode) {
+      const alreadyEntry: ChatEntry = {
+        type: "system",
+        content: "You are already in Ink UI mode",
+        timestamp: new Date(),
+      };
+      addChatEntry(alreadyEntry);
+      if (clearInput) clearInput();
+      return true;
+    }
+
+    const switchEntry: ChatEntry = {
+      type: "assistant",
+      content: "Switching to Ink UI mode...",
+      timestamp: new Date(),
+    };
+    addChatEntry(switchEntry);
+
+    // Exit with code 52 - wrapper will add --no-ink=false or remove --no-ink and restart
+    process.exit(52);
+    return true;
+  }
+
+  // /no-ink command - switch to plain console mode
+  if (trimmedInput === "/no-ink") {
+    if (isHeadless) {
+      console.error("ERROR: /no-ink requires interactive mode");
+      return true;
+    }
+
+    // Check if already in plain console mode
+    if (!isInkMode) {
+      const alreadyEntry: ChatEntry = {
+        type: "system",
+        content: "You are already in plain console mode",
+        timestamp: new Date(),
+      };
+      addChatEntry(alreadyEntry);
+      if (clearInput) clearInput();
+      return true;
+    }
+
+    const switchEntry: ChatEntry = {
+      type: "assistant",
+      content: "Switching to plain console mode...",
+      timestamp: new Date(),
+    };
+    addChatEntry(switchEntry);
+
+    // Exit with code 53 - wrapper will add --no-ink and restart
+    process.exit(53);
+    return true;
+  }
+
   // /exit command
   if (trimmedInput === "/exit") {
     process.exit(0);
@@ -261,9 +326,11 @@ Examples:
 
     const persona = parts[1];
     const color = parts[2];
-    agent.setPersona(persona, color);
+    const result = await agent.setPersona(persona, color);
 
-    const confirmText = `Persona set to: ${persona}${color ? ` (${color})` : ''}`;
+    const confirmText = result.success
+      ? `Persona set to: ${persona}${color ? ` (${color})` : ''}`
+      : `Failed to set persona: ${result.error || 'Unknown error'}`;
 
     if (isHeadless) {
       console.log(confirmText);
