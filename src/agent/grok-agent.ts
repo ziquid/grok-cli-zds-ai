@@ -422,13 +422,13 @@ Current working directory: ${process.cwd()}`;
       );
 
       // Parse XML tool calls from response if present
-      if (currentResponse.choices[0]?.message) {
+      if (currentResponse.choices?.[0]?.message) {
         currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
       }
 
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
-        const assistantMessage = currentResponse.choices[0]?.message;
+        const assistantMessage = currentResponse.choices?.[0]?.message;
 
         if (!assistantMessage) {
           throw new Error("No response from Grok");
@@ -647,11 +647,11 @@ Current working directory: ${process.cwd()}`;
           );
 
           // Parse XML tool calls from followup response if present
-          if (currentResponse.choices[0]?.message) {
+          if (currentResponse.choices?.[0]?.message) {
             currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
           }
 
-          const followupMessage = currentResponse.choices[0]?.message;
+          const followupMessage = currentResponse.choices?.[0]?.message;
           if (!followupMessage?.tool_calls || followupMessage.tool_calls.length === 0) {
             break; // AI doesn't want to continue
           }
@@ -884,7 +884,7 @@ Current working directory: ${process.cwd()}`;
             if (!chunk.choices?.[0]) continue;
 
             // Check if stream is finished (Venice sends garbage after this)
-            if (chunk.choices[0].finish_reason === "stop" || chunk.choices[0].finish_reason === "tool_calls") {
+            if (chunk.choices?.[0]?.finish_reason === "stop" || chunk.choices?.[0]?.finish_reason === "tool_calls") {
               streamFinished = true;
             }
 
