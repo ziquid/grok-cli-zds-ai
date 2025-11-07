@@ -172,6 +172,34 @@ export class GrokAgent extends EventEmitter {
    * Must be called after construction
    */
   async initialize(): Promise<void> {
+    // Build system message
+    await this.buildSystemMessage();
+
+    // Execute instance hook on every startup (fresh or not)
+    const settings = getSettingsManager();
+    const instanceHookPath = settings.getInstanceHook();
+    if (instanceHookPath) {
+      const hookResult = await executeOperationHook(
+        instanceHookPath,
+        "instance",
+        {},
+        30000,
+        false,  // Instance hook is not mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
+      );
+
+      if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+        // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
+        await this.processHookResult(hookResult);
+      }
+    }
+  }
+
+  /**
+   * Build/rebuild the system message with current tool availability
+   */
+  private async buildSystemMessage(): Promise<void> {
     // Add startup hook output if provided
     const startupHookSection = this.startupHookOutput
       ? `\nSTARTUP HOOK OUTPUT:\n${this.startupHookOutput}\n`
@@ -194,7 +222,10 @@ ${toolsSection}
 
 Current working directory: ${process.cwd()}`;
 
-    // Replace the temporary system message
+    // Preserve original timestamp if system message already exists
+    const originalTimestamp = this.chatHistory[0]?.timestamp;
+
+    // Replace the system message
     this.messages[0] = {
       role: "system",
       content: systemContent,
@@ -204,28 +235,8 @@ Current working directory: ${process.cwd()}`;
     this.chatHistory[0] = {
       type: "system",
       content: systemContent,
-      timestamp: new Date(),
+      timestamp: originalTimestamp || new Date(),
     };
-
-    // Execute instance hook on every startup (fresh or not)
-    const settings = getSettingsManager();
-    const instanceHookPath = settings.getInstanceHook();
-    if (instanceHookPath) {
-      const hookResult = await executeOperationHook(
-        instanceHookPath,
-        "instance",
-        {},
-        30000,
-        false,  // Instance hook is not mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-        // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
-        await this.processHookResult(hookResult);
-      }
-    }
   }
 
   async loadInitialHistory(history: ChatEntry[]): Promise<void> {
@@ -672,6 +683,14 @@ Current working directory: ${process.cwd()}`;
 
       // Mark first message as processed so subsequent messages use cached tools
       this.firstMessageProcessed = true;
+
+      // Check if tool support changed during first message processing
+      // If model doesn't support tools, regenerate system message without tool list
+      const supportsToolsAfter = this.grokClient.getSupportsTools();
+      if (!supportsToolsAfter && supportsTools) {
+        // Tool support was disabled during first message - regenerate system message
+        await this.buildSystemMessage();
+      }
 
       return newEntries;
     } catch (error: any) {
@@ -1181,6 +1200,14 @@ Current working directory: ${process.cwd()}`;
 
       // Mark first message as processed so subsequent messages use cached tools
       this.firstMessageProcessed = true;
+
+      // Check if tool support changed during first message processing
+      // If model doesn't support tools, regenerate system message without tool list
+      const supportsToolsAfter = this.grokClient.getSupportsTools();
+      if (!supportsToolsAfter && supportsTools) {
+        // Tool support was disabled during first message - regenerate system message
+        await this.buildSystemMessage();
+      }
 
       yield { type: "done" };
     } catch (error: any) {
