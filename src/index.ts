@@ -379,9 +379,10 @@ async function processPromptHeadless(
     const chatEntries = await agent.processUserMessage(prompt);
 
     // Collect all assistant responses with content (excluding the user prompt entry)
+    // Skip assistant messages that have tool_calls - those are intermediate, not final responses
     const assistantResponses: string[] = [];
     for (const entry of chatEntries) {
-      if (entry.type === "assistant" && entry.content.trim()) {
+      if (entry.type === "assistant" && entry.content && entry.content.trim() && !entry.tool_calls) {
         assistantResponses.push(entry.content);
       }
     }
