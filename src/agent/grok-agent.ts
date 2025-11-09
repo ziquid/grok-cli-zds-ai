@@ -207,26 +207,49 @@ ${toolsSection}
 
 Current working directory: ${process.cwd()}`;
 
-    // Preserve original timestamp if system message already exists
-    const originalTimestamp = this.chatHistory[0]?.timestamp;
+    // Find the first system message in chatHistory and preserve its timestamp
+    const systemIndex = this.chatHistory.findIndex(entry => entry.type === "system");
+    const originalTimestamp = systemIndex >= 0 ? this.chatHistory[systemIndex].timestamp : new Date();
 
-    // Replace the system message
+    // Replace the system message in messages array (always at index 0)
     this.messages[0] = {
       role: "system",
       content: systemContent,
     };
 
-    // Also update chat history
-    this.chatHistory[0] = {
-      type: "system",
-      content: systemContent,
-      timestamp: originalTimestamp || new Date(),
-    };
+    // Replace the system message in chat history (find it first)
+    if (systemIndex >= 0) {
+      this.chatHistory[systemIndex] = {
+        type: "system",
+        content: systemContent,
+        timestamp: originalTimestamp,
+      };
+    } else {
+      // No system message found - add one at the beginning
+      this.chatHistory.unshift({
+        type: "system",
+        content: systemContent,
+        timestamp: new Date(),
+      });
+    }
   }
 
   async loadInitialHistory(history: ChatEntry[]): Promise<void> {
-    // Load existing chat history into agent's memory
-    this.chatHistory = history;
+    // Filter out duplicate system messages - keep only the first one
+    let firstSystemSeen = false;
+    const filteredHistory = history.filter(entry => {
+      if (entry.type === "system") {
+        if (!firstSystemSeen) {
+          firstSystemSeen = true;
+          return true; // Keep first system message
+        }
+        return false; // Skip subsequent system messages
+      }
+      return true; // Keep all non-system entries
+    });
+
+    // Load filtered history into agent's memory
+    this.chatHistory = filteredHistory;
 
     // Instance hook now runs in initialize() for both fresh and existing sessions
 
@@ -238,7 +261,7 @@ Current working directory: ${process.cwd()}`;
     const seenToolCallIds = new Set<string>();
 
     // First pass: collect all tool_call_ids from assistant messages
-    for (const entry of history) {
+    for (const entry of filteredHistory) {
       if (entry.type === "assistant" && entry.tool_calls) {
         entry.tool_calls.forEach(tc => seenToolCallIds.add(tc.id));
       }
@@ -250,7 +273,7 @@ Current working directory: ${process.cwd()}`;
     const toolCallIdToMessage: Map<string, GrokMessage> = new Map();
     let firstSystemMessageSeen = false;
 
-    for (const entry of history) {
+    for (const entry of filteredHistory) {
       switch (entry.type) {
         case "system":
           // First system message replaces the default system message (instructions)
@@ -1660,12 +1683,32 @@ Current working directory: ${process.cwd()}`;
   }
 
   getChatHistory(): ChatEntry[] {
+    const systemMessages = this.chatHistory.filter(e => e.type === "system");
+    if (systemMessages.length > 1) {
+      console.error(`[ERROR] getChatHistory() found ${systemMessages.length} system messages!`);
+      console.error(`[ERROR] Full chatHistory:`, JSON.stringify(this.chatHistory.map((e,i) => ({
+        index: i,
+        type: e.type,
+        contentPreview: e.content?.substring(0, 50),
+        timestamp: e.timestamp
+      })), null, 2));
+    }
     return [...this.chatHistory];
   }
 
   setChatHistory(history: ChatEntry[]): void {
     // UI chatHistory already includes system prompts, so just replace entirely
-    this.chatHistory = [...history];
+    // But if there are multiple system messages, keep only the LAST one (most recent)
+    const systemMessages = history.filter(e => e.type === "system");
+    if (systemMessages.length > 1) {
+      // Keep the last system message, remove all others
+      const lastSystemMessage = systemMessages[systemMessages.length - 1];
+      const nonSystemEntries = history.filter(e => e.type !== "system");
+      // Put system message first, then all non-system entries
+      this.chatHistory = [lastSystemMessage, ...nonSystemEntries];
+    } else {
+      this.chatHistory = [...history];
+    }
   }
 
   getMessages(): any[] {

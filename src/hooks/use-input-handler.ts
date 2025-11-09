@@ -1230,6 +1230,22 @@ Respond with ONLY the commit message, no additional text.`;
             const agentSystemMessages = agentHistory.filter(e => e.type === "system");
 
             setChatHistory((prev) => {
+              // If agent has exactly 1 system message, ensure UI has only that one
+              // This handles system message regeneration (e.g., when model doesn't support tools)
+              if (agentSystemMessages.length === 1) {
+                const firstSystemIndex = prev.findIndex(e => e.type === "system");
+                if (firstSystemIndex >= 0) {
+                  // Replace first system message with agent's version, remove any others
+                  const nonSystemEntries = prev.filter(e => e.type !== "system");
+                  return [
+                    ...prev.slice(0, firstSystemIndex),
+                    agentSystemMessages[0],
+                    ...nonSystemEntries.slice(firstSystemIndex)
+                  ];
+                }
+              }
+
+              // For other cases (multiple system messages from hooks, etc.), use original logic
               // Find system messages from agent that UI doesn't have
               const newSystemMessages = agentSystemMessages.filter(agentMsg =>
                 !prev.some(uiMsg =>
