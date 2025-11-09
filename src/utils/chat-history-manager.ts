@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { ChatEntry } from "../agent/grok-agent.js";
+import type { ChatEntry } from "../agent/grok-agent.js";
 
 const HISTORY_FILE_NAME = "chat-history.json";
 const HISTORY_DIR = path.join(os.homedir(), ".grok");
@@ -22,6 +22,11 @@ export interface SessionState {
   baseUrl: string;
   apiKeyEnvVar: string;
   model: string;
+}
+
+export interface ContextData {
+  systemPrompt: string;
+  chatHistory: ChatEntry[];
 }
 
 /**
@@ -66,55 +71,96 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Load chat history from file
+   * Deserialize chat entries from parsed JSON
    */
-  loadHistory(): ChatEntry[] {
+  private deserializeChatEntries(entries: any[]): ChatEntry[] {
+    return entries
+      .map((entry: any) => {
+        try {
+          if (!entry.type || !entry.timestamp) {
+            console.warn("Skipping invalid chat entry:", entry);
+            return null;
+          }
+          return {
+            ...entry,
+            timestamp: new Date(entry.timestamp),
+          };
+        } catch (entryError) {
+          console.warn("Failed to parse chat entry:", entry, entryError);
+          return null;
+        }
+      })
+      .filter((entry): entry is ChatEntry => entry !== null);
+  }
+
+  /**
+   * Load context (system prompt + chat history)
+   * Supports both old format (array) and new format (object)
+   */
+  loadContext(): ContextData {
     try {
       if (!fs.existsSync(this.historyFilePath)) {
-        return [];
+        return { systemPrompt: "", chatHistory: [] };
       }
 
       const data = fs.readFileSync(this.historyFilePath, "utf-8");
       const parsed = JSON.parse(data);
 
-      // Deserialize dates and validate entries
-      return parsed
-        .map((entry: any) => {
-          try {
-            if (!entry.type || !entry.timestamp) {
-              console.warn("Skipping invalid chat entry:", entry);
-              return null;
-            }
-            return {
-              ...entry,
-              timestamp: new Date(entry.timestamp),
-            };
-          } catch (entryError) {
-            console.warn("Failed to parse chat entry:", entry, entryError);
-            return null;
-          }
-        })
-        .filter((entry): entry is ChatEntry => entry !== null);
+      // New format: {systemPrompt: string, chatHistory: ChatEntry[]}
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'systemPrompt' in parsed) {
+        return {
+          systemPrompt: parsed.systemPrompt || "",
+          chatHistory: this.deserializeChatEntries(parsed.chatHistory || []),
+        };
+      }
+
+      // Old format: array of ChatEntry (system message at index 0 is systemPrompt)
+      if (Array.isArray(parsed)) {
+        const entries = this.deserializeChatEntries(parsed);
+
+        // Only extract system prompt if it's at index 0
+        if (entries.length > 0 && entries[0].type === "system") {
+          const systemPrompt = entries[0].content;
+          const chatHistory = entries.slice(1); // Everything after index 0
+          return { systemPrompt, chatHistory };
+        }
+
+        // No system message at index 0, return empty systemPrompt
+        return { systemPrompt: "", chatHistory: entries };
+      }
+
+      console.warn("Unknown context file format");
+      return { systemPrompt: "", chatHistory: [] };
+
     } catch (error) {
-      console.warn("Failed to load chat history:", error);
-      return [];
+      console.warn("Failed to load context:", error);
+      return { systemPrompt: "", chatHistory: [] };
     }
   }
 
   /**
-   * Save chat history to file
+   * Serialize chat entries for JSON storage
    */
-  saveHistory(history: ChatEntry[]): void {
-    try {
-      // Serialize dates
-      const serialized = history.map(entry => ({
-        ...entry,
-        timestamp: entry.timestamp.toISOString(),
-      }));
+  private serializeChatEntries(entries: ChatEntry[]): any[] {
+    return entries.map(entry => ({
+      ...entry,
+      timestamp: entry.timestamp.toISOString(),
+    }));
+  }
 
-      fs.writeFileSync(this.historyFilePath, JSON.stringify(serialized, null, 2));
+  /**
+   * Save context (system prompt + chat history) in new format
+   */
+  saveContext(systemPrompt: string, chatHistory: ChatEntry[]): void {
+    try {
+      const contextData = {
+        systemPrompt,
+        chatHistory: this.serializeChatEntries(chatHistory),
+      };
+
+      fs.writeFileSync(this.historyFilePath, JSON.stringify(contextData, null, 2));
     } catch (error) {
-      console.warn("Failed to save chat history:", error);
+      console.warn("Failed to save context:", error);
     }
   }
 

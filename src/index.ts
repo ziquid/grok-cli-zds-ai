@@ -31,7 +31,7 @@ function restoreTerminal() {
       const historyManager = ChatHistoryManager.getInstance();
       const currentHistory = currentAgent.getChatHistory();
       const currentMessages = currentAgent.getMessages();
-      historyManager.saveHistory(currentHistory);
+      historyManager.saveContext(currentAgent.getSystemPrompt(), currentHistory);
       historyManager.saveMessages(currentMessages);
     } catch (error) {
       // Silently ignore errors during emergency cleanup
@@ -355,8 +355,8 @@ async function processPromptHeadless(
     if (!fresh) {
       const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
-      const existingHistory = historyManager.loadHistory();
-      await agent.loadInitialHistory(existingHistory);
+      const { systemPrompt, chatHistory: existingHistory } = historyManager.loadContext();
+      await agent.loadInitialHistory(existingHistory, systemPrompt);
     }
 
     // Check if this is a slash command first
@@ -392,7 +392,7 @@ async function processPromptHeadless(
     const historyManager = ChatHistoryManager.getInstance();
     const currentHistory = agent.getChatHistory();
     const currentMessages = agent.getMessages();
-    historyManager.saveHistory(currentHistory);
+    historyManager.saveContext(agent.getSystemPrompt(), currentHistory);
     historyManager.saveMessages(currentMessages);
 
     // Output all assistant responses
@@ -607,11 +607,12 @@ program
 
       // Create agent for interactive mode only
       const { createGrokAgent } = await import('./utils/startup-hook.js');
-      // Run startup hook for fresh sessions or when history doesn't exist
+      // Run startup hook for fresh sessions or when context doesn't have a system prompt
       const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
       const historyManager = ChatHistoryManager.getInstance();
-      const hasHistory = !options.fresh && historyManager.loadHistory().length > 0;
-      const runStartupHook = !hasHistory; // Only run hook for new sessions
+      const loadedContext = options.fresh ? { systemPrompt: "", chatHistory: [] } : historyManager.loadContext();
+      const hasSystemPrompt = loadedContext.systemPrompt && loadedContext.systemPrompt.trim().length > 0;
+      const runStartupHook = !hasSystemPrompt; // Run hook if no system prompt exists
       const temperature = parseFloat(options.temperature) || 0.7;
       const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
       const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature, maxTokens);
@@ -660,7 +661,7 @@ program
         // Load chat history if not a fresh session
         // IMPORTANT: Must load history BEFORE initialize() to preserve instance hook output
         if (!options.fresh) {
-          const loadedHistory = historyManager.loadHistory();
+          const { systemPrompt: loadedSystemPrompt, chatHistory: loadedHistory } = historyManager.loadContext();
           if (loadedHistory.length > 0) {
             // Save any instance hook messages that were added during initialize()
             const currentHistory = agent.getChatHistory();
@@ -669,7 +670,7 @@ program
             );
 
             // Load old history
-            await agent.loadInitialHistory(loadedHistory);
+            await agent.loadInitialHistory(loadedHistory, loadedSystemPrompt);
 
             // Re-append fresh instance hook messages
             if (instanceHookMessages.length > 0) {
@@ -689,7 +690,7 @@ program
         const saveContext = () => {
           const chatHistory = agent.getChatHistory();
           const messages = agent.getMessages();
-          historyManager.saveHistory(chatHistory);
+          historyManager.saveContext(agent.getSystemPrompt(), chatHistory);
           historyManager.saveMessages(messages);
 
           // Save session state
@@ -784,10 +785,17 @@ program
 
                 // Reload context from file
                 const historyManager = ChatHistoryManager.getInstance();
-                const reloadedHistory = historyManager.loadHistory();
+                const { systemPrompt: reloadedSystemPrompt, chatHistory: reloadedHistory } = historyManager.loadContext();
 
                 // Update agent's chat history
                 agent.setChatHistory(reloadedHistory);
+
+                // Update system prompt - regenerate if empty
+                if (reloadedSystemPrompt && reloadedSystemPrompt.trim()) {
+                  agent.setSystemPrompt(reloadedSystemPrompt);
+                } else {
+                  await agent.buildSystemMessage();
+                }
 
                 console.log('✓ Context replaced with edited version');
 

@@ -112,9 +112,11 @@ function ChatInterfaceWithAgent({
       // Load chat history from file (unless fresh session is requested)
       const historyManager = ChatHistoryManager.getInstance();
       if (!fresh) {
-        const loadedHistory = historyManager.loadHistory();
+        const { systemPrompt, chatHistory: loadedHistory } = historyManager.loadContext();
         setChatHistory(loadedHistory);
-        await agent.loadInitialHistory(loadedHistory);
+        await agent.loadInitialHistory(loadedHistory, systemPrompt);
+        // Sync back from agent in case loadInitialHistory modified the history
+        setChatHistory(agent.getChatHistory());
         // Initialize token count from loaded history
         setTotalTokenUsage(agent.getCurrentTokenCount());
         // Restore session state (persona, mood, task, cwd)
@@ -359,7 +361,7 @@ function ChatInterfaceWithAgent({
       const historyManager = ChatHistoryManager.getInstance();
       // Filter out streaming entries before saving
       const historyToSave = chatHistory.filter(entry => !entry.isStreaming);
-      historyManager.saveHistory(historyToSave);
+      historyManager.saveContext(agent.getSystemPrompt(), historyToSave);
       // Also save the raw messages
       const messages = agent.getMessages();
       historyManager.saveMessages(messages);

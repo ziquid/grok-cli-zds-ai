@@ -146,18 +146,15 @@ export class GrokAgent extends EventEmitter {
       content: "Initializing...", // Temporary, will be replaced in initialize()
     });
 
-    // Also add to chat history for persistence
-    this.chatHistory.push({
-      type: "system",
-      content: "Initializing...",
-      timestamp: new Date(),
-    });
+    // Note: THE system prompt is NOT added to chatHistory
+    // Only conversational system messages go in chatHistory
 
     // Store startup hook output for later use
     this.startupHookOutput = startupHookOutput;
   }
 
   private startupHookOutput?: string;
+  private systemPrompt: string = "Initializing..."; // THE system prompt (always at messages[0])
 
   /**
    * Initialize the agent with dynamic system prompt
@@ -190,8 +187,9 @@ export class GrokAgent extends EventEmitter {
 
   /**
    * Build/rebuild the system message with current tool availability
+   * Updates this.systemPrompt which is always used for messages[0]
    */
-  private async buildSystemMessage(): Promise<void> {
+  async buildSystemMessage(): Promise<void> {
     // Add startup hook output if provided
     const startupHookSection = this.startupHookOutput
       ? `${this.startupHookOutput}\n`
@@ -201,113 +199,60 @@ export class GrokAgent extends EventEmitter {
     const toolsResult = await this.introspect.introspect("tools");
     const toolsSection = toolsResult.success ? toolsResult.output : "Tools: Unknown";
 
-    // Build the system message
-    const systemContent = `${startupHookSection}
+    // Build THE system prompt
+    this.systemPrompt = `${startupHookSection}
 ${toolsSection}
 
 Current working directory: ${process.cwd()}`;
 
-    // Find the first system message in chatHistory and preserve its timestamp
-    const systemIndex = this.chatHistory.findIndex(entry => entry.type === "system");
-    const originalTimestamp = systemIndex >= 0 ? this.chatHistory[systemIndex].timestamp : new Date();
-
-    // Replace the system message in messages array (always at index 0)
+    // Update messages[0] with the system prompt
     this.messages[0] = {
       role: "system",
-      content: systemContent,
+      content: this.systemPrompt,
     };
 
-    // Replace the system message in chat history (find it first)
-    if (systemIndex >= 0) {
-      this.chatHistory[systemIndex] = {
-        type: "system",
-        content: systemContent,
-        timestamp: originalTimestamp,
-      };
-    } else {
-      // No system message found - add one at the beginning
-      this.chatHistory.unshift({
-        type: "system",
-        content: systemContent,
-        timestamp: new Date(),
-      });
-    }
+    // Note: chatHistory no longer contains THE system prompt
+    // Only conversational system messages (persona, mood, etc.) go in chatHistory
   }
 
-  async loadInitialHistory(history: ChatEntry[]): Promise<void> {
-    // Filter out duplicate system messages - keep only the first one
-    let firstSystemSeen = false;
-    const filteredHistory = history.filter(entry => {
-      if (entry.type === "system") {
-        if (!firstSystemSeen) {
-          firstSystemSeen = true;
-          return true; // Keep first system message
-        }
-        return false; // Skip subsequent system messages
-      }
-      return true; // Keep all non-system entries
-    });
+  async loadInitialHistory(history: ChatEntry[], systemPrompt?: string): Promise<void> {
+    // Load chatHistory (no system messages in new architecture)
+    this.chatHistory = history;
 
-    // Check if filtered history has a system message
-    // If not (e.g., Amazon Q imports), we need to ensure one exists
-    const historyHasSystemMessage = filteredHistory.some(entry => entry.type === "system");
-
-    if (!historyHasSystemMessage) {
-      // No system message in imported history - generate one using buildSystemMessage
-      // First, load the history without a system message
-      this.chatHistory = filteredHistory;
-
-      // Then call buildSystemMessage which will detect no system message and add one
-      // This modifies this.chatHistory directly, so we don't need to re-assign it
-      await this.buildSystemMessage();
-
-      // Don't re-assign this.chatHistory - buildSystemMessage already modified it
+    // Set system prompt if provided, otherwise generate one
+    if (systemPrompt) {
+      this.setSystemPrompt(systemPrompt);
     } else {
-      // Has system message - load filtered history into agent's memory
-      this.chatHistory = filteredHistory;
+      await this.buildSystemMessage();
     }
 
     // Instance hook now runs in initialize() for both fresh and existing sessions
 
     // Convert history to messages format for API calls
     const historyMessages: GrokMessage[] = [];
-    let hasSystemMessage = false;
 
     // Track which tool_call_ids we've seen in assistant messages
     const seenToolCallIds = new Set<string>();
 
     // First pass: collect all tool_call_ids from assistant messages
-    for (const entry of filteredHistory) {
+    for (const entry of history) {
       if (entry.type === "assistant" && entry.tool_calls) {
         entry.tool_calls.forEach(tc => seenToolCallIds.add(tc.id));
       }
     }
 
     // Second pass: build history messages, only including tool_results that have matching tool_calls
-    // We'll collect them separately and insert them in the correct order
     const toolResultMessages: GrokMessage[] = [];
     const toolCallIdToMessage: Map<string, GrokMessage> = new Map();
-    let firstSystemMessageSeen = false;
 
-    for (const entry of filteredHistory) {
+    for (const entry of history) {
       switch (entry.type) {
         case "system":
-          // First system message replaces the default system message (instructions)
-          // Subsequent system messages are added to conversation history
-          if (!firstSystemMessageSeen && this.messages.length > 0 && this.messages[0].role === "system") {
-            this.messages[0] = {
-              role: "system",
-              content: entry.content,
-            };
-            hasSystemMessage = true;
-            firstSystemMessageSeen = true;
-          } else {
-            // Add subsequent system messages to history (e.g., persona changes)
-            historyMessages.push({
-              role: "system",
-              content: entry.content,
-            });
-          }
+          // All system messages from chatHistory go into conversation (persona, mood, etc.)
+          historyMessages.push({
+            role: "system",
+            content: entry.content,
+          });
           break;
         case "user":
           historyMessages.push({
@@ -1699,32 +1644,23 @@ Current working directory: ${process.cwd()}`;
   }
 
   getChatHistory(): ChatEntry[] {
-    const systemMessages = this.chatHistory.filter(e => e.type === "system");
-    if (systemMessages.length > 1) {
-      console.error(`[ERROR] getChatHistory() found ${systemMessages.length} system messages!`);
-      console.error(`[ERROR] Full chatHistory:`, JSON.stringify(this.chatHistory.map((e,i) => ({
-        index: i,
-        type: e.type,
-        contentPreview: e.content?.substring(0, 50),
-        timestamp: e.timestamp
-      })), null, 2));
-    }
     return [...this.chatHistory];
   }
 
   setChatHistory(history: ChatEntry[]): void {
-    // UI chatHistory already includes system prompts, so just replace entirely
-    // But if there are multiple system messages, keep only the LAST one (most recent)
-    const systemMessages = history.filter(e => e.type === "system");
-    if (systemMessages.length > 1) {
-      // Keep the last system message, remove all others
-      const lastSystemMessage = systemMessages[systemMessages.length - 1];
-      const nonSystemEntries = history.filter(e => e.type !== "system");
-      // Put system message first, then all non-system entries
-      this.chatHistory = [lastSystemMessage, ...nonSystemEntries];
-    } else {
-      this.chatHistory = [...history];
-    }
+    this.chatHistory = [...history];
+  }
+
+  getSystemPrompt(): string {
+    return this.systemPrompt;
+  }
+
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
+    this.messages[0] = {
+      role: "system",
+      content: prompt,
+    };
   }
 
   getMessages(): any[] {
@@ -2719,7 +2655,7 @@ Current working directory: ${process.cwd()}`;
     }
 
     // Save the cleared state FIRST before emitting (in case emit causes exit)
-    historyManager.saveHistory(this.chatHistory);
+    historyManager.saveContext(this.systemPrompt, this.chatHistory);
     historyManager.saveMessages(this.messages);
 
     // Emit context change WITHOUT calling addContextWarningIfNeeded (to avoid recursive clearCache)

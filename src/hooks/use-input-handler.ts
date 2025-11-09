@@ -227,10 +227,17 @@ export function useInputHandler({
 
         // Reload context from file
         const historyManager = ChatHistoryManager.getInstance();
-        const reloadedHistory = historyManager.loadHistory();
+        const { systemPrompt: reloadedSystemPrompt, chatHistory: reloadedHistory } = historyManager.loadContext();
 
         // Update agent's chat history
         agent.setChatHistory(reloadedHistory);
+
+        // Update system prompt - regenerate if empty
+        if (reloadedSystemPrompt && reloadedSystemPrompt.trim()) {
+          agent.setSystemPrompt(reloadedSystemPrompt);
+        } else {
+          await agent.buildSystemMessage();
+        }
 
         // Sync UI with reloaded context
         setChatHistory(agent.getChatHistory());
