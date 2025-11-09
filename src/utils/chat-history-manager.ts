@@ -27,6 +27,7 @@ export interface SessionState {
 export interface ContextData {
   systemPrompt: string;
   chatHistory: ChatEntry[];
+  sessionState?: SessionState;
 }
 
 /**
@@ -106,27 +107,47 @@ export class ChatHistoryManager {
       const data = fs.readFileSync(this.historyFilePath, "utf-8");
       const parsed = JSON.parse(data);
 
-      // New format: {systemPrompt: string, chatHistory: ChatEntry[]}
+      // New format: {systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState}
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'systemPrompt' in parsed) {
-        return {
+        const contextData: ContextData = {
           systemPrompt: parsed.systemPrompt || "",
           chatHistory: this.deserializeChatEntries(parsed.chatHistory || []),
         };
+
+        // Load session state from context if present, otherwise try .state.json
+        if (parsed.sessionState) {
+          contextData.sessionState = parsed.sessionState;
+        } else {
+          const legacySessionState = this.loadSessionState();
+          if (legacySessionState) {
+            contextData.sessionState = legacySessionState;
+          }
+        }
+
+        return contextData;
       }
 
       // Old format: array of ChatEntry (system message at index 0 is systemPrompt)
       if (Array.isArray(parsed)) {
         const entries = this.deserializeChatEntries(parsed);
+        const contextData: ContextData = {
+          systemPrompt: "",
+          chatHistory: entries,
+        };
 
         // Only extract system prompt if it's at index 0
         if (entries.length > 0 && entries[0].type === "system") {
-          const systemPrompt = entries[0].content;
-          const chatHistory = entries.slice(1); // Everything after index 0
-          return { systemPrompt, chatHistory };
+          contextData.systemPrompt = entries[0].content;
+          contextData.chatHistory = entries.slice(1); // Everything after index 0
         }
 
-        // No system message at index 0, return empty systemPrompt
-        return { systemPrompt: "", chatHistory: entries };
+        // Load session state from .state.json for backward compatibility
+        const legacySessionState = this.loadSessionState();
+        if (legacySessionState) {
+          contextData.sessionState = legacySessionState;
+        }
+
+        return contextData;
       }
 
       console.warn("Unknown context file format");
@@ -149,14 +170,19 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Save context (system prompt + chat history) in new format
+   * Save context (system prompt + chat history + session state) in new format
    */
-  saveContext(systemPrompt: string, chatHistory: ChatEntry[]): void {
+  saveContext(systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState): void {
     try {
-      const contextData = {
+      const contextData: any = {
         systemPrompt,
         chatHistory: this.serializeChatEntries(chatHistory),
       };
+
+      // Include session state if provided
+      if (sessionState) {
+        contextData.sessionState = sessionState;
+      }
 
       fs.writeFileSync(this.historyFilePath, JSON.stringify(contextData, null, 2));
     } catch (error) {

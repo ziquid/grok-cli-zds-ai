@@ -2655,7 +2655,8 @@ Current working directory: ${process.cwd()}`;
     }
 
     // Save the cleared state FIRST before emitting (in case emit causes exit)
-    historyManager.saveContext(this.systemPrompt, this.chatHistory);
+    const sessionState = this.getSessionState();
+    historyManager.saveContext(this.systemPrompt, this.chatHistory, sessionState);
     historyManager.saveMessages(this.messages);
 
     // Emit context change WITHOUT calling addContextWarningIfNeeded (to avoid recursive clearCache)

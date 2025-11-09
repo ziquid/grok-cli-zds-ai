@@ -31,7 +31,8 @@ function restoreTerminal() {
       const historyManager = ChatHistoryManager.getInstance();
       const currentHistory = currentAgent.getChatHistory();
       const currentMessages = currentAgent.getMessages();
-      historyManager.saveContext(currentAgent.getSystemPrompt(), currentHistory);
+      const sessionState = currentAgent.getSessionState();
+      historyManager.saveContext(currentAgent.getSystemPrompt(), currentHistory, sessionState);
       historyManager.saveMessages(currentMessages);
     } catch (error) {
       // Silently ignore errors during emergency cleanup
@@ -392,7 +393,8 @@ async function processPromptHeadless(
     const historyManager = ChatHistoryManager.getInstance();
     const currentHistory = agent.getChatHistory();
     const currentMessages = agent.getMessages();
-    historyManager.saveContext(agent.getSystemPrompt(), currentHistory);
+    const sessionState = agent.getSessionState();
+    historyManager.saveContext(agent.getSystemPrompt(), currentHistory, sessionState);
     historyManager.saveMessages(currentMessages);
 
     // Output all assistant responses
@@ -661,7 +663,7 @@ program
         // Load chat history if not a fresh session
         // IMPORTANT: Must load history BEFORE initialize() to preserve instance hook output
         if (!options.fresh) {
-          const { systemPrompt: loadedSystemPrompt, chatHistory: loadedHistory } = historyManager.loadContext();
+          const { systemPrompt: loadedSystemPrompt, chatHistory: loadedHistory, sessionState } = historyManager.loadContext();
           if (loadedHistory.length > 0) {
             // Save any instance hook messages that were added during initialize()
             const currentHistory = agent.getChatHistory();
@@ -679,7 +681,6 @@ program
             }
 
             // Restore session state
-            const sessionState = historyManager.loadSessionState();
             if (sessionState) {
               await agent.restoreSessionState(sessionState);
             }
@@ -690,12 +691,9 @@ program
         const saveContext = () => {
           const chatHistory = agent.getChatHistory();
           const messages = agent.getMessages();
-          historyManager.saveContext(agent.getSystemPrompt(), chatHistory);
-          historyManager.saveMessages(messages);
-
-          // Save session state
           const sessionState = agent.getSessionState();
-          historyManager.saveSessionState(sessionState);
+          historyManager.saveContext(agent.getSystemPrompt(), chatHistory, sessionState);
+          historyManager.saveMessages(messages);
         };
 
         // Process initial message if provided
