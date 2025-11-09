@@ -248,8 +248,24 @@ Current working directory: ${process.cwd()}`;
       return true; // Keep all non-system entries
     });
 
-    // Load filtered history into agent's memory
-    this.chatHistory = filteredHistory;
+    // Check if filtered history has a system message
+    // If not (e.g., Amazon Q imports), we need to ensure one exists
+    const historyHasSystemMessage = filteredHistory.some(entry => entry.type === "system");
+
+    if (!historyHasSystemMessage) {
+      // No system message in imported history - generate one using buildSystemMessage
+      // First, load the history without a system message
+      this.chatHistory = filteredHistory;
+
+      // Then call buildSystemMessage which will detect no system message and add one
+      // This modifies this.chatHistory directly, so we don't need to re-assign it
+      await this.buildSystemMessage();
+
+      // Don't re-assign this.chatHistory - buildSystemMessage already modified it
+    } else {
+      // Has system message - load filtered history into agent's memory
+      this.chatHistory = filteredHistory;
+    }
 
     // Instance hook now runs in initialize() for both fresh and existing sessions
 
