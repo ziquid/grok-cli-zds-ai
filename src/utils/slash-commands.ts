@@ -32,6 +32,54 @@ export async function processSlashCommand(
   const { agent, addChatEntry, clearInput, resetHistory, setProcessingStates, setTotalTokenUsage, isHeadless, isInkMode } = context;
   const trimmedInput = input.trim();
 
+  // !<command> - execute shell command in interactive modes only
+  // In headless mode, pass to LLM unmodified
+  if (trimmedInput.startsWith("!")) {
+    // In headless mode, don't handle - let it pass to LLM
+    if (isHeadless) {
+      return false;
+    }
+
+    // Interactive modes (Ink and no-ink): execute the command
+    const command = trimmedInput.substring(1).trim();
+    if (command) {
+      // Execute the command
+      const result = await agent.executeCommand(command, true); // skip confirmation
+
+      // Add user message and tool result to chat history
+      const userEntry: ChatEntry = {
+        type: "user",
+        content: trimmedInput,
+        timestamp: new Date(),
+      };
+      addChatEntry(userEntry);
+
+      const commandEntry: ChatEntry = {
+        type: "tool_result",
+        content: result.success
+          ? result.output || "Command completed"
+          : result.error || "Command failed",
+        timestamp: new Date(),
+        toolCall: {
+          id: `user_execute_${Date.now()}`,
+          type: "function",
+          function: {
+            name: "execute",
+            arguments: JSON.stringify({ command: command }),
+          },
+        },
+        toolResult: result,
+      };
+      addChatEntry(commandEntry);
+
+      if (clearInput) clearInput();
+
+      // Return true - command executed, don't send to LLM as prompt
+      return true;
+    }
+    return true; // Empty command after !
+  }
+
   // /clear command
   if (trimmedInput === "/clear") {
     try {

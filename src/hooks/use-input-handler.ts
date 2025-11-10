@@ -358,10 +358,18 @@ export function useInputHandler({
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
 
-    // Handle !<command> - execute but don't return true so AI can process the output
+    // Handle !<command> - execute and add to context, but don't send to LLM
     if (trimmedInput.startsWith("!")) {
       const command = trimmedInput.substring(1).trim();
       if (command) {
+        // Add user message to show the command in chat history
+        const userEntry: ChatEntry = {
+          type: "user",
+          content: trimmedInput,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, userEntry]);
+
         // Execute the command and add result to chat history
         const result = await agent.executeCommand(command, true); // skip confirmation
 
@@ -383,10 +391,10 @@ export function useInputHandler({
         };
         setChatHistory((prev) => [...prev, commandEntry]);
 
-        // Don't return true - let it fall through to processUserMessage
-        return false;
+        // Return true - command executed, don't send to LLM as prompt
+        return true;
       }
-      return false; // Empty command after !
+      return true; // Empty command after !
     }
 
     if (trimmedInput === "/clear") {
