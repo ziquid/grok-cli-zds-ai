@@ -219,6 +219,51 @@ export class GrokClient {
           continue;
         }
 
+        // Log 500 errors with full request/response for debugging
+        if (error.status === 500) {
+          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
+          const path = await import('path');
+          const historyManager = ChatHistoryManager.getInstance();
+          const contextPath = historyManager.getContextFilePath();
+          const errorDir = path.join(path.dirname(contextPath), 'error-logs');
+
+          // Ensure error-logs directory exists
+          try {
+            if (!fs.existsSync(errorDir)) {
+              fs.mkdirSync(errorDir, { recursive: true });
+            }
+          } catch (mkdirErr) {
+            console.error('Failed to create error-logs directory:', mkdirErr);
+          }
+
+          const requestFile = `${errorDir}/500-${timestamp}-request.json`;
+          const responseFile = `${errorDir}/500-${timestamp}-response.txt`;
+
+          // Write request payload
+          try {
+            fs.writeFileSync(requestFile, JSON.stringify(requestPayload, null, 2));
+          } catch (writeErr) {
+            console.error('Failed to write request file:', writeErr);
+          }
+
+          // Write response error details
+          try {
+            const responseData = {
+              status: error.status,
+              message: error.message,
+              error: error.error,
+              response: error.response,
+              rawBody: error.response?.data || error.response?.body,
+            };
+            fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
+          } catch (writeErr) {
+            console.error('Failed to write response file:', writeErr);
+          }
+
+          // Throw error with file references
+          throw new Error(`${this.backendName} API error: ${error.message}\nRequest logged to: ${requestFile}\nResponse logged to: ${responseFile}`);
+        }
+
         // If not 429 or out of retries, throw the error
         throw new Error(`${this.backendName} API error: ${error.message}`);
       }
@@ -344,6 +389,51 @@ export class GrokClient {
           console.error(`Rate limit hit (429). Retrying in ${retryDelay/1000}s... (attempt ${attempt + 1}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
           continue;
+        }
+
+        // Log 500 errors with full request/response for debugging
+        if (error.status === 500) {
+          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
+          const path = await import('path');
+          const historyManager = ChatHistoryManager.getInstance();
+          const contextPath = historyManager.getContextFilePath();
+          const errorDir = path.join(path.dirname(contextPath), 'error-logs');
+
+          // Ensure error-logs directory exists
+          try {
+            if (!fs.existsSync(errorDir)) {
+              fs.mkdirSync(errorDir, { recursive: true });
+            }
+          } catch (mkdirErr) {
+            console.error('Failed to create error-logs directory:', mkdirErr);
+          }
+
+          const requestFile = `${errorDir}/500-${timestamp}-request.json`;
+          const responseFile = `${errorDir}/500-${timestamp}-response.txt`;
+
+          // Write request payload
+          try {
+            fs.writeFileSync(requestFile, JSON.stringify(requestPayload, null, 2));
+          } catch (writeErr) {
+            console.error('Failed to write request file:', writeErr);
+          }
+
+          // Write response error details
+          try {
+            const responseData = {
+              status: error.status,
+              message: error.message,
+              error: error.error,
+              response: error.response,
+              rawBody: error.response?.data || error.response?.body,
+            };
+            fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
+          } catch (writeErr) {
+            console.error('Failed to write response file:', writeErr);
+          }
+
+          // Throw error with file references
+          throw new Error(`${this.backendName} API error: ${error.message}\nRequest logged to: ${requestFile}\nResponse logged to: ${responseFile}`);
         }
 
         // If not 429 or out of retries, throw the error

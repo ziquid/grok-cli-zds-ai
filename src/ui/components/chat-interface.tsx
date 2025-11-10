@@ -260,6 +260,19 @@ function ChatInterfaceWithAgent({
                       return entry;
                     })
                   );
+
+                  // Add any system messages that were generated during tool execution
+                  // This displays chdir notifications immediately, not at the end
+                  if (chunk.systemMessages && chunk.systemMessages.length > 0) {
+                    setChatHistory((prev) => [
+                      ...prev,
+                      ...chunk.systemMessages!.map(msg => ({
+                        ...msg,
+                        timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp)
+                      }))
+                    ]);
+                  }
+
                   streamingEntry = null;
                 }
                 break;
@@ -369,6 +382,31 @@ function ChatInterfaceWithAgent({
       historyManager.saveMessages(messages);
     }
   }, [chatHistory, isProcessing, isStreaming]);
+
+  // CRITICAL: Always save context on unmount, regardless of processing state
+  // This ensures context is saved when user exits (^D, Ctrl+C, etc.)
+  useEffect(() => {
+    return () => {
+      // Cleanup function runs on unmount
+      if (chatHistory.length > 0) {
+        try {
+          const historyManager = ChatHistoryManager.getInstance();
+          // Filter out streaming entries before saving
+          const historyToSave = chatHistory.filter(entry => !entry.isStreaming);
+          // Get session state (persona, mood, task, cwd)
+          const sessionState = agent.getSessionState();
+          // Save context (systemPrompt + chatHistory + sessionState)
+          historyManager.saveContext(agent.getSystemPrompt(), historyToSave, sessionState);
+          // Also save the raw messages
+          const messages = agent.getMessages();
+          historyManager.saveMessages(messages);
+        } catch (error) {
+          // Log error but don't throw during cleanup
+          console.error("Failed to save context on unmount:", error);
+        }
+      }
+    };
+  }, [chatHistory, agent]); // Dependencies: re-create cleanup when chatHistory or agent changes
 
   const handleConfirmation = (dontAskAgain?: boolean) => {
     confirmationService.confirmOperation(true, dontAskAgain);
