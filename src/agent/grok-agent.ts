@@ -38,6 +38,7 @@ export interface ChatEntry {
   toolCall?: GrokToolCall;
   toolResult?: { success: boolean; output?: string; error?: string; displayOutput?: string };
   isStreaming?: boolean;
+  preserveFormatting?: boolean;
 }
 
 export interface StreamingChunk {

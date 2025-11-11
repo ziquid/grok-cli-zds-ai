@@ -160,6 +160,7 @@ export async function processSlashCommand(
         type: "assistant",
         content,
         timestamp: new Date(),
+        preserveFormatting: true,
       };
       addChatEntry(introspectEntry);
       if (clearInput) clearInput();

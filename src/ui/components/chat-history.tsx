@@ -79,11 +79,24 @@ const MemoizedChatEntry = React.memo(
             <Box flexDirection="row" alignItems="flex-start">
               <Text color="white">⏺ </Text>
               <Box flexDirection="column" flexGrow={1}>
-                {entry.tool_calls ? (
+                {entry.preserveFormatting ? (
+                  // Preserve formatting: render lines as-is without reflowing
+                  (() => {
+                    const content = (entry.content || "").trim();
+                    const lines = content.split('\n');
+                    return (
+                      <>
+                        {lines.map((line, lineIdx) => (
+                          <Text key={lineIdx} color="white">{line}</Text>
+                        ))}
+                      </>
+                    );
+                  })()
+                ) : entry.tool_calls ? (
                   // If there are tool calls, just show plain text
                   <Text color="white">{(entry.content || "").trim()}</Text>
                 ) : (
-                  // If no tool calls, render as markdown
+                  // Normal chat: use MarkdownRenderer with reflowText
                   <MarkdownRenderer content={(entry.content || "").trim()} />
                 )}
                 {entry.isStreaming && <Text color="cyan">█</Text>}
