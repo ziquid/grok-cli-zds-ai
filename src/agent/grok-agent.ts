@@ -2776,12 +2776,21 @@ Current working directory: ${process.cwd()}`;
     apiKeyEnvVar?: string;
     model?: string;
   }): Promise<void> {
-    // Restore session
+    // Restore session ID
     if (state.session) {
       process.env.ZDS_AI_AGENT_SESSION = state.session;
     }
 
-    // Restore backend/baseUrl/apiKeyEnvVar/model if present
+    // Restore cwd early (hooks may need correct working directory)
+    if (state.cwd) {
+      try {
+        process.chdir(state.cwd);
+      } catch (error) {
+        console.warn(`Failed to restore working directory to ${state.cwd}:`, error);
+      }
+    }
+
+    // Restore backend/baseUrl/apiKeyEnvVar/model if present (creates initial client)
     if (state.backend && state.baseUrl && state.apiKeyEnvVar) {
       try {
         // Get API key from environment
@@ -2817,46 +2826,30 @@ Current working directory: ${process.cwd()}`;
       }
     }
 
-    // Restore persona
+    // Restore persona (hook may change backend/model and sets env vars)
     if (state.persona) {
-      this.persona = state.persona;
-      this.personaColor = state.personaColor;
-      process.env.ZDS_AI_AGENT_PERSONA = state.persona;
-      this.emit('personaChange', {
-        persona: this.persona,
-        color: this.personaColor
-      });
-    }
-
-    // Restore mood
-    if (state.mood) {
-      this.mood = state.mood;
-      this.moodColor = state.moodColor;
-      process.env.ZDS_AI_AGENT_MOOD = state.mood;
-      this.emit('moodChange', {
-        mood: this.mood,
-        color: this.moodColor
-      });
-    }
-
-    // Restore active task
-    if (state.activeTask) {
-      this.activeTask = state.activeTask;
-      this.activeTaskAction = state.activeTaskAction;
-      this.activeTaskColor = state.activeTaskColor;
-      this.emit('activeTaskChange', {
-        activeTask: this.activeTask,
-        action: this.activeTaskAction,
-        color: this.activeTaskColor
-      });
-    }
-
-    // Restore cwd
-    if (state.cwd) {
       try {
-        process.chdir(state.cwd);
+        await this.setPersona(state.persona, state.personaColor);
       } catch (error) {
-        console.warn(`Failed to restore working directory to ${state.cwd}:`, error);
+        console.warn(`Failed to restore persona "${state.persona}":`, error);
+      }
+    }
+
+    // Restore mood (hook sets env vars)
+    if (state.mood) {
+      try {
+        await this.setMood(state.mood, state.moodColor);
+      } catch (error) {
+        console.warn(`Failed to restore mood "${state.mood}":`, error);
+      }
+    }
+
+    // Restore active task (hook sets env vars)
+    if (state.activeTask) {
+      try {
+        await this.startActiveTask(state.activeTask, state.activeTaskAction, state.activeTaskColor);
+      } catch (error) {
+        console.warn(`Failed to restore active task "${state.activeTask}":`, error);
       }
     }
   }
