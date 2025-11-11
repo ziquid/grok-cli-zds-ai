@@ -368,6 +368,38 @@ Current working directory: ${process.cwd()}`;
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // Before adding the new user message, check if there are incomplete tool calls
+    // from a previous interrupted turn. This prevents malformed message sequences
+    // that cause Ollama 500 errors.
+    const lastMessage = this.messages[this.messages.length - 1];
+    if (lastMessage?.role === "assistant" && lastMessage.tool_calls) {
+      // Find tool_call_ids that don't have corresponding tool result messages
+      const toolCallIds = new Set(lastMessage.tool_calls.map((tc: any) => tc.id));
+      const completedToolCallIds = new Set();
+
+      // Check which tool calls have results
+      for (let i = this.messages.length - 1; i >= 0; i--) {
+        const msg = this.messages[i] as any;
+        if (msg.role === "tool" && msg.tool_call_id) {
+          completedToolCallIds.add(msg.tool_call_id);
+        }
+        // Stop when we hit the assistant message with tool_calls
+        if (this.messages[i] === lastMessage) break;
+      }
+
+      // Add cancelled results for any incomplete tool calls
+      for (const toolCallId of toolCallIds) {
+        if (!completedToolCallIds.has(toolCallId)) {
+          console.error(`Adding cancelled result for incomplete tool call: ${toolCallId}`);
+          this.messages.push({
+            role: "tool",
+            content: "[Cancelled by user]",
+            tool_call_id: toolCallId,
+          });
+        }
+      }
+    }
+
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -785,6 +817,38 @@ Current working directory: ${process.cwd()}`;
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Create new abort controller for this request
     this.abortController = new AbortController();
+
+    // Before adding the new user message, check if there are incomplete tool calls
+    // from a previous interrupted turn. This prevents malformed message sequences
+    // that cause Ollama 500 errors.
+    const lastMessage = this.messages[this.messages.length - 1];
+    if (lastMessage?.role === "assistant" && lastMessage.tool_calls) {
+      // Find tool_call_ids that don't have corresponding tool result messages
+      const toolCallIds = new Set(lastMessage.tool_calls.map((tc: any) => tc.id));
+      const completedToolCallIds = new Set();
+
+      // Check which tool calls have results
+      for (let i = this.messages.length - 1; i >= 0; i--) {
+        const msg = this.messages[i] as any;
+        if (msg.role === "tool" && msg.tool_call_id) {
+          completedToolCallIds.add(msg.tool_call_id);
+        }
+        // Stop when we hit the assistant message with tool_calls
+        if (this.messages[i] === lastMessage) break;
+      }
+
+      // Add cancelled results for any incomplete tool calls
+      for (const toolCallId of toolCallIds) {
+        if (!completedToolCallIds.has(toolCallId)) {
+          console.error(`Adding cancelled result for incomplete tool call: ${toolCallId}`);
+          this.messages.push({
+            role: "tool",
+            content: "[Cancelled by user]",
+            tool_call_id: toolCallId,
+          });
+        }
+      }
+    }
 
     // Add user message to both API conversation and chat history
     const userEntry: ChatEntry = {
