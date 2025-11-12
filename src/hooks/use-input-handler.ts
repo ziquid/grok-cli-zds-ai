@@ -450,6 +450,7 @@ export function useInputHandler({
         type: "assistant",
         content: toolResult.success ? toolResult.output! : toolResult.error!,
         timestamp: new Date(),
+        preserveFormatting: true,
       };
       setChatHistory((prev) => [...prev, introspectEntry]);
       clearInput();

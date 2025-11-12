@@ -356,8 +356,13 @@ async function processPromptHeadless(
     if (!fresh) {
       const { ChatHistoryManager } = await import("./utils/chat-history-manager.js");
       const historyManager = ChatHistoryManager.getInstance();
-      const { systemPrompt, chatHistory: existingHistory } = historyManager.loadContext();
+      const { systemPrompt, chatHistory: existingHistory, sessionState } = historyManager.loadContext();
       await agent.loadInitialHistory(existingHistory, systemPrompt);
+
+      // Restore session state (persona, mood, task, backend, model)
+      if (sessionState) {
+        await agent.restoreSessionState(sessionState);
+      }
     }
 
     // Check if this is a slash command first

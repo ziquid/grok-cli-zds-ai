@@ -80,16 +80,16 @@ const MemoizedChatEntry = React.memo(
               <Text color="white">⏺ </Text>
               <Box flexDirection="column" flexGrow={1}>
                 {entry.preserveFormatting ? (
-                  // Preserve formatting: render lines as-is without reflowing
+                  // Preserve formatting: split lines and render each line as-is
                   (() => {
                     const content = (entry.content || "").trim();
                     const lines = content.split('\n');
                     return (
-                      <>
+                      <Box flexDirection="column">
                         {lines.map((line, lineIdx) => (
                           <Text key={lineIdx} color="white">{line}</Text>
                         ))}
-                      </>
+                      </Box>
                     );
                   })()
                 ) : entry.tool_calls ? (
