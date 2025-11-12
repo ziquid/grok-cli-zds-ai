@@ -1,6 +1,7 @@
 import { exec } from "child_process";
 import * as path from "path";
 import * as os from "os";
+import * as fs from "fs";
 
 const ENV_PREFIX = "ZDS_AI_AGENT_";
 
@@ -12,13 +13,13 @@ export interface HookResult {
 }
 
 export interface HookCommand {
-  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "BASE_URL" | "API_KEY_ENV_VAR";
+  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR";
   value: string;
 }
 
 /**
  * Parse hook output for command directives
- * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "BASE_URL ", or "API_KEY_ENV_VAR " are commands
+ * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", or "API_KEY_ENV_VAR " are commands
  * Other lines are treated as TOOL_RESULT if present
  */
 function parseHookOutput(stdout: string): HookCommand[] {
@@ -38,6 +39,8 @@ function parseHookOutput(stdout: string): HookCommand[] {
       commands.push({ type: "BACKEND", value: line.slice(8) });
     } else if (line.startsWith("MODEL ")) {
       commands.push({ type: "MODEL", value: line.slice(6) });
+    } else if (line.startsWith("SYSTEM_FILE ")) {
+      commands.push({ type: "SYSTEM_FILE", value: line.slice(12) });
     } else if (line.startsWith("SYSTEM ")) {
       commands.push({ type: "SYSTEM", value: line.slice(7) });
     } else if (line.startsWith("BASE_URL ")) {
@@ -69,6 +72,7 @@ export interface HookCommandResults {
  * ENV VAR= (empty value) will unset the variable
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
+ * SYSTEM_FILE commands read file contents (up to 20k) and add to system string
  * MODEL commands set the model to use (last one wins if multiple)
  * BACKEND commands set the backend to use (last one wins if multiple)
  * BASE_URL commands set the base URL to use (last one wins if multiple)
@@ -101,6 +105,38 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       toolResultLines.push(cmd.value);
     } else if (cmd.type === "SYSTEM") {
       systemLines.push(cmd.value);
+    } else if (cmd.type === "SYSTEM_FILE") {
+      // Read file contents and add to system lines
+      const filePath = cmd.value.trim();
+      try {
+        // Expand ~ to home directory
+        const expandedPath = filePath.startsWith("~/")
+          ? path.join(os.homedir(), filePath.slice(2))
+          : filePath;
+
+        const MAX_FILE_SIZE = 20000;
+
+        // Check file size first
+        const stats = fs.statSync(expandedPath);
+
+        if (stats.size > MAX_FILE_SIZE) {
+          // File is too large - read only first 20k bytes
+          const fd = fs.openSync(expandedPath, 'r');
+          const buffer = Buffer.alloc(MAX_FILE_SIZE);
+          fs.readSync(fd, buffer, 0, MAX_FILE_SIZE, 0);
+          fs.closeSync(fd);
+          const truncated = buffer.toString('utf-8');
+          systemLines.push(`${truncated}\n\n[File truncated at ${MAX_FILE_SIZE} characters]`);
+        } else {
+          // File is small enough - read entire file
+          const fileContents = fs.readFileSync(expandedPath, 'utf-8');
+          systemLines.push(fileContents);
+        }
+      } catch (error) {
+        // Add error message to system lines if file can't be read
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        systemLines.push(`[Error reading file ${filePath}: ${errorMsg}]`);
+      }
     } else if (cmd.type === "MODEL") {
       model = cmd.value.trim();
     } else if (cmd.type === "BACKEND") {
