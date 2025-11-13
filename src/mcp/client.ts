@@ -38,7 +38,8 @@ function createMCPToolName(serverName: string, toolName: string): string {
 export class MCPManager extends EventEmitter {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, MCPTransport> = new Map();
-  private tools: Map<string, MCPTool> = new Map();
+  private serverTools: Map<string, MCPTool[]> = new Map(); // Per-server tool lists
+  private staleCaches: Set<string> = new Set(); // Which servers need refresh
   private debugLogFile?: string;
 
   setDebugLogFile(debugLogFile: string): void {
@@ -77,7 +78,7 @@ export class MCPManager extends EventEmitter {
       // Create client
       const client = new Client(
         {
-          name: "grok-cli",
+          name: "grok-cli (ZDS AI build; zds-agents.com; claude compatible)",
           version: "1.0.0"
         },
         {
@@ -96,7 +97,8 @@ export class MCPManager extends EventEmitter {
       // List available tools
       const toolsResult = await client.listTools();
 
-      // Register tools
+      // Register tools for this server
+      const serverToolList: MCPTool[] = [];
       for (const tool of toolsResult.tools) {
         const mcpTool: MCPTool = {
           name: createMCPToolName(config.name, tool.name),
@@ -105,8 +107,9 @@ export class MCPManager extends EventEmitter {
           serverName: config.name,
           originalToolName: tool.name
         };
-        this.tools.set(mcpTool.name, mcpTool);
+        serverToolList.push(mcpTool);
       }
+      this.serverTools.set(config.name, serverToolList);
 
       this.emit('serverAdded', config.name, toolsResult.tools.length);
     } catch (error) {
@@ -128,12 +131,9 @@ export class MCPManager extends EventEmitter {
   }
 
   async removeServer(serverName: string): Promise<void> {
-    // Remove tools
-    for (const [toolName, tool] of this.tools.entries()) {
-      if (tool.serverName === serverName) {
-        this.tools.delete(toolName);
-      }
-    }
+    // Remove server's tools
+    this.serverTools.delete(serverName);
+    this.staleCaches.delete(serverName);
 
     // Disconnect client
     const client = this.clients.get(serverName);
@@ -152,8 +152,60 @@ export class MCPManager extends EventEmitter {
     this.emit('serverRemoved', serverName);
   }
 
+  /**
+   * Mark a server's tool cache as stale. Next time tools are requested, this server will be refreshed.
+   */
+  invalidateCache(serverName: string): void {
+    if (this.clients.has(serverName)) {
+      this.staleCaches.add(serverName);
+    }
+  }
+
+  /**
+   * Refresh tools for a specific server by re-querying it.
+   */
+  async refreshServerTools(serverName: string): Promise<void> {
+    const client = this.clients.get(serverName);
+    if (!client) {
+      throw new Error(`Server ${serverName} not connected`);
+    }
+
+    try {
+      // Re-query the server for its current tools
+      const toolsResult = await client.listTools();
+
+      // Update the server's tool list
+      const serverToolList: MCPTool[] = [];
+      for (const tool of toolsResult.tools) {
+        const mcpTool: MCPTool = {
+          name: createMCPToolName(serverName, tool.name),
+          description: tool.description || `Tool from ${serverName} server`,
+          inputSchema: tool.inputSchema,
+          serverName: serverName,
+          originalToolName: tool.name
+        };
+        serverToolList.push(mcpTool);
+      }
+      this.serverTools.set(serverName, serverToolList);
+
+      // Remove from stale cache set
+      this.staleCaches.delete(serverName);
+
+      this.emit('serverRefreshed', serverName, toolsResult.tools.length);
+    } catch (error) {
+      this.emit('serverError', serverName, error);
+      throw error;
+    }
+  }
+
   async callTool(toolName: string, arguments_: any): Promise<CallToolResult> {
-    const tool = this.tools.get(toolName);
+    // Find tool across all servers
+    let tool: MCPTool | undefined;
+    for (const toolList of this.serverTools.values()) {
+      tool = toolList.find(t => t.name === toolName);
+      if (tool) break;
+    }
+
     if (!tool) {
       throw new Error(`Tool ${toolName} not found`);
     }
@@ -169,8 +221,18 @@ export class MCPManager extends EventEmitter {
     });
   }
 
-  getTools(): MCPTool[] {
-    return Array.from(this.tools.values());
+  async getTools(): Promise<MCPTool[]> {
+    // Refresh any stale servers before aggregating
+    for (const serverName of this.staleCaches) {
+      await this.refreshServerTools(serverName);
+    }
+
+    // Aggregate tools from all servers
+    const allTools: MCPTool[] = [];
+    for (const toolList of this.serverTools.values()) {
+      allTools.push(...toolList);
+    }
+    return allTools;
   }
 
   getServers(): string[] {

@@ -876,14 +876,14 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
   };
 }
 
-export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
+export async function addMCPToolsToGrokTools(baseTools: GrokTool[]): Promise<GrokTool[]> {
   if (!mcpManager) {
     const debugLogPath = ChatHistoryManager.getDebugLogPath();
     fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
     return baseTools;
   }
 
-  const mcpTools = mcpManager.getTools();
+  const mcpTools = await mcpManager.getTools();
   const debugLogPath = ChatHistoryManager.getDebugLogPath();
   fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
@@ -899,5 +899,5 @@ export async function getAllGrokTools(): Promise<GrokTool[]> {
   } catch (error) {
     // Ignore initialization errors, just proceed with whatever tools we have
   }
-  return addMCPToolsToGrokTools(GROK_TOOLS);
+  return await addMCPToolsToGrokTools(GROK_TOOLS);
 }

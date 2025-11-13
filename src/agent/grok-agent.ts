@@ -417,15 +417,12 @@ Current working directory: ${process.cwd()}`;
     let consecutiveNonToolResponses = 0;
 
     try {
-      // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
-      // For subsequent messages, fetch once and cache for the entire message processing
-      const shouldRefreshTools = !this.firstMessageProcessed;
+      // Always fetch tools fresh - getAllGrokTools() handles lazy refresh internally
       const supportsTools = this.grokClient.getSupportsTools();
-      const tools = shouldRefreshTools ? null : (supportsTools ? await getAllGrokTools() : []);
 
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
+        supportsTools ? await getAllGrokTools() : [],
         undefined,
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
@@ -608,7 +605,7 @@ Current working directory: ${process.cwd()}`;
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
+            supportsTools ? await getAllGrokTools() : [],
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -650,7 +647,7 @@ Current working directory: ${process.cwd()}`;
           // Short/empty response, give AI another chance
           currentResponse = await this.grokClient.chat(
             this.messages,
-            shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
+            supportsTools ? await getAllGrokTools() : [],
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -883,11 +880,8 @@ Current working directory: ${process.cwd()}`;
     let consecutiveNonToolResponses = 0;
 
     try {
-      // For first message, fetch tools fresh on each API call to catch MCP servers as they initialize
-      // For subsequent messages, fetch once and cache for the entire message processing
-      const shouldRefreshTools = !this.firstMessageProcessed;
+      // Always fetch tools fresh - getAllGrokTools() handles lazy refresh internally
       const supportsTools = this.grokClient.getSupportsTools();
-      const tools = shouldRefreshTools ? null : (supportsTools ? await getAllGrokTools() : []);
 
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
@@ -909,7 +903,7 @@ Current working directory: ${process.cwd()}`;
         // Stream response and accumulate
         const stream = this.grokClient.chatStream(
           this.messages,
-          shouldRefreshTools ? (supportsTools ? await getAllGrokTools() : []) : tools!,
+          supportsTools ? await getAllGrokTools() : [],
           undefined,
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
@@ -1695,6 +1689,14 @@ Current working directory: ${process.cwd()}`;
           return String(item);
         })
         .join("\n");
+
+      // After successful MCP tool execution, invalidate cache for that server
+      // Next call to getAllGrokTools() will lazy-refresh this server
+      const serverNameMatch = toolName.match(/^mcp__(.+?)__/);
+      if (serverNameMatch) {
+        const serverName = serverNameMatch[1];
+        mcpManager.invalidateCache(serverName);
+      }
 
       return {
         success: true,

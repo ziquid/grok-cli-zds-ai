@@ -30,8 +30,8 @@ export function createMCPCommand(): Command {
           const manager = getMCPManager();
           await manager.addServer(config);
           console.log(chalk.green(`✓ Connected to MCP server: ${name}`));
-          
-          const tools = manager.getTools().filter(t => t.serverName === name);
+
+          const tools = (await manager.getTools()).filter(t => t.serverName === name);
           console.log(chalk.blue(`  Available tools: ${tools.length}`));
           
           return;
@@ -92,8 +92,8 @@ export function createMCPCommand(): Command {
         const manager = getMCPManager();
         await manager.addServer(config);
         console.log(chalk.green(`✓ Connected to MCP server: ${name}`));
-        
-        const tools = manager.getTools().filter(t => t.serverName === name);
+
+        const tools = (await manager.getTools()).filter(t => t.serverName === name);
         console.log(chalk.blue(`  Available tools: ${tools.length}`));
 
       } catch (error: any) {
@@ -144,8 +144,8 @@ export function createMCPCommand(): Command {
         const manager = getMCPManager();
         await manager.addServer(serverConfig);
         console.log(chalk.green(`✓ Connected to MCP server: ${name}`));
-        
-        const tools = manager.getTools().filter(t => t.serverName === name);
+
+        const tools = (await manager.getTools()).filter(t => t.serverName === name);
         console.log(chalk.blue(`  Available tools: ${tools.length}`));
 
       } catch (error: any) {
@@ -174,7 +174,7 @@ export function createMCPCommand(): Command {
   mcpCommand
     .command('list')
     .description('List configured MCP servers')
-    .action(() => {
+    .action(async () => {
       const config = loadMCPConfig();
       const manager = getMCPManager();
       
@@ -212,8 +212,8 @@ export function createMCPCommand(): Command {
           if (transportType) {
             console.log(`  Active Transport: ${transportType}`);
           }
-          
-          const tools = manager.getTools().filter(t => t.serverName === server.name);
+
+          const tools = (await manager.getTools()).filter(t => t.serverName === server.name);
           console.log(`  Tools: ${tools.length}`);
           if (tools.length > 0) {
             tools.forEach(tool => {
@@ -242,11 +242,11 @@ export function createMCPCommand(): Command {
         }
 
         console.log(chalk.blue(`Testing connection to ${name}...`));
-        
+
         const manager = getMCPManager();
         await manager.addServer(serverConfig);
-        
-        const tools = manager.getTools().filter(t => t.serverName === name);
+
+        const tools = (await manager.getTools()).filter(t => t.serverName === name);
         console.log(chalk.green(`✓ Successfully connected to ${name}`));
         console.log(chalk.blue(`  Available tools: ${tools.length}`));
         

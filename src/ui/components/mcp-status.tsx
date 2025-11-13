@@ -10,11 +10,11 @@ export function MCPStatus({}: MCPStatusProps) {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
 
   useEffect(() => {
-    const updateStatus = () => {
+    const updateStatus = async () => {
       try {
         const manager = getMCPManager();
         const servers = manager.getServers();
-        const tools = manager.getTools();
+        const tools = await manager.getTools();
 
         setConnectedServers(servers);
         setAvailableTools(tools);
