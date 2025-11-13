@@ -28,7 +28,7 @@ export interface MCPTransport {
 export class StdioTransport implements MCPTransport {
   private transport?: StdioClientTransport;
   private process?: ChildProcess;
-  private debugLogStream?: fs.WriteStream;
+  private debugLogFd?: number;
 
   constructor(private config: TransportConfig) {
     if (!config.command) {
@@ -52,7 +52,7 @@ export class StdioTransport implements MCPTransport {
     let stderrTarget: any = 'ignore'; // Default: discard stderr output
 
     if (this.config.debugLogFile) {
-      // Create debug log file and stream
+      // Create debug log file synchronously
       const debugLogPath = path.resolve(this.config.debugLogFile);
       const debugLogDir = path.dirname(debugLogPath);
 
@@ -61,11 +61,16 @@ export class StdioTransport implements MCPTransport {
         fs.mkdirSync(debugLogDir, { recursive: true });
       }
 
-      this.debugLogStream = fs.createWriteStream(debugLogPath, { flags: 'a' });
-      this.debugLogStream.write(`\n=== MCP Server Started: ${new Date().toISOString()} ===\n`);
-      this.debugLogStream.write(`Command: ${this.config.command} ${(this.config.args || []).join(' ')}\n`);
+      // Open file synchronously for appending
+      this.debugLogFd = fs.openSync(debugLogPath, 'a');
 
-      stderrTarget = this.debugLogStream;
+      // Write header synchronously
+      const header = `\n=== MCP Server Started: ${new Date().toISOString()} ===\n`;
+      const commandLine = `Command: ${this.config.command} ${(this.config.args || []).join(' ')}\n`;
+      fs.writeSync(this.debugLogFd, header);
+      fs.writeSync(this.debugLogFd, commandLine);
+
+      stderrTarget = this.debugLogFd;
     }
 
     this.transport = new StdioClientTransport({
@@ -89,10 +94,11 @@ export class StdioTransport implements MCPTransport {
       this.process = undefined;
     }
 
-    if (this.debugLogStream) {
-      this.debugLogStream.write(`=== MCP Server Stopped: ${new Date().toISOString()} ===\n\n`);
-      this.debugLogStream.end();
-      this.debugLogStream = undefined;
+    if (this.debugLogFd !== undefined) {
+      const footer = `=== MCP Server Stopped: ${new Date().toISOString()} ===\n\n`;
+      fs.writeSync(this.debugLogFd, footer);
+      fs.closeSync(this.debugLogFd);
+      this.debugLogFd = undefined;
     }
   }
 
