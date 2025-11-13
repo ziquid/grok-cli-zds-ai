@@ -78,7 +78,7 @@ export class MCPManager extends EventEmitter {
       // Create client
       const client = new Client(
         {
-          name: "grok-cli (ZDS AI build; zds-agents.com; claude compatible)",
+          name: "grok-cli (ZDS AI build; zds-agents.com)",
           version: "1.0.0"
         },
         {
