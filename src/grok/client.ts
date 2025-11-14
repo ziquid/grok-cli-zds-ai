@@ -144,10 +144,10 @@ export class GrokClient {
       max_tokens: maxTokens ?? this.defaultMaxTokens
     };
 
-    // Only include tools if the model supports them
-    if (this.supportsTools) {
-      requestPayload.tools = tools || [];
-      requestPayload.tool_choice = tools && tools.length > 0 ? "auto" : undefined;
+    // Only include tools if the model supports them AND tools are provided
+    if (this.supportsTools && tools && tools.length > 0) {
+      requestPayload.tools = tools;
+      requestPayload.tool_choice = "auto";
     }
 
     // Only add think parameter for backends that support it (Grok, Ollama)

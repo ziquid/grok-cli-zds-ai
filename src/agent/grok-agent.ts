@@ -7,6 +7,8 @@ import {
   initializeMCPServers,
 } from "../grok/tools.js";
 import { loadMCPConfig } from "../mcp/config.js";
+import { ChatHistoryManager } from "../utils/chat-history-manager.js";
+import fs from "fs";
 import {
   TextEditorTool,
   MorphEditorTool,
@@ -505,9 +507,20 @@ Current working directory: ${process.cwd()}`;
           // Add assistant message to conversation
           this.messages.push({
             role: "assistant",
-            content: assistantMessage.content || "", // Ensure content is never null/undefined
+            content: assistantMessage.content || " ", // Use space instead of empty string (archgw requires non-empty content)
             tool_calls: cleanedToolCalls,
           } as any);
+
+          // Add assistant message to chat history
+          const assistantToolCallEntry: ChatEntry = {
+            type: "assistant",
+            content: assistantMessage.content || " ",
+            timestamp: new Date(),
+            tool_calls: assistantMessage.tool_calls,
+          };
+          this.chatHistory.push(assistantToolCallEntry);
+
+          await this.emitContextChange();
 
           // Create initial tool call entries to show tools are being executed
           // Use cleanedToolCalls to preserve arguments in chatHistory
@@ -602,7 +615,47 @@ Current working directory: ${process.cwd()}`;
             }
           }
 
+          // After all tool results are added, add any system messages from this tool round
+          // System messages are added to chatHistory during tool execution (for display)
+          // Now we add them to this.messages in the same order (after all tool results)
+          // Find the most recent assistant message with tool_calls in chatHistory (search backwards)
+          let assistantIndex = -1;
+          for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+            const entry = this.chatHistory[i];
+            if (entry.type === "assistant" && entry.tool_calls && entry.tool_calls.length > 0) {
+              assistantIndex = i;
+              break;
+            }
+          }
+          if (assistantIndex !== -1) {
+            // Collect system messages that appeared after this assistant message
+            for (let i = assistantIndex + 1; i < this.chatHistory.length; i++) {
+              const entry = this.chatHistory[i];
+              if (entry.type === 'system' && entry.content && entry.content.trim()) {
+                this.messages.push({
+                  role: 'system',
+                  content: entry.content
+                });
+              }
+              // Stop if we hit another assistant or user message (next turn)
+              if (entry.type === 'assistant' || entry.type === 'user') {
+                break;
+              }
+            }
+          }
+
           // Get next response - this might contain more tool calls
+          // Debug logging to diagnose tool_call/tool_result mismatch
+          const debugLogPath = ChatHistoryManager.getDebugLogPath();
+          const timestamp = new Date().toISOString();
+          fs.appendFileSync(debugLogPath, `\n${timestamp} - [DEBUG] Messages before API call (${this.messages.length} messages):\n`);
+          this.messages.forEach((msg, idx) => {
+            const msgSummary: any = { idx, role: msg.role };
+            if ((msg as any).tool_calls) msgSummary.tool_calls = (msg as any).tool_calls.map((tc: any) => tc.id);
+            if ((msg as any).tool_call_id) msgSummary.tool_call_id = (msg as any).tool_call_id;
+            fs.appendFileSync(debugLogPath, `  ${JSON.stringify(msgSummary)}\n`);
+          });
+
           currentResponse = await this.grokClient.chat(
             this.messages,
             supportsTools ? await getAllGrokTools() : [],
@@ -1197,6 +1250,35 @@ Current working directory: ${process.cwd()}`;
                   content: "[Error: Tool execution interrupted]",
                   tool_call_id: toolCall.id,
                 });
+              }
+            }
+          }
+
+          // After all tool results are added, add any system messages from this tool round
+          // System messages are added to chatHistory during tool execution (for display)
+          // Now we add them to this.messages in the same order (after all tool results)
+          // Find the most recent assistant message with tool_calls in chatHistory (search backwards)
+          let assistantIndex = -1;
+          for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+            const entry = this.chatHistory[i];
+            if (entry.type === "assistant" && entry.tool_calls && entry.tool_calls.length > 0) {
+              assistantIndex = i;
+              break;
+            }
+          }
+          if (assistantIndex !== -1) {
+            // Collect system messages that appeared after this assistant message
+            for (let i = assistantIndex + 1; i < this.chatHistory.length; i++) {
+              const entry = this.chatHistory[i];
+              if (entry.type === 'system' && entry.content && entry.content.trim()) {
+                this.messages.push({
+                  role: 'system',
+                  content: entry.content
+                });
+              }
+              // Stop if we hit another assistant or user message (next turn)
+              if (entry.type === 'assistant' || entry.type === 'user') {
+                break;
               }
             }
           }
@@ -1858,9 +1940,11 @@ Current working directory: ${process.cwd()}`;
 
     if (!hookPath && hookMandatory) {
       const reason = "Persona hook is mandatory but not configured";
-      this.messages.push({
-        role: 'system',
-        content: `Failed to change persona to "${persona}": ${reason}`
+      // Note: Don't add to this.messages during tool execution - only chatHistory
+      this.chatHistory.push({
+        type: 'system',
+        content: `Failed to change persona to "${persona}": ${reason}`,
+        timestamp: new Date()
       });
       return {
         success: false,
@@ -1891,9 +1975,11 @@ Current working directory: ${process.cwd()}`;
         await this.processHookResult(hookResult);
         // Note: We ignore the return value here since we're already rejecting the persona
 
-        this.messages.push({
-          role: 'system',
-          content: `Failed to change persona to "${persona}": ${reason}`
+        // Note: Don't add to this.messages during tool execution - only chatHistory
+        this.chatHistory.push({
+          type: 'system',
+          content: `Failed to change persona to "${persona}": ${reason}`,
+          timestamp: new Date()
         });
         return {
           success: false,
@@ -1902,9 +1988,11 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        this.messages.push({
-          role: 'system',
-          content: `Persona hook timed out (auto-approved)`
+        // Note: Don't add to this.messages during tool execution - only chatHistory
+        this.chatHistory.push({
+          type: 'system',
+          content: `Persona hook timed out (auto-approved)`,
+          timestamp: new Date()
         });
       }
 
@@ -1941,12 +2029,9 @@ Current working directory: ${process.cwd()}`;
       systemContent = `Assistant set the persona to "${this.persona}"${colorStr}`;
     }
 
-    this.messages.push({
-      role: 'system',
-      content: systemContent
-    });
-
-    // Also add to chat history for persistence
+    // Note: Don't add to this.messages during tool execution - only chatHistory
+    // System messages added during tool execution create invalid message sequences
+    // because they get inserted between tool_calls and tool_results
     this.chatHistory.push({
       type: 'system',
       content: systemContent,
@@ -1969,9 +2054,11 @@ Current working directory: ${process.cwd()}`;
 
     if (!hookPath && hookMandatory) {
       const reason = "Mood hook is mandatory but not configured";
-      this.messages.push({
-        role: 'system',
-        content: `Failed to change mood to "${mood}": ${reason}`
+      // Note: Don't add to this.messages during tool execution - only chatHistory
+      this.chatHistory.push({
+        type: 'system',
+        content: `Failed to change mood to "${mood}": ${reason}`,
+        timestamp: new Date()
       });
       return {
         success: false,
@@ -2000,9 +2087,11 @@ Current working directory: ${process.cwd()}`;
         // Process rejection commands (MODEL, SYSTEM)
         await this.processHookResult(hookResult);
 
-        this.messages.push({
-          role: 'system',
-          content: `Failed to change mood to "${mood}": ${reason}`
+        // Note: Don't add to this.messages during tool execution - only chatHistory
+        this.chatHistory.push({
+          type: 'system',
+          content: `Failed to change mood to "${mood}": ${reason}`,
+          timestamp: new Date()
         });
         return {
           success: false,
@@ -2011,9 +2100,11 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        this.messages.push({
-          role: 'system',
-          content: `Mood hook timed out (auto-approved)`
+        // Note: Don't add to this.messages during tool execution - only chatHistory
+        this.chatHistory.push({
+          type: 'system',
+          content: `Mood hook timed out (auto-approved)`,
+          timestamp: new Date()
         });
       }
 
@@ -2050,12 +2141,9 @@ Current working directory: ${process.cwd()}`;
       systemContent = `Assistant set the mood to "${this.mood}"${colorStr}`;
     }
 
-    this.messages.push({
-      role: 'system',
-      content: systemContent
-    });
-
-    // Also add to chat history for persistence
+    // Note: Don't add to this.messages during tool execution - only chatHistory
+    // System messages added during tool execution create invalid message sequences
+    // because they get inserted between tool_calls and tool_results
     this.chatHistory.push({
       type: 'system',
       content: systemContent,
@@ -2403,7 +2491,7 @@ Current working directory: ${process.cwd()}`;
       // Attempt the API call with a short timeout
       const response = await this.grokClient.chat(
         testMessages,
-        [],
+        undefined,
         newModel,
         undefined,
         this.temperature,
@@ -2485,9 +2573,10 @@ Current working directory: ${process.cwd()}`;
         }
       ];
 
+      // Note: Pass undefined for tools to omit them entirely from the request
       const response = await this.grokClient.chat(
         testMessages,
-        [],
+        undefined,  // Pass undefined instead of [] to omit tools entirely
         newModel,
         undefined,
         this.temperature,
@@ -2620,10 +2709,7 @@ Current working directory: ${process.cwd()}`;
       if (!testResult.success) {
         // Test failed - don't apply ANYTHING
         const errorMsg = `Failed to change model to "${commands.model}": ${testResult.error}`;
-        this.messages.push({
-          role: "system",
-          content: errorMsg,
-        });
+        // Note: Don't add to this.messages during tool execution - only chatHistory
         this.chatHistory.push({
           type: "system",
           content: errorMsg,
@@ -2636,10 +2722,7 @@ Current working directory: ${process.cwd()}`;
       applyEnvVariables(commands.env);
 
       const successMsg = `Model changed to "${commands.model}"`;
-      this.messages.push({
-        role: "system",
-        content: successMsg,
-      });
+      // Note: Don't add to this.messages during tool execution - only chatHistory
       this.chatHistory.push({
         type: "system",
         content: successMsg,
@@ -2657,10 +2740,7 @@ Current working directory: ${process.cwd()}`;
 
     // Add SYSTEM message if present
     if (commands.system) {
-      this.messages.push({
-        role: "system",
-        content: commands.system,
-      });
+      // Note: Don't add to this.messages during tool execution - only chatHistory
       this.chatHistory.push({
         type: "system",
         content: commands.system,
