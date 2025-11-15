@@ -2466,7 +2466,7 @@ Current working directory: ${process.cwd()}`;
   }
 
   /**
-   * Test a model change by making a minimal API call
+   * Test a model change by making a test API call with current conversation context
    * Rolls back to previous model if test fails
    * @param newModel Model to test
    * @returns Promise with success status and optional error message
@@ -2480,18 +2480,12 @@ Current working directory: ${process.cwd()}`;
       this.grokClient.setModel(newModel);
       this.tokenCounter = createTokenCounter(newModel);
 
-      // Make a minimal test call with a simple message
-      const testMessages: GrokMessage[] = [
-        {
-          role: "user",
-          content: "test"
-        }
-      ];
-
-      // Attempt the API call with a short timeout
+      // Test with actual conversation context to verify the model can handle it
+      // This catches issues like ollama models that fail to parse tool calls
+      const supportsTools = this.grokClient.getSupportsTools();
       const response = await this.grokClient.chat(
-        testMessages,
-        undefined,
+        this.messages,
+        supportsTools ? await getAllGrokTools() : [],
         newModel,
         undefined,
         this.temperature,
@@ -2523,7 +2517,7 @@ Current working directory: ${process.cwd()}`;
   }
 
   /**
-   * Test backend/baseUrl/model changes by making a minimal API call
+   * Test backend/baseUrl/model changes by making a test API call with current conversation context
    * Rolls back all changes if test fails
    * @param backend Backend display name
    * @param baseUrl Base URL for API calls
@@ -2565,18 +2559,12 @@ Current working directory: ${process.cwd()}`;
         console.warn("MCP reinitialization failed:", mcpError);
       }
 
-      // Make a minimal test call
-      const testMessages: GrokMessage[] = [
-        {
-          role: "user",
-          content: "test"
-        }
-      ];
-
-      // Note: Pass undefined for tools to omit them entirely from the request
+      // Test with actual conversation context to verify the backend/model can handle it
+      // This catches issues like ollama models that fail to parse tool calls
+      const supportsTools = this.grokClient.getSupportsTools();
       const response = await this.grokClient.chat(
-        testMessages,
-        undefined,  // Pass undefined instead of [] to omit tools entirely
+        this.messages,
+        supportsTools ? await getAllGrokTools() : [],
         newModel,
         undefined,
         this.temperature,
