@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
+import { logApiError } from "../utils/error-logger.js";
 import fs from "fs";
 
 export type GrokMessage = ChatCompletionMessageParam;
@@ -221,44 +222,12 @@ export class GrokClient {
 
         // Log 500 errors with full request/response for debugging
         if (error.status === 500) {
-          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
-          const path = await import('path');
-          const historyManager = ChatHistoryManager.getInstance();
-          const contextPath = historyManager.getContextFilePath();
-          const errorDir = path.join(path.dirname(contextPath), 'error-logs');
-
-          // Ensure error-logs directory exists
-          try {
-            if (!fs.existsSync(errorDir)) {
-              fs.mkdirSync(errorDir, { recursive: true });
-            }
-          } catch (mkdirErr) {
-            console.error('Failed to create error-logs directory:', mkdirErr);
-          }
-
-          const requestFile = `${errorDir}/500-${timestamp}-request.json`;
-          const responseFile = `${errorDir}/500-${timestamp}-response.txt`;
-
-          // Write request payload
-          try {
-            fs.writeFileSync(requestFile, JSON.stringify(requestPayload, null, 2));
-          } catch (writeErr) {
-            console.error('Failed to write request file:', writeErr);
-          }
-
-          // Write response error details
-          try {
-            const responseData = {
-              status: error.status,
-              message: error.message,
-              error: error.error,
-              response: error.response,
-              rawBody: error.response?.data || error.response?.body,
-            };
-            fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
-          } catch (writeErr) {
-            console.error('Failed to write response file:', writeErr);
-          }
+          const { requestFile, responseFile } = await logApiError(
+            requestPayload,
+            error,
+            { errorType: 'runtime-api-error' },
+            '500'
+          );
 
           // Throw error with file references
           throw new Error(`${this.backendName} API error: ${error.message}\nRequest logged to: ${requestFile}\nResponse logged to: ${responseFile}`);
@@ -393,44 +362,12 @@ export class GrokClient {
 
         // Log 500 errors with full request/response for debugging
         if (error.status === 500) {
-          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
-          const path = await import('path');
-          const historyManager = ChatHistoryManager.getInstance();
-          const contextPath = historyManager.getContextFilePath();
-          const errorDir = path.join(path.dirname(contextPath), 'error-logs');
-
-          // Ensure error-logs directory exists
-          try {
-            if (!fs.existsSync(errorDir)) {
-              fs.mkdirSync(errorDir, { recursive: true });
-            }
-          } catch (mkdirErr) {
-            console.error('Failed to create error-logs directory:', mkdirErr);
-          }
-
-          const requestFile = `${errorDir}/500-${timestamp}-request.json`;
-          const responseFile = `${errorDir}/500-${timestamp}-response.txt`;
-
-          // Write request payload
-          try {
-            fs.writeFileSync(requestFile, JSON.stringify(requestPayload, null, 2));
-          } catch (writeErr) {
-            console.error('Failed to write request file:', writeErr);
-          }
-
-          // Write response error details
-          try {
-            const responseData = {
-              status: error.status,
-              message: error.message,
-              error: error.error,
-              response: error.response,
-              rawBody: error.response?.data || error.response?.body,
-            };
-            fs.writeFileSync(responseFile, JSON.stringify(responseData, null, 2));
-          } catch (writeErr) {
-            console.error('Failed to write response file:', writeErr);
-          }
+          const { requestFile, responseFile } = await logApiError(
+            requestPayload,
+            error,
+            { errorType: 'runtime-api-error' },
+            '500'
+          );
 
           // Throw error with file references
           throw new Error(`${this.backendName} API error: ${error.message}\nRequest logged to: ${requestFile}\nResponse logged to: ${responseFile}`);

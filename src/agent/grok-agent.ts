@@ -8,6 +8,7 @@ import {
 } from "../grok/tools.js";
 import { loadMCPConfig } from "../mcp/config.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
+import { logApiError } from "../utils/error-logger.js";
 import fs from "fs";
 import {
   TextEditorTool,
@@ -2465,6 +2466,7 @@ Current working directory: ${process.cwd()}`;
     this.tokenCounter = createTokenCounter(model);
   }
 
+
   /**
    * Test a model change by making a test API call with current conversation context
    * Rolls back to previous model if test fails
@@ -2475,6 +2477,17 @@ Current working directory: ${process.cwd()}`;
     const previousModel = this.getCurrentModel();
     const previousTokenCounter = this.tokenCounter;
 
+    // Build request payload for logging
+    const supportsTools = this.grokClient.getSupportsTools();
+    const tools = supportsTools ? await getAllGrokTools() : [];
+    const requestPayload = {
+      model: newModel,
+      messages: this.messages,
+      tools: supportsTools && tools.length > 0 ? tools : undefined,
+      temperature: this.temperature,
+      max_tokens: 10
+    };
+
     try {
       // Temporarily set the new model
       this.grokClient.setModel(newModel);
@@ -2482,10 +2495,9 @@ Current working directory: ${process.cwd()}`;
 
       // Test with actual conversation context to verify the model can handle it
       // This catches issues like ollama models that fail to parse tool calls
-      const supportsTools = this.grokClient.getSupportsTools();
       const response = await this.grokClient.chat(
         this.messages,
-        supportsTools ? await getAllGrokTools() : [],
+        tools,
         newModel,
         undefined,
         this.temperature,
@@ -2508,10 +2520,18 @@ Current working directory: ${process.cwd()}`;
       this.tokenCounter.dispose();
       this.tokenCounter = previousTokenCounter;
 
+      // Log test failure with full request/response for debugging
+      const { message: logPaths } = await logApiError(
+        requestPayload,
+        error,
+        { errorType: 'model-switch-test-failure', previousModel, newModel },
+        'test-fail'
+      );
+
       const errorMessage = error.message || "Unknown error during model test";
       return {
         success: false,
-        error: `Model test failed: ${errorMessage}`
+        error: `Model test failed: ${errorMessage}\n${logPaths}`
       };
     }
   }
@@ -2533,6 +2553,11 @@ Current working directory: ${process.cwd()}`;
   ): Promise<{ success: boolean; error?: string }> {
     const previousClient = this.grokClient;
     const previousApiKeyEnvVar = this.apiKeyEnvVar;
+    const previousBackend = this.grokClient.getBackendName();
+    const previousModel = this.getCurrentModel();
+
+    let requestPayload: any;
+    let newModel: string;
 
     try {
       // Get API key from environment
@@ -2542,7 +2567,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       // Use current model if not specified
-      const newModel = model || this.getCurrentModel();
+      newModel = model || this.getCurrentModel();
 
       // Create new client with new configuration
       this.grokClient = new GrokClient(apiKey, newModel, baseUrl, backend);
@@ -2559,12 +2584,24 @@ Current working directory: ${process.cwd()}`;
         console.warn("MCP reinitialization failed:", mcpError);
       }
 
+      // Build request payload for logging
+      const supportsTools = this.grokClient.getSupportsTools();
+      const tools = supportsTools ? await getAllGrokTools() : [];
+      requestPayload = {
+        backend,
+        baseUrl,
+        model: newModel,
+        messages: this.messages,
+        tools: supportsTools && tools.length > 0 ? tools : undefined,
+        temperature: this.temperature,
+        max_tokens: 10
+      };
+
       // Test with actual conversation context to verify the backend/model can handle it
       // This catches issues like ollama models that fail to parse tool calls
-      const supportsTools = this.grokClient.getSupportsTools();
       const response = await this.grokClient.chat(
         this.messages,
-        supportsTools ? await getAllGrokTools() : [],
+        tools,
         newModel,
         undefined,
         this.temperature,
@@ -2585,10 +2622,26 @@ Current working directory: ${process.cwd()}`;
       this.grokClient = previousClient;
       this.apiKeyEnvVar = previousApiKeyEnvVar;
 
+      // Log test failure with full request/response for debugging
+      const { message: logPaths } = await logApiError(
+        requestPayload,
+        error,
+        {
+          errorType: 'backend-switch-test-failure',
+          previousBackend,
+          previousModel,
+          newBackend: backend,
+          newModel,
+          baseUrl,
+          apiKeyEnvVar
+        },
+        'test-fail'
+      );
+
       const errorMessage = error.message || "Unknown error during backend/model test";
       return {
         success: false,
-        error: errorMessage
+        error: `${errorMessage}\n${logPaths}`
       };
     }
   }
