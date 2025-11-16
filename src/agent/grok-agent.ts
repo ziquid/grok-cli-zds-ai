@@ -456,16 +456,6 @@ Current working directory: ${process.cwd()}`;
           toolRounds++;
           consecutiveNonToolResponses = 0; // Reset counter when AI makes tool calls
 
-          // Add assistant message with tool calls
-          const assistantEntry: ChatEntry = {
-            type: "assistant",
-            content: assistantMessage.content,
-            timestamp: new Date(),
-            tool_calls: assistantMessage.tool_calls,
-          };
-          this.chatHistory.push(assistantEntry);
-          newEntries.push(assistantEntry);
-
           // Clean up tool call arguments before adding to conversation history
           // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
           const cleanedToolCalls = assistantMessage.tool_calls.map(toolCall => {
@@ -508,18 +498,19 @@ Current working directory: ${process.cwd()}`;
           // Add assistant message to conversation
           this.messages.push({
             role: "assistant",
-            content: assistantMessage.content || " ", // Use space instead of empty string (archgw requires non-empty content)
+            content: assistantMessage.content || "(Calling tools to perform this request)",
             tool_calls: cleanedToolCalls,
           } as any);
 
           // Add assistant message to chat history
           const assistantToolCallEntry: ChatEntry = {
             type: "assistant",
-            content: assistantMessage.content || " ",
+            content: assistantMessage.content || "(Calling tools to perform this request)",
             timestamp: new Date(),
             tool_calls: assistantMessage.tool_calls,
           };
           this.chatHistory.push(assistantToolCallEntry);
+          newEntries.push(assistantToolCallEntry);
 
           await this.emitContextChange();
 
@@ -1127,14 +1118,14 @@ Current working directory: ${process.cwd()}`;
         // Add accumulated message to conversation for API context
         this.messages.push({
           role: "assistant",
-          content: accumulatedMessage.content || "", // Ensure content is never null/undefined
+          content: accumulatedMessage.content || "(Calling tools to perform this request)",
           tool_calls: cleanedToolCalls,
         } as any);
 
         // Add assistant message to chat history
         const assistantEntry: ChatEntry = {
           type: "assistant",
-          content: accumulatedMessage.content || "",
+          content: accumulatedMessage.content || "(Calling tools to perform this request)",
           timestamp: new Date(),
           tool_calls: accumulatedMessage.tool_calls,
         };
@@ -2466,6 +2457,49 @@ Current working directory: ${process.cwd()}`;
     this.tokenCounter = createTokenCounter(model);
   }
 
+  /**
+   * Strip in-progress tool calls from messages for backend/model testing
+   * Removes tool_calls from the last assistant message and any corresponding tool results
+   * @returns Cleaned copy of messages array, or original if no stripping needed
+   */
+  static stripInProgressToolCalls(messages: GrokMessage[]): GrokMessage[] {
+    // Find the last assistant message
+    let lastAssistantIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+
+    // If no assistant message or it has no tool_calls, return original
+    if (lastAssistantIndex === -1 || !(messages[lastAssistantIndex] as any).tool_calls) {
+      return messages;
+    }
+
+    // Create deep copy to avoid modifying original
+    const cleanedMessages = JSON.parse(JSON.stringify(messages));
+
+    // Collect tool_call_ids from the last assistant message
+    const toolCallIds = new Set(
+      ((cleanedMessages[lastAssistantIndex] as any).tool_calls || []).map((tc: any) => tc.id)
+    );
+
+    // Remove tool_calls from the last assistant message
+    delete (cleanedMessages[lastAssistantIndex] as any).tool_calls;
+
+    // Remove any tool result messages that correspond to those tool_call_ids
+    // (in case some finished but not all)
+    return cleanedMessages.filter((msg, idx) => {
+      if (idx <= lastAssistantIndex) {
+        return true; // Keep all messages before and including the assistant message
+      }
+      if (msg.role === 'tool' && toolCallIds.has((msg as any).tool_call_id)) {
+        return false; // Remove tool results for the in-progress tool calls
+      }
+      return true;
+    });
+  }
 
   /**
    * Test a model change by making a test API call with current conversation context
@@ -2477,12 +2511,15 @@ Current working directory: ${process.cwd()}`;
     const previousModel = this.getCurrentModel();
     const previousTokenCounter = this.tokenCounter;
 
+    // Strip in-progress tool calls to avoid sending incomplete assistant messages
+    const testMessages = GrokAgent.stripInProgressToolCalls(this.messages);
+
     // Build request payload for logging
     const supportsTools = this.grokClient.getSupportsTools();
     const tools = supportsTools ? await getAllGrokTools() : [];
     const requestPayload = {
       model: newModel,
-      messages: this.messages,
+      messages: testMessages,
       tools: supportsTools && tools.length > 0 ? tools : undefined,
       temperature: this.temperature,
       max_tokens: 10
@@ -2496,7 +2533,7 @@ Current working directory: ${process.cwd()}`;
       // Test with actual conversation context to verify the model can handle it
       // This catches issues like ollama models that fail to parse tool calls
       const response = await this.grokClient.chat(
-        this.messages,
+        testMessages,
         tools,
         newModel,
         undefined,
@@ -2584,6 +2621,9 @@ Current working directory: ${process.cwd()}`;
         console.warn("MCP reinitialization failed:", mcpError);
       }
 
+      // Strip in-progress tool calls to avoid sending incomplete assistant messages
+      const testMessages = GrokAgent.stripInProgressToolCalls(this.messages);
+
       // Build request payload for logging
       const supportsTools = this.grokClient.getSupportsTools();
       const tools = supportsTools ? await getAllGrokTools() : [];
@@ -2591,7 +2631,7 @@ Current working directory: ${process.cwd()}`;
         backend,
         baseUrl,
         model: newModel,
-        messages: this.messages,
+        messages: testMessages,
         tools: supportsTools && tools.length > 0 ? tools : undefined,
         temperature: this.temperature,
         max_tokens: 10
@@ -2600,7 +2640,7 @@ Current working directory: ${process.cwd()}`;
       // Test with actual conversation context to verify the backend/model can handle it
       // This catches issues like ollama models that fail to parse tool calls
       const response = await this.grokClient.chat(
-        this.messages,
+        testMessages,
         tools,
         newModel,
         undefined,
@@ -2622,26 +2662,30 @@ Current working directory: ${process.cwd()}`;
       this.grokClient = previousClient;
       this.apiKeyEnvVar = previousApiKeyEnvVar;
 
-      // Log test failure with full request/response for debugging
-      const { message: logPaths } = await logApiError(
-        requestPayload,
-        error,
-        {
-          errorType: 'backend-switch-test-failure',
-          previousBackend,
-          previousModel,
-          newBackend: backend,
-          newModel,
-          baseUrl,
-          apiKeyEnvVar
-        },
-        'test-fail'
-      );
+      // Log test failure with full request/response for debugging (if we got far enough to build the payload)
+      let logPaths = '';
+      if (requestPayload) {
+        const result = await logApiError(
+          requestPayload,
+          error,
+          {
+            errorType: 'backend-switch-test-failure',
+            previousBackend,
+            previousModel,
+            newBackend: backend,
+            newModel,
+            baseUrl,
+            apiKeyEnvVar
+          },
+          'test-fail'
+        );
+        logPaths = result.message;
+      }
 
       const errorMessage = error.message || "Unknown error during backend/model test";
       return {
         success: false,
-        error: `${errorMessage}\n${logPaths}`
+        error: logPaths ? `${errorMessage}\n${logPaths}` : errorMessage
       };
     }
   }
@@ -2704,10 +2748,7 @@ Current working directory: ${process.cwd()}`;
         if (commands.backend) parts.push(`backend to "${commands.backend}"`);
         if (commands.model) parts.push(`model to "${commands.model}"`);
         const errorMsg = `Failed to change ${parts.join(' and ')}: ${testResult.error}`;
-        this.messages.push({
-          role: "system",
-          content: errorMsg,
-        });
+        // Note: Don't add to this.messages during tool execution - only chatHistory
         this.chatHistory.push({
           type: "system",
           content: errorMsg,
@@ -2723,10 +2764,7 @@ Current working directory: ${process.cwd()}`;
       if (commands.backend) parts.push(`backend to "${commands.backend}"`);
       if (commands.model) parts.push(`model to "${commands.model}"`);
       const successMsg = `Changed ${parts.join(' and ')}`;
-      this.messages.push({
-        role: "system",
-        content: successMsg,
-      });
+      // Note: Don't add to this.messages during tool execution - only chatHistory
       this.chatHistory.push({
         type: "system",
         content: successMsg,
