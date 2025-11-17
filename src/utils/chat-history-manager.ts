@@ -165,7 +165,9 @@ export class ChatHistoryManager {
   private serializeChatEntries(entries: ChatEntry[]): any[] {
     return entries.map(entry => ({
       ...entry,
-      timestamp: entry.timestamp.toISOString(),
+      timestamp: entry.timestamp instanceof Date
+        ? entry.timestamp.toISOString()
+        : entry.timestamp, // Already a string
     }));
   }
 
