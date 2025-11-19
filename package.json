@@ -1,6 +1,6 @@
 {
   "name": "@zds-ai/cli",
-  "version": "0.0.33",
+  "version": "0.1.0",
   "description": "A multi-backend AI agent CLI supporting OpenAI, Anthropic, Grok, Ollama, and more.",
   "type": "module",
   "main": "dist/index.js",
@@ -28,14 +28,34 @@
     "install:bun": "bun install"
   },
   "keywords": [
-    "cli",
     "agent",
-    "text-editor",
+    "ai",
+    "archgw",
+    "arliai",
+    "cli",
     "grok",
-    "ai"
+    "multi-backend",
+    "nanogpt",
+    "ollama",
+    "openai",
+    "openrouter",
+    "venice"
   ],
-  "author": "Your Name",
+  "author": "The ZDS Group",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ziquid/zds-ai-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ziquid/zds-ai-cli/issues"
+  },
+  "homepage": "https://github.com/ziquid/zds-ai-cli#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
     "axios": "^1.7.0",
