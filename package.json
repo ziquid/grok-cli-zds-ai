@@ -1,7 +1,7 @@
 {
-  "name": "@vibe-kit/grok-cli",
+  "name": "@zds-ai/cli",
   "version": "0.0.33",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "description": "A multi-backend AI agent CLI supporting OpenAI, Anthropic, Grok, Ollama, and more.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -11,7 +11,7 @@
     }
   },
   "bin": {
-    "grok": "dist/index.js"
+    "zai-cli": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
