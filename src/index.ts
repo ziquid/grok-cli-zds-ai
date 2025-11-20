@@ -14,6 +14,17 @@ import { ChatHistoryManager } from "./utils/chat-history-manager.js";
 import { createMCPCommand } from "./commands/mcp.js";
 import { getAuthConfig, validateApiKey } from "./utils/auth-helper.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
+);
+const version = packageJson.version;
 
 // Load environment variables
 dotenv.config();
@@ -423,7 +434,7 @@ program
   .description(
     "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
-  .version("1.0.1")
+  .version(version)
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
