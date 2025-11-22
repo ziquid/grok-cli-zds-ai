@@ -85,13 +85,13 @@ function ChatInterfaceWithAgent({
       console.log("    ");
 
       // Generate logo with margin to match Ink paddingX={2}
-      const logoOutput = cfonts.render("ZAI CLI", {
-        font: "3d",
+      const logoOutput = cfonts.render("zds ai cli", {
+        font: "simple3d",
         align: "left",
-        colors: ["magenta", "blue"],
+        colors: ["#e16f0b", "#6f2a92", "#336ca3", "#336ca3", "#336ca3"],
         space: true,
         maxLength: "0",
-        gradient: ["magenta", "cyan"],
+        gradient: ["#e16f0b", "#6f2a92", "#336ca3", "#336ca3", "#336ca3"],
         independentGradient: false,
         transitionGradient: true,
         env: "node",
