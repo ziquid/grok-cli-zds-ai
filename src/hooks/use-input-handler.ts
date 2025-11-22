@@ -4,6 +4,7 @@ import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { useEnhancedInput, Key } from "./use-enhanced-input.js";
+import { HELP_TEXT } from "../utils/slash-commands.js";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
@@ -460,62 +461,7 @@ export function useInputHandler({
     if (trimmedInput === "/help") {
       const helpEntry: ChatEntry = {
         type: "assistant",
-        content: `Grok CLI Help:
-
-Built-in Commands:
-  /clear      - Clear chat history (current session + persisted)
-  /context    - Show context usage info
-  /context view - View full context in pager (markdown format)
-  /context edit - Edit context JSON file (opens in $EDITOR)
-  /help       - Show this help
-  /ink        - Switch to Ink UI mode (restart required)
-  /introspect - Show available tools (internal and MCP)
-  /models     - Switch between available models
-  /no-ink     - Switch to plain console mode (restart required)
-  /restart    - Restart the application (exit code 51)
-  /exit       - Exit application
-  exit, quit  - Exit application
-
-CLI Options:
-  --fresh     - Start with a fresh session (don't load previous history)
-
-Git Commands:
-  /commit-and-push - AI-generated commit + push to remote
-
-Enhanced Input Features:
-  ↑/↓ Arrow   - Navigate command history
-  Ctrl+C      - Clear input (press twice to exit)
-  Ctrl+D      - Exit on blank line
-  Ctrl+←/→    - Move by word
-  Ctrl+A/E    - Move to line start/end
-  Ctrl+W      - Delete word before cursor
-  Ctrl+K      - Delete to end of line
-  Ctrl+U      - Delete to start of line
-  ESC         - Cancel current action / close menus
-  ESC (twice) - Clear input line
-  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
-
-Direct Commands (executed immediately):
-  !command    - Execute any shell command directly
-  ls [path]   - List directory contents
-  pwd         - Show current directory
-  cd <path>   - Change directory
-  cat <file>  - View file contents
-  mkdir <dir> - Create directory
-  touch <file>- Create empty file
-
-Model Configuration:
-  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
-
-History Persistence:
-  Chat history is automatically saved and restored between sessions.
-  Use /clear to reset both current and persisted history.
-
-For complex operations, just describe what you want in natural language.
-Examples:
-  "edit package.json and add a new script"
-  "create a new React component called Header"
-  "show me all TypeScript files in this project"`,
+        content: HELP_TEXT,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
@@ -634,7 +580,7 @@ Available models: ${modelNames.join(", ")}`,
             inkInstance.waitUntilExit();
           }
 
-          // Spawn viewer as blocking process
+          // Spawn viewer
           const viewerProcess = spawn(viewerCommand, [tmpMdPath], {
             stdio: "inherit",
             shell: true,
@@ -707,8 +653,9 @@ Available models: ${modelNames.join(", ")}`,
 
           // Determine if we're in text mode (need to suspend Ink) or GUI mode (don't suspend)
           const inkInstance = (global as any).inkInstance;
+          const isInkMode = (global as any).isInkMode;
           const isGui = settingsManager.isGuiAvailable();
-          const needsSuspend = inkInstance && !isGui;
+          const needsSuspend = isInkMode && inkInstance && !isGui;
 
           if (needsSuspend) {
             // Unmount Ink UI before spawning text-mode editor
@@ -716,17 +663,40 @@ Available models: ${modelNames.join(", ")}`,
             inkInstance.waitUntilExit();
           }
 
-          // Spawn editor as blocking process
-          const editorProcess = spawn(editorCommand, [tmpJsonPath], {
-            stdio: "inherit",
-            shell: true,
-          });
+          // Terminal mode and GUI mode both use regular spawn
+          if (needsSuspend) {
+            // Terminal mode: Put stdin in cooked mode then use regular spawn
+            if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+              process.stdin.setRawMode(false);
+            }
 
-          await new Promise<void>((resolve) => {
-            editorProcess.on("close", () => {
-              resolve();
+            const editorProcess = spawn(editorCommand, [tmpJsonPath], {
+              stdio: "inherit",
+              shell: true,
             });
-          });
+
+            await new Promise<void>((resolve) => {
+              editorProcess.on("close", () => {
+                // Restore raw mode for Ink
+                if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+                  process.stdin.setRawMode(true);
+                }
+                resolve();
+              });
+            });
+          } else {
+            // GUI mode: Use regular spawn
+            const editorProcess = spawn(editorCommand, [tmpJsonPath], {
+              stdio: "inherit",
+              shell: true,
+            });
+
+            await new Promise<void>((resolve) => {
+              editorProcess.on("close", () => {
+                resolve();
+              });
+            });
+          }
 
           // Validate edited JSON BEFORE re-rendering
           let isValid = false;

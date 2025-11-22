@@ -649,7 +649,7 @@ program
         confirmationService.setApprovedCommands(commands);
       }
 
-      console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
+      console.log("🤖 Starting ZDS AI Agents CLI...\n");
 
       // Support variadic positional arguments for multi-word initial message
       let messageArray = Array.isArray(message) ? message : (message ? [message] : []);
@@ -674,6 +674,7 @@ program
 
       if (!options.ink) {
         // Plain console mode
+        (global as any).isInkMode = false;
         const prompts = await import('prompts');
 
         // Load chat history if not a fresh session
@@ -868,13 +869,18 @@ program
               if (subcommand === 'view') {
                 try {
                   const fs = await import('fs');
-                  const path = await import('path');
-                  const os = await import('os');
                   const { spawn } = await import('child_process');
+
+                  // Get context file path
+                  const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
+                  const historyManager = ChatHistoryManager.getInstance();
+                  const contextFilePath = historyManager.getContextFilePath();
+
+                  // Create temp file next to context file
+                  const tmpMdPath = `${contextFilePath}.md.tmp`;
 
                   // Convert context to markdown
                   const markdown = await agent.convertContextToMarkdown();
-                  const tmpMdPath = path.join(os.tmpdir(), `grok-context-${Date.now()}.md`);
                   fs.writeFileSync(tmpMdPath, markdown, 'utf-8');
 
                   // Get viewer command
@@ -1024,6 +1030,7 @@ program
 
       // Store Ink instance globally so components can unmount/remount for external processes
       (global as any).inkInstance = inkInstance;
+      (global as any).isInkMode = true;
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
       process.exit(1);

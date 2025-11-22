@@ -2,6 +2,66 @@ import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
 import { ConfirmationService } from "./confirmation-service.js";
 
 /**
+ * Help text shared across all modes
+ */
+export const HELP_TEXT = `ZAI CLI Help:
+
+Built-in Commands:
+  /clear      - Clear chat history (current session + persisted)
+  /context    - Show context usage info
+  /context view - View full context in pager (markdown format)
+  /context edit - Edit context JSON file (opens in $EDITOR)
+  /help       - Show this help
+  /ink        - Switch to Ink UI mode (restart required)
+  /introspect - Show available tools (internal and MCP)
+  /models     - Switch between available models
+  /no-ink     - Switch to plain console mode (restart required)
+  /restart    - Restart the application (exit code 51)
+  /exit       - Exit application
+  exit, quit  - Exit application
+
+CLI Options:
+  --fresh     - Start with a fresh session (don't load previous history)
+
+Git Commands:
+  /commit-and-push - AI-generated commit + push to remote
+
+Enhanced Input Features:
+  ↑/↓ Arrow   - Navigate command history
+  Ctrl+C      - Clear input (press twice to exit)
+  Ctrl+D      - Exit on blank line
+  Ctrl+←/→    - Move by word
+  Ctrl+A/E    - Move to line start/end
+  Ctrl+W      - Delete word before cursor
+  Ctrl+K      - Delete to end of line
+  Ctrl+U      - Delete to start of line
+  ESC         - Cancel current action / close menus
+  ESC (twice) - Clear input line
+  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
+
+Direct Commands (executed immediately):
+  !command    - Execute any shell command directly
+  ls [path]   - List directory contents
+  pwd         - Show current directory
+  cd <path>   - Change directory
+  cat <file>  - View file contents
+  mkdir <dir> - Create directory
+  touch <file>- Create empty file
+
+Model Configuration:
+  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
+
+History Persistence:
+  Chat history is automatically saved and restored between sessions.
+  Use /clear to reset both current and persisted history.
+
+For complex operations, just describe what you want in natural language.
+Examples:
+  "edit package.json and add a new script"
+  "create a new React component called Header"
+  "show me all TypeScript files in this project"`;
+
+/**
  * Interface for slash command handlers
  * Allows different contexts (UI vs headless) to provide their own implementations
  */
@@ -171,69 +231,12 @@ export async function processSlashCommand(
 
   // /help command
   if (trimmedInput === "/help") {
-    const helpText = `Grok CLI Help:
-
-Built-in Commands:
-  /clear      - Clear chat history (current session + persisted)
-  /context    - Show context usage info
-  /context view - View full context in pager (markdown format)
-  /context edit - Edit context JSON file (opens in $EDITOR)
-  /help       - Show this help
-  /ink        - Switch to Ink UI mode (restart required)
-  /introspect - Show available tools (internal and MCP)
-  /models     - Switch between available models
-  /no-ink     - Switch to plain console mode (restart required)
-  /restart    - Restart the application (exit code 51)
-  /exit       - Exit application
-  exit, quit  - Exit application
-
-CLI Options:
-  --fresh     - Start with a fresh session (don't load previous history)
-
-Git Commands:
-  /commit-and-push - AI-generated commit + push to remote
-
-Enhanced Input Features:
-  ↑/↓ Arrow   - Navigate command history
-  Ctrl+C      - Clear input (press twice to exit)
-  Ctrl+D      - Exit on blank line
-  Ctrl+←/→    - Move by word
-  Ctrl+A/E    - Move to line start/end
-  Ctrl+W      - Delete word before cursor
-  Ctrl+K      - Delete to end of line
-  Ctrl+U      - Delete to start of line
-  ESC         - Cancel current action / close menus
-  ESC (twice) - Clear input line
-  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
-
-Direct Commands (executed immediately):
-  !command    - Execute any shell command directly
-  ls [path]   - List directory contents
-  pwd         - Show current directory
-  cd <path>   - Change directory
-  cat <file>  - View file contents
-  mkdir <dir> - Create directory
-  touch <file>- Create empty file
-
-Model Configuration:
-  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
-
-History Persistence:
-  Chat history is automatically saved and restored between sessions.
-  Use /clear to reset both current and persisted history.
-
-For complex operations, just describe what you want in natural language.
-Examples:
-  "edit package.json and add a new script"
-  "create a new React component called Header"
-  "show me all TypeScript files in this project"`;
-
     if (isHeadless) {
-      console.log(helpText);
+      console.log(HELP_TEXT);
     } else {
       const helpEntry: ChatEntry = {
         type: "assistant",
-        content: helpText,
+        content: HELP_TEXT,
         timestamp: new Date(),
       };
       addChatEntry(helpEntry);

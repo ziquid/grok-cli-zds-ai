@@ -1,6 +1,6 @@
 {
   "name": "@zds-ai/cli",
-  "version": "0.1.0",
+  "version": "0.1.1-alpha.2",
   "description": "A multi-backend AI agent CLI supporting OpenAI, Anthropic, Grok, Ollama, and more.",
   "type": "module",
   "main": "dist/index.js",

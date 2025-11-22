@@ -85,10 +85,10 @@ function ChatInterfaceWithAgent({
       console.log("    ");
 
       // Generate logo with margin to match Ink paddingX={2}
-      const logoOutput = cfonts.render("GROK", {
+      const logoOutput = cfonts.render("ZAI CLI", {
         font: "3d",
         align: "left",
-        colors: ["magenta", "gray"],
+        colors: ["magenta", "blue"],
         space: true,
         maxLength: "0",
         gradient: ["magenta", "cyan"],
