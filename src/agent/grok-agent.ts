@@ -33,6 +33,20 @@ import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { executeOperationHook, executeToolApprovalHook, applyHookCommands } from "../utils/hook-executor.js";
 
+// Interval (ms) between token count updates when streaming
+const TOKEN_UPDATE_INTERVAL_MS = 250;
+
+// Minimum delay (in ms) applied when stopping a task to ensure smooth UI/UX.
+const MINIMUM_STOP_TASK_DELAY_MS = 3000;
+
+// Maximum number of attempts to parse nested JSON strings in executeTool
+const MAX_JSON_PARSE_ATTEMPTS = 5;
+
+/**
+ * Threshold used to determine whether an AI response is "substantial" (in characters).
+ */
+const SUBSTANTIAL_RESPONSE_THRESHOLD = 50;
+
 /**
  * Extracts the first complete JSON object from a string.
  * Handles duplicate/concatenated JSON objects (LLM bug) like: {"key":"val"}{"key":"val"}
@@ -711,8 +725,8 @@ Current working directory: ${process.cwd()}`;
           // For now, we break immediately after a substantial response to avoid
           // the cascade of duplicate responses caused by "give it one more chance" logic.
 
-          // If the AI provided a substantial response (>50 chars), task is complete
-          if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
+          // If the AI provided a substantial response (>SUBSTANTIAL_RESPONSE_THRESHOLD chars), task is complete
+          if (assistantMessage.content && assistantMessage.content.trim().length > SUBSTANTIAL_RESPONSE_THRESHOLD) {
             break; // Task complete - bot gave a full response
           }
 
@@ -1077,7 +1091,7 @@ Current working directory: ${process.cwd()}`;
 
               // Emit token count update
               const now = Date.now();
-              if (now - lastTokenUpdate > 250) {
+              if (now - lastTokenUpdate > TOKEN_UPDATE_INTERVAL_MS) {
                 lastTokenUpdate = now;
                 yield {
                   type: "token_count",
@@ -1436,7 +1450,7 @@ Current working directory: ${process.cwd()}`;
       // Handle multiple layers of JSON encoding (API bug)
       // Keep parsing until we get an object, not a string
       let parseCount = 0;
-      while (typeof args === 'string' && parseCount < 5) {
+      while (typeof args === 'string' && parseCount < MAX_JSON_PARSE_ATTEMPTS) {
         parseCount++;
         try {
           args = JSON.parse(args);
@@ -2333,7 +2347,7 @@ Current working directory: ${process.cwd()}`;
 
     // Calculate remaining time to meet 3-second minimum
     const elapsed = Date.now() - startTime;
-    const minimumDelay = 3000;
+    const minimumDelay = MINIMUM_STOP_TASK_DELAY_MS;
     const remainingDelay = Math.max(0, minimumDelay - elapsed);
 
     // Wait for remaining time if needed
