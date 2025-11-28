@@ -32,7 +32,7 @@ dotenv.config();
 // No global output suppression functions needed
 
 // Global reference to current agent for cleanup
-let currentAgent: any = null;
+let currentAgent: GrokAgent | null = null;
 
 // Terminal restoration function
 function restoreTerminal() {
