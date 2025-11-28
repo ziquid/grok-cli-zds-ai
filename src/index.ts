@@ -422,9 +422,13 @@ async function processPromptHeadless(
 
     // Exit cleanly after processing
     process.exit(0);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Output error as plain text
-    console.log(`Error: ${error.message}`);
+    if (error && typeof error === "object" && "message" in error) {
+      console.log(`Error: ${(error as { message: string }).message}`);
+    } else {
+      console.log(`Error: ${String(error)}`);
+    }
     process.exit(1);
   }
 }
