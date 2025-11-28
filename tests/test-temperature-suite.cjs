@@ -11,7 +11,9 @@ const { execSync } = require('child_process');
 class TemperatureTestSuite {
     constructor() {
         this.results = [];
-        this.passed = this.failed = this.skipped = 0;
+        this.passed = 0;
+        this.failed = 0;
+        this.skipped = 0;
         this.startTime = Date.now();
     }
 
