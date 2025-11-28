@@ -268,8 +268,8 @@ export class GrokClient {
     };
 
     // Only include tools if the model supports them
-    if (this.supportsTools) {
-      requestPayload.tools = tools || [];
+    if (this.supportsTools && tools && tools.length > 0) {
+      requestPayload.tools = tools;
     }
 
     // Only add think parameter for backends that support it (Grok, Ollama)
