@@ -2981,7 +2981,7 @@ Current working directory: ${process.cwd()}`;
           this.emit('backendChange', { backend: state.backend });
           this.emit('modelChange', { model });
         } else {
-          console.warn(`Failed to restore backend: API key not found in environment variable ${state.apiKeyEnvVar}`);
+          console.warn("Failed to restore backend: API key not found in environment.");
         }
       } catch (error) {
         console.warn(`Failed to restore backend configuration:`, error);
