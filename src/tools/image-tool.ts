@@ -202,8 +202,15 @@ export class ImageTool implements ToolDiscovery {
       // Build command using joycaption
       let command = `joycaption '${filename.replace(/'/g, "'\\''")}'`;
 
+      let sanitizationWarning: string | undefined;
       if (prompt) {
-        command += ` --prompt "${prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+        // Sanitize prompt: allow only alphanumeric, spaces, periods, commas, dashes, and asterisks
+        const sanitized = prompt.replace(/[^a-zA-Z0-9 .,\-*]/g, '');
+        if (sanitized !== prompt) {
+          sanitizationWarning = `Prompt was sanitized from "${prompt}" to "${sanitized}"`;
+          console.warn(`Warning: Prompt contained invalid characters and was sanitized. Original: "${prompt}", Sanitized: "${sanitized}"`);
+        }
+        command += ` --prompt "${sanitized}"`;
       }
 
       try {
@@ -225,7 +232,8 @@ export class ImageTool implements ToolDiscovery {
         return {
           success: true,
           output: caption,
-          displayOutput: `Caption: ${caption}`
+          displayOutput: `Caption: ${caption}`,
+          ...(sanitizationWarning && { warning: sanitizationWarning })
         };
       } catch (error: any) {
         // Extract error details
