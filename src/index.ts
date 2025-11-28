@@ -505,10 +505,10 @@ program
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          error instanceof Error ? error.message : String(error)
         );
         process.exit(1);
       }
