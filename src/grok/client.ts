@@ -108,7 +108,7 @@ export class GrokClient {
 
       if (config.servers.length > 0) {
         await initializeMCPServers();
-        console.error(`MCP servers reinitialized.`);
+        console.info(`MCP servers reinitialized.`);
       }
     } catch (mcpError: any) {
       console.warn("MCP reinitialization failed:", mcpError);
