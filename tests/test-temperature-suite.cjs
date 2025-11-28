@@ -103,6 +103,34 @@ class TemperatureTestSuite {
 
     async testTC006_Hook_Command() {
         const check = await this.run('grep -r "TEMPERATURE" ./src/ 2>/dev/null || echo "not found"');
-        await this.record('TC006', 'Hook: TEMPERATURE command processing', 
+        await this.record('TC006', 'Hook: TEMPERATURE command processing',
             check.output.includes('TEMPERATURE') ? 'PASS' : 'SKIP',
-            check.output.includes('TEMPERATURE') ? 'TEMPER
+            check.output.includes('TEMPERATURE') ? 'TEMPERATURE command found' : 'Feature not yet implemented');
+    }
+
+    // Main execution
+    async runAll() {
+        this.log('\n═══════════════════════════════════════════════', '\x1b[36m');
+        this.log('║      TEMPERATURE TEST SUITE EXECUTION         ║', '\x1b[36m');
+        this.log('═══════════════════════════════════════════════', '\x1b[36m');
+        this.log('');
+
+        await this.testTC001_CLI_Valid();
+        await this.testTC002_CLI_Short();
+        await this.testTC003_CLI_Boundaries();
+        await this.testTC004_CLI_Default();
+        await this.testTC005_CLI_Invalid();
+        await this.testTC006_Hook_Command();
+
+        this.printSummary();
+
+        process.exit(this.failed > 0 ? 1 : 0);
+    }
+}
+
+// Execute test suite
+const suite = new TemperatureTestSuite();
+suite.runAll().catch(error => {
+    console.error('Test suite execution failed:', error);
+    process.exit(1);
+});
