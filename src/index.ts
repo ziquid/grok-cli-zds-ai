@@ -1081,10 +1081,14 @@ gitCommand
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message =
+          error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+            ? (error as any).message
+            : String(error);
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          message
         );
         process.exit(1);
       }
@@ -1111,8 +1115,12 @@ gitCommand
       // Validate API key
       try {
         validateApiKey(apiKey);
-      } catch (error: any) {
-        console.error(`❌ Error: ${error.message}`);
+      } catch (error: unknown) {
+        const message =
+          error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+            ? (error as any).message
+            : String(error);
+        console.error(`❌ Error: ${message}`);
         process.exit(1);
       }
 
@@ -1120,8 +1128,12 @@ gitCommand
       // It's only used for this session. Use the interactive prompt to save it permanently.
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog, temperature);
-    } catch (error: any) {
-      console.error("❌ Error during commit and push:", error.message);
+    } catch (error: unknown) {
+      const message =
+        error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+          ? (error as any).message
+          : String(error);
+      console.error("❌ Error during commit and push:", message);
       process.exit(1);
     }
   });
