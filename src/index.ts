@@ -325,8 +325,12 @@ Respond with ONLY the commit message, no additional text.`;
       console.log(`❌ git commit: ${commitResult.error || "Commit failed"}`);
       process.exit(1);
     }
-  } catch (error: any) {
-    console.error("❌ Error during commit and push:", error.message);
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "message" in error) {
+      console.error("❌ Error during commit and push:", (error as any).message);
+    } else {
+      console.error("❌ Error during commit and push:", error);
+    }
     process.exit(1);
   }
 }
