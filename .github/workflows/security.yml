@@ -11,6 +11,8 @@ on:
 jobs:
   security_scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
     - uses: actions/checkout@v3
