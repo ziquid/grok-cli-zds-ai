@@ -203,7 +203,7 @@ export class ImageTool implements ToolDiscovery {
       let command = `joycaption '${filename.replace(/'/g, "'\\''")}'`;
 
       if (prompt) {
-        command += ` --prompt "${prompt.replace(/"/g, '\\"')}"`;
+        command += ` --prompt "${prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
       }
 
       try {
