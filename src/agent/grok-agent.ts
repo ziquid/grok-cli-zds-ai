@@ -33,6 +33,58 @@ import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { executeOperationHook, executeToolApprovalHook, applyHookCommands } from "../utils/hook-executor.js";
 
+/**
+ * Extracts the first complete JSON object from a string.
+ * Handles duplicate/concatenated JSON objects (LLM bug) like: {"key":"val"}{"key":"val"}
+ * @param jsonString The string potentially containing concatenated JSON objects
+ * @returns The first complete JSON object, or the original string if no duplicates found
+ */
+function extractFirstJsonObject(jsonString: string): string {
+  if (!jsonString.includes('}{')) return jsonString;
+  try {
+    // Find the end of the first complete JSON object
+    let depth = 0;
+    let firstObjEnd = -1;
+    for (let i = 0; i < jsonString.length; i++) {
+      if (jsonString[i] === "{") depth++;
+      if (jsonString[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          firstObjEnd = i + 1;
+          break;
+        }
+      }
+    }
+    if (firstObjEnd > 0 && firstObjEnd < jsonString.length) {
+      // Extract and validate first object
+      const firstObj = jsonString.substring(0, firstObjEnd);
+      JSON.parse(firstObj); // Validate it's valid JSON
+      return firstObj;
+    }
+  } catch {
+    // If extraction fails, return the original string
+  }
+  return jsonString;
+}
+
+/**
+ * Cleans up LLM-generated JSON argument strings for tool calls.
+ * Removes duplicate/concatenated JSON objects and trims.
+ * @param args The raw arguments string from the tool call
+ * @returns Cleaned and sanitized argument string
+ */
+function sanitizeToolArguments(args: string | undefined): string {
+  let argsString = args?.trim() || "{}";
+
+  // Handle duplicate/concatenated JSON objects (LLM bug)
+  const extractedArgsString = extractFirstJsonObject(argsString);
+  if (extractedArgsString !== argsString) {
+    argsString = extractedArgsString;
+  }
+
+  return argsString;
+}
+
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
   content?: string;
@@ -90,7 +142,7 @@ export class GrokAgent extends EventEmitter {
   private activeTaskAction: string = "";
   private activeTaskColor: string = "white";
   private apiKeyEnvVar: string = "GROK_API_KEY";
-  private pendingContextEdit: { tmpJsonPath: string; contextFilePath: string } | null = null;
+  private pendingContextEditSession: { tmpJsonPath: string; contextFilePath: string } | null = null;
 
   constructor(
     apiKey: string,
@@ -459,32 +511,7 @@ Current working directory: ${process.cwd()}`;
           // Clean up tool call arguments before adding to conversation history
           // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
           const cleanedToolCalls = assistantMessage.tool_calls.map(toolCall => {
-            let argsString = toolCall.function.arguments?.trim() || "{}";
-
-            // Handle duplicate/concatenated JSON objects (LLM bug)
-            if (argsString.includes('}{')) {
-              try {
-                let depth = 0;
-                let firstObjEnd = -1;
-                for (let i = 0; i < argsString.length; i++) {
-                  if (argsString[i] === '{') depth++;
-                  if (argsString[i] === '}') {
-                    depth--;
-                    if (depth === 0) {
-                      firstObjEnd = i + 1;
-                      break;
-                    }
-                  }
-                }
-                if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
-                  const firstObj = argsString.substring(0, firstObjEnd);
-                  JSON.parse(firstObj); // Validate
-                  argsString = firstObj; // Use cleaned version
-                }
-              } catch (e) {
-                // Keep original if cleaning fails
-              }
-            }
+            let argsString = sanitizeToolArguments(toolCall.function.arguments);
 
             return {
               ...toolCall,
@@ -684,9 +711,16 @@ Current working directory: ${process.cwd()}`;
           // For now, we break immediately after a substantial response to avoid
           // the cascade of duplicate responses caused by "give it one more chance" logic.
 
-          // If the AI provided a substantial response (>50 chars), task is complete
-          if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
-            break; // Task complete - bot gave a full response
+          // Check for more robust completion signal
+          const finishReason = currentResponse?.choices?.[0]?.finish_reason;
+          if (finishReason === "stop" || finishReason === "completed" || finishReason === "task_complete") {
+            break; // Task complete - explicit completion signal from API
+          } else if (!finishReason) {
+            // Fallback: Heuristic for completion + warning
+            console.warn("No finish_reason provided - falling back to response length heuristic. Consider updating API to provide explicit completion signal.");
+            if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
+              break; // Task complete - bot gave a full response
+            }
           }
 
           // Short/empty response, give AI another chance
@@ -1079,32 +1113,7 @@ Current working directory: ${process.cwd()}`;
         // Clean up tool call arguments before adding to conversation history
         // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
         const cleanedToolCalls = accumulatedMessage.tool_calls?.map(toolCall => {
-          let argsString = toolCall.function.arguments?.trim() || "{}";
-
-          // Handle duplicate/concatenated JSON objects (LLM bug)
-          if (argsString.includes('}{')) {
-            try {
-              let depth = 0;
-              let firstObjEnd = -1;
-              for (let i = 0; i < argsString.length; i++) {
-                if (argsString[i] === '{') depth++;
-                if (argsString[i] === '}') {
-                  depth--;
-                  if (depth === 0) {
-                    firstObjEnd = i + 1;
-                    break;
-                  }
-                }
-              }
-              if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
-                const firstObj = argsString.substring(0, firstObjEnd);
-                JSON.parse(firstObj); // Validate
-                argsString = firstObj; // Use cleaned version
-              }
-            } catch (e) {
-              // Keep original if cleaning fails
-            }
-          }
+          let argsString = sanitizeToolArguments(toolCall.function.arguments);
 
           return {
             ...toolCall,
@@ -1423,35 +1432,10 @@ Current working directory: ${process.cwd()}`;
       // Handle duplicate/concatenated JSON objects (LLM bug)
       // Pattern: {"key":"val"}{"key":"val"}
       let hadDuplicateJson = false;
-      if (argsString.includes('}{')) {
-        try {
-          // Find the end of the first complete JSON object
-          let depth = 0;
-          let firstObjEnd = -1;
-          for (let i = 0; i < argsString.length; i++) {
-            if (argsString[i] === '{') depth++;
-            if (argsString[i] === '}') {
-              depth--;
-              if (depth === 0) {
-                firstObjEnd = i + 1;
-                break;
-              }
-            }
-          }
-
-          if (firstObjEnd > 0 && firstObjEnd < argsString.length) {
-            // Extract and validate first object
-            const firstObj = argsString.substring(0, firstObjEnd);
-            JSON.parse(firstObj); // Validate it's valid JSON
-
-            // Use only the first object
-            hadDuplicateJson = true;
-            argsString = firstObj;
-          }
-        } catch (e) {
-          // If extraction fails, continue with original string
-          // The error will be caught by the main JSON.parse below
-        }
+      const extractedArgsString = extractFirstJsonObject(argsString);
+      if (extractedArgsString !== argsString) {
+        hadDuplicateJson = true;
+        argsString = extractedArgsString;
       }
 
       let args = JSON.parse(argsString);
@@ -1912,16 +1896,16 @@ Current working directory: ${process.cwd()}`;
     return this.activeTaskColor;
   }
 
-  setPendingContextEdit(tmpJsonPath: string, contextFilePath: string): void {
-    this.pendingContextEdit = { tmpJsonPath, contextFilePath };
+  setPendingContextEditSession(tmpJsonPath: string, contextFilePath: string): void {
+    this.pendingContextEditSession = { tmpJsonPath, contextFilePath };
   }
 
-  getPendingContextEdit(): { tmpJsonPath: string; contextFilePath: string } | null {
-    return this.pendingContextEdit;
+  getPendingContextEditSession(): { tmpJsonPath: string; contextFilePath: string } | null {
+    return this.pendingContextEditSession;
   }
 
-  clearPendingContextEdit(): void {
-    this.pendingContextEdit = null;
+  clearPendingContextEditSession(): void {
+    this.pendingContextEditSession = null;
   }
 
   async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {

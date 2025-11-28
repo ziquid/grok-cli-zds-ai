@@ -214,7 +214,7 @@ export function useInputHandler({
     }
 
     // Check for pending context edit confirmation (stored in agent, survives re-renders)
-    const pendingEdit = agent.getPendingContextEdit();
+    const pendingEdit = agent.getPendingContextEditSession();
     if (pendingEdit) {
       const trimmed = userInput.trim().toLowerCase();
       const { tmpJsonPath, contextFilePath } = pendingEdit;
@@ -275,7 +275,7 @@ export function useInputHandler({
       }
 
       // Clear pending state
-      agent.clearPendingContextEdit();
+      agent.clearPendingContextEditSession();
       clearInput();
       return;
     }
@@ -744,7 +744,7 @@ Available models: ${modelNames.join(", ")}`,
           }
 
           // Store pending edit info in agent (survives re-renders)
-          agent.setPendingContextEdit(tmpJsonPath, contextFilePath);
+          agent.setPendingContextEditSession(tmpJsonPath, contextFilePath);
 
           // Add prompt to both agent history and React state BEFORE re-rendering
           const promptEntry: ChatEntry = {

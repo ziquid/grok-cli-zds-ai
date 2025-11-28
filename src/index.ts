@@ -786,7 +786,7 @@ program
             const input = result.input.trim();
 
             // Check for pending context edit confirmation
-            const pendingEdit = agent.getPendingContextEdit();
+            const pendingEdit = agent.getPendingContextEditSession();
             if (pendingEdit) {
               const trimmed = input.toLowerCase();
               const { tmpJsonPath, contextFilePath } = pendingEdit;
@@ -834,7 +834,7 @@ program
               }
 
               // Clear pending state
-              agent.clearPendingContextEdit();
+              agent.clearPendingContextEditSession();
               continue;
             }
 
@@ -964,7 +964,7 @@ program
                   }
 
                   // Store pending edit in agent
-                  agent.setPendingContextEdit(tmpJsonPath, contextFilePath);
+                  agent.setPendingContextEditSession(tmpJsonPath, contextFilePath);
 
                   // Print prompt
                   console.log('🔧 System:   Editor closed. Replace context with edited version? (y/n)');
