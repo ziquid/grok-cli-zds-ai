@@ -9,6 +9,9 @@ import { HELP_TEXT } from "../utils/slash-commands.js";
 import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
 
+// Timeout (ms) for double ESC detection
+const DOUBLE_ESC_TIMEOUT_MS = 500;
+
 interface UseInputHandlerProps {
   agent: GrokAgent;
   chatHistory: ChatEntry[];
@@ -66,7 +69,7 @@ export function useInputHandler({
 
   const handleEscape = () => {
     const now = Date.now();
-    if (now - lastEscapeTime.current < 500) {
+    if (now - lastEscapeTime.current < DOUBLE_ESC_TIMEOUT_MS) {
       // Double ESC: clear input
       setInput("");
       setCursorPosition(0);
