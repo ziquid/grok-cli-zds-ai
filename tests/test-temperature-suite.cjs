@@ -76,10 +76,12 @@ class TemperatureTestSuite {
     // ==================== ALL 23 TEST CASES ====================
     
     async testTC001_CLI_Valid() {
-        const check = await this.run('node ./dist/index.js --help 2>&1 || echo "no help"');
+        const check = await this.run('node ./dist/index.js --help 2>&1');
+        // Fallback to "no help" if command failed and no output is available
+        const output = (check.success && check.output) ? check.output : 'no help';
         await this.record('TC001', 'CLI: --temperature flag available', 
-            check.output.includes('temperature') ? 'PASS' : 'SKIP',
-            check.output.includes('temperature') ? 'Temperature option found' : 'Feature not yet implemented');
+            output.includes('temperature') ? 'PASS' : 'SKIP',
+            output.includes('temperature') ? 'Temperature option found' : 'Feature not yet implemented');
     }
 
     async testTC002_CLI_Short() {
