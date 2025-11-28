@@ -711,16 +711,9 @@ Current working directory: ${process.cwd()}`;
           // For now, we break immediately after a substantial response to avoid
           // the cascade of duplicate responses caused by "give it one more chance" logic.
 
-          // Check for more robust completion signal
-          const finishReason = currentResponse?.choices?.[0]?.finish_reason;
-          if (finishReason === "stop" || finishReason === "completed" || finishReason === "task_complete") {
-            break; // Task complete - explicit completion signal from API
-          } else if (!finishReason) {
-            // Fallback: Heuristic for completion + warning
-            console.warn("No finish_reason provided - falling back to response length heuristic. Consider updating API to provide explicit completion signal.");
-            if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
-              break; // Task complete - bot gave a full response
-            }
+          // If the AI provided a substantial response (>50 chars), task is complete
+          if (assistantMessage.content && assistantMessage.content.trim().length > 50) {
+            break; // Task complete - bot gave a full response
           }
 
           // Short/empty response, give AI another chance
