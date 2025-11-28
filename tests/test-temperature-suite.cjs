@@ -90,15 +90,48 @@ class TemperatureTestSuite {
     }
 
     async testTC003_CLI_Boundaries() {
-        await this.record('TC003', 'CLI: Boundary values (0.0, 5.0)', 'SKIP', 'Feature not yet implemented');
+        // Test lower boundary 0.0
+        const lowCheck = await this.run('node ./dist/index.js --temperature 0.0 2>&1');
+        // Test upper boundary 5.0
+        const highCheck = await this.run('node ./dist/index.js --temperature 5.0 2>&1');
+        const lowValid = lowCheck.output.match(/temperature.*0\.0/i) || lowCheck.output.match(/set.*0\.0/i);
+        const highValid = highCheck.output.match(/temperature.*5\.0/i) || highCheck.output.match(/set.*5\.0/i);
+        await this.record(
+            'TC003',
+            'CLI: Boundary values (0.0, 5.0)',
+            (lowValid && highValid) ? 'PASS' : 'FAIL',
+            (lowValid && highValid) ? 'Boundary values accepted as expected' : 'Boundary value error: should accept 0.0 and 5.0'
+        );
     }
 
     async testTC004_CLI_Default() {
-        await this.record('TC004', 'CLI: Default temperature value', 'SKIP', 'Feature not yet implemented');
+        // Run with no --temperature arg
+        const check = await this.run('node ./dist/index.js 2>&1');
+        // Search for a default value in output (change regex if your CLI prints differently)
+        const foundDefault = check.output.match(/temperature.*(default.*[0-9.]+|is set to [0-9.]+)/i);
+        await this.record(
+            'TC004',
+            'CLI: Default temperature value',
+            foundDefault ? 'PASS' : 'FAIL',
+            foundDefault ? `Default temperature found${foundDefault[0] ? ': '+foundDefault[0] : ''}` 
+                        : 'Default temperature not shown'
+        );
     }
 
     async testTC005_CLI_Invalid() {
-        await this.record('TC005', 'CLI: Invalid temperature rejection', 'SKIP', 'Feature not yet implemented');
+        // Try an invalid value (-1)
+        const negCheck = await this.run('node ./dist/index.js --temperature -1 2>&1');
+        // Try a non-numeric value
+        const alphaCheck = await this.run('node ./dist/index.js --temperature abc 2>&1');
+        // Look for "invalid" or error message in output (customize regex as needed)
+        const negRejected = negCheck.output.match(/invalid|error|not allowed|out of range/i);
+        const alphaRejected = alphaCheck.output.match(/invalid|error|not allowed|must be a number/i);
+        await this.record(
+            'TC005',
+            'CLI: Invalid temperature rejection',
+            (negRejected && alphaRejected) ? 'PASS' : 'FAIL',
+            (negRejected && alphaRejected) ? 'Invalid values correctly rejected' : 'Expected rejection of invalid values'
+        );
     }
 
     async testTC006_Hook_Command() {
