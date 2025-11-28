@@ -274,9 +274,10 @@ export class GrokClient {
 
     // Only add think parameter for backends that support it (Grok, Ollama)
     const backendLower = this.backendName.toLowerCase();
+    // Secure host check for "x.ai" (Grok)
     const supportsThink = backendLower === 'grok' ||
                           backendLower === 'ollama' ||
-                          this.client.baseURL?.includes('x.ai');
+                          (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['x.ai', 'api.x.ai']) : false);
     if (supportsThink) {
       requestPayload.think = false;
     }
@@ -294,15 +295,16 @@ export class GrokClient {
     const supportsToolChoice = backendLower === 'grok' ||
                                backendLower === 'openai' ||
                                backendLower === 'openrouter' ||
-                               this.client.baseURL?.includes('x.ai') ||
-                               this.client.baseURL?.includes('openai.com') ||
-                               this.client.baseURL?.includes('openrouter.ai');
+                               (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['x.ai', 'api.x.ai']) : false) ||
+                               (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['openai.com', 'api.openai.com']) : false) ||
+                               (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['openrouter.ai', 'api.openrouter.ai']) : false);
     if (this.supportsTools && supportsToolChoice && tools && tools.length > 0) {
       requestPayload.tool_choice = "auto";
     }
 
     // Add search parameters if specified and using Grok API (x.ai)
-    if (searchOptions?.search_parameters && this.client.baseURL?.includes('x.ai')) {
+    if (searchOptions?.search_parameters &&
+        (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['x.ai', 'api.x.ai']) : false)) {
       requestPayload.search_parameters = searchOptions.search_parameters;
     }
 
@@ -401,5 +403,19 @@ export class GrokClient {
     };
 
     return this.chat([searchMessage], [], undefined, searchOptions);
+  }
+
+  /**
+   * Returns true if the host part of baseURL matches one of the allowedHosts or a subdomain thereof.
+   */
+  private isAllowedHost(urlString: string, allowedHosts: string[]): boolean {
+    try {
+      const { hostname } = new URL(urlString);
+      return allowedHosts.some(allowedHost =>
+        hostname === allowedHost || hostname.endsWith(`.${allowedHost}`)
+      );
+    } catch (e) {
+      return false;
+    }
   }
 }
