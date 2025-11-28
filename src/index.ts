@@ -32,7 +32,7 @@ dotenv.config();
 // No global output suppression functions needed
 
 // Global reference to current agent for cleanup
-let currentAgent: any = null;
+let currentAgent: GrokAgent | null = null;
 
 // Terminal restoration function
 function restoreTerminal() {
@@ -325,8 +325,12 @@ Respond with ONLY the commit message, no additional text.`;
       console.log(`❌ git commit: ${commitResult.error || "Commit failed"}`);
       process.exit(1);
     }
-  } catch (error: any) {
-    console.error("❌ Error during commit and push:", error.message);
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "message" in error) {
+      console.error("❌ Error during commit and push:", (error as any).message);
+    } else {
+      console.error("❌ Error during commit and push:", error);
+    }
     process.exit(1);
   }
 }
@@ -422,9 +426,13 @@ async function processPromptHeadless(
 
     // Exit cleanly after processing
     process.exit(0);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Output error as plain text
-    console.log(`Error: ${error.message}`);
+    if (error && typeof error === "object" && "message" in error) {
+      console.log(`Error: ${(error as { message: string }).message}`);
+    } else {
+      console.log(`Error: ${String(error)}`);
+    }
     process.exit(1);
   }
 }
@@ -505,10 +513,10 @@ program
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          error instanceof Error ? error.message : String(error)
         );
         process.exit(1);
       }
@@ -1081,10 +1089,14 @@ gitCommand
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message =
+          error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+            ? (error as any).message
+            : String(error);
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          message
         );
         process.exit(1);
       }
@@ -1111,8 +1123,12 @@ gitCommand
       // Validate API key
       try {
         validateApiKey(apiKey);
-      } catch (error: any) {
-        console.error(`❌ Error: ${error.message}`);
+      } catch (error: unknown) {
+        const message =
+          error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+            ? (error as any).message
+            : String(error);
+        console.error(`❌ Error: ${message}`);
         process.exit(1);
       }
 
@@ -1120,8 +1136,12 @@ gitCommand
       // It's only used for this session. Use the interactive prompt to save it permanently.
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds, options.debugLog, temperature);
-    } catch (error: any) {
-      console.error("❌ Error during commit and push:", error.message);
+    } catch (error: unknown) {
+      const message =
+        error && typeof error === "object" && "message" in error && typeof (error as any).message === "string"
+          ? (error as any).message
+          : String(error);
+      console.error("❌ Error during commit and push:", message);
       process.exit(1);
     }
   });
