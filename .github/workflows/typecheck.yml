@@ -1,4 +1,6 @@
 name: Type Check
+permissions:
+  contents: read
 
 on:
   push:
