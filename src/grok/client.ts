@@ -397,6 +397,14 @@ export class GrokClient {
       role: "user",
       content: query,
     };
+
+    const searchOptions: SearchOptions = {
+      search_parameters: searchParameters || { mode: "on" },
+    };
+
+    return this.chat([searchMessage], [], undefined, searchOptions);
+  }
+
   /**
    * Returns true if the host part of baseURL matches one of the allowedHosts or a subdomain thereof.
    */
@@ -409,12 +417,5 @@ export class GrokClient {
     } catch (e) {
       return false;
     }
-  }
-
-    const searchOptions: SearchOptions = {
-      search_parameters: searchParameters || { mode: "on" },
-    };
-
-    return this.chat([searchMessage], [], undefined, searchOptions);
   }
 }
