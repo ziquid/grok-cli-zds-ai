@@ -1,9 +1,9 @@
-import { spawn } from "child_process";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import fs from "fs-extra";
 import * as path from "path";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
+import { RipGrep } from "ripgrep-node";
 
 export interface SearchResult {
   file: string;
@@ -127,7 +127,7 @@ export class SearchTool implements ToolDiscovery {
   }
 
   /**
-   * Execute ripgrep command with specified options
+   * Execute ripgrep command with specified options using ripgrep-node
    */
   private async _executeRipgrep(
     query: string,
@@ -142,110 +142,85 @@ export class SearchTool implements ToolDiscovery {
       excludeFiles?: string[];
     }
   ): Promise<SearchResult[]> {
-    return new Promise((resolve, reject) => {
-      const args = [
-        "--json",
-        "--with-filename",
-        "--line-number",
-        "--column",
-        "--no-heading",
-        "--color=never",
-      ];
+    try {
+      // Create RipGrep instance with pattern and search directory
+      let rg = new RipGrep(query, this.currentDirectory);
+
+      // Configure ripgrep with chained method calls
+      rg = rg
+        .json()
+        .withFilename()
+        .lineNumber()
+        .column()
+        .noHeading()
+        .color("never");
 
       // Add case sensitivity
       if (!options.caseSensitive) {
-        args.push("--ignore-case");
+        rg = rg.ignoreCase();
       }
 
       // Add whole word matching
       if (options.wholeWord) {
-        args.push("--word-regexp");
+        rg = rg.wordRegexp();
       }
 
       // Add regex mode
       if (!options.regex) {
-        args.push("--fixed-strings");
+        rg = rg.fixedStrings();
       }
 
       // Add max results limit
       if (options.maxResults) {
-        args.push("--max-count", options.maxResults.toString());
+        rg = rg.maxCount(options.maxResults);
       }
 
       // Add file type filters
       if (options.fileTypes) {
         options.fileTypes.forEach((type) => {
-          args.push("--type", type);
+          rg = rg.type(type);
         });
       }
 
       // Add include pattern
       if (options.includePattern) {
-        args.push("--glob", options.includePattern);
+        rg = rg.glob(options.includePattern);
       }
 
       // Add exclude pattern
       if (options.excludePattern) {
-        args.push("--glob", `!${options.excludePattern}`);
+        rg = rg.glob(`!${options.excludePattern}`);
       }
 
       // Add exclude files
       if (options.excludeFiles) {
         options.excludeFiles.forEach((file) => {
-          args.push("--glob", `!${file}`);
+          rg = rg.glob(`!${file}`);
         });
       }
 
       // Respect gitignore and common ignore patterns
-      args.push(
-        "--no-require-git",
-        "--follow",
-        "--glob",
-        "!.git/**",
-        "--glob",
-        "!node_modules/**",
-        "--glob",
-        "!.DS_Store",
-        "--glob",
-        "!*.log"
-      );
+      rg = rg
+        .follow()
+        .glob("!.git/**")
+        .glob("!node_modules/**")
+        .glob("!.DS_Store")
+        .glob("!*.log");
 
-      // Add query (search current directory)
-      args.push(query, ".");
+      // Execute search and get JSON output
+      const output = rg.run().asString();
 
-      const rg = spawn("rg", args, {
-        cwd: this.currentDirectory,
-      });
-      let output = "";
-      let errorOutput = "";
-
-      rg.stdout.on("data", (data) => {
-        output += data.toString();
-      });
-
-      rg.stderr.on("data", (data) => {
-        errorOutput += data.toString();
-      });
-
-      rg.on("close", (code) => {
-        if (code === 0 || code === 1) {
-          // 0 = found, 1 = not found
-          const results = this.parseRipgrepOutput(output);
-          resolve(results);
-        } else if (code === 2) {
-          // Code 2 means an error occurred (e.g., file path issues)
-          // Return partial results if we have them, otherwise fail silently
-          const results = this.parseRipgrepOutput(output);
-          resolve(results);
-        } else {
-          reject(new Error(`Ripgrep failed with code ${code}: ${errorOutput}`));
-        }
-      });
-
-      rg.on("error", (error) => {
-        reject(error);
-      });
-    });
+      // Parse the output
+      const results = this.parseRipgrepOutput(output);
+      return results;
+    } catch (error: any) {
+      // ripgrep-node throws an error when no results found
+      // Return empty array instead of throwing
+      if (error.message && error.message.includes("No matches found")) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   /**

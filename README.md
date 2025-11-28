@@ -2,7 +2,7 @@
 
 A conversational AI CLI tool powered by Grok with intelligent text editor capabilities and tool usage.
 
-<img width="980" height="435" alt="Screenshot 2025-07-21 at 13 35 41" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
+<img width="720" height="528" alt="Image" src="https://github.com/user-attachments/assets/f697a273-141e-4f02-8c15-37143aa7ec0e" />
 
 ## Features
 
@@ -21,6 +21,26 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 - Bun 1.0+ (or Node.js 18+ as fallback)
 - GROK API key from X.AI
 - (Optional, Recommended) Morph API key for Fast Apply editing
+
+### System Dependencies
+
+zai-cli requires the following system tools for certain features:
+
+- **ripgrep** (required for search functionality)
+  - macOS: `brew install ripgrep`
+  - Ubuntu/Debian: `apt install ripgrep`
+  - Windows: `choco install ripgrep` or download from [releases](https://github.com/BurntSushi/ripgrep/releases)
+  - Other platforms: See [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation)
+
+- **Python 3 with openpyxl** (optional, required for XLSX file reading)
+  - Install: `pip3 install openpyxl` or `python3 -m pip install openpyxl`
+  - Most systems already have Python 3 installed
+
+- **exiftool** (optional, required for PNG metadata extraction)
+  - macOS: `brew install exiftool`
+  - Ubuntu/Debian: `apt install libimage-exiftool-perl`
+  - Windows: Download from [exiftool.org](https://exiftool.org/)
+  - Other platforms: See [exiftool installation guide](https://exiftool.org/install.html)
 
 ### Global Installation (Recommended)
 
@@ -49,52 +69,52 @@ bun link
 1. Get your GROK API key from [X.AI](https://x.ai)
 
 2. Set up your API key (choose one method):
-
-**Method 1: Environment Variable**
-
-```sh
-export GROK_API_KEY=your_api_key_here
-```
-
-**Method 2: .env File**
-
-```sh
-cp .env.example .env
-# Edit .env and add your API key
-```
-
-**Method 3: Command Line Flag**
-
-```sh
-zai-cli --api-key your_api_key_here
-```
-
-**Method 4: User Settings File**
-
-Create `~/.grok/user-settings.json`:
-
-```json
-{
-  "apiKey": "your_api_key_here"
-}
-```
+    
+    **Method 1: Environment Variable**
+    
+    ```sh
+    export GROK_API_KEY=your_api_key_here
+    ```
+    
+    **Method 2: .env File**
+    
+    ```sh
+    cp .env.example .env
+    # Edit .env and add your API key
+    ```
+    
+    **Method 3: Command Line Flag**
+    
+    ```sh
+    zai-cli --api-key your_api_key_here
+    ```
+    
+    **Method 4: User Settings File**
+    
+    Create `~/.grok/user-settings.json`:
+    
+    ```json
+    {
+      "apiKey": "your_api_key_here"
+    }
+    ```
 
 3. (Optional, Recommended) Get your Morph API key from [Morph Dashboard](https://morphllm.com/dashboard/api-keys)
 
 4. Set up your Morph API key for Fast Apply editing (choose one method):
 
-**Method 1: Environment Variable**
-
-```sh
-export MORPH_API_KEY=your_morph_api_key_here
-```
-
-**Method 2: .env File**
-
-```sh
-# Add to your .env file
-MORPH_API_KEY=your_morph_api_key_here
-```
+    **Method 1: Environment Variable**
+    
+    ```sh
+    export MORPH_API_KEY=your_morph_api_key_here
+    ```
+    
+    **Method 2: .env File**
+    
+    ```sh
+    # Add to your .env file
+    MORPH_API_KEY=your_morph_api_key_here
+    ```
 
 ### Custom Base URL (Optional)
 

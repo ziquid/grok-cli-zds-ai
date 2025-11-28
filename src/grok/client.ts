@@ -75,7 +75,12 @@ export class GrokClient {
       // Simple fallback: extract hostname from URL
       try {
         const url = new URL(finalBaseURL);
-        this.backendName = url.hostname.replace(/^api\./, '').replace(/\..*$/, '');
+        // Special case: api.x.ai should be "grok" not "x"
+        if (url.hostname === 'api.x.ai') {
+          this.backendName = 'grok';
+        } else {
+          this.backendName = url.hostname.replace(/^api\./, '').replace(/\..*$/, '');
+        }
       } catch {
         this.backendName = 'AI';
       }
