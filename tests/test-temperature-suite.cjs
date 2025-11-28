@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * COMPREHENSIVE TEST SUITE FOR TEMPERATURE SETTINGS FEATURE
- * All 23 test cases from the allow-temperature-changes test plan
+ * Implements 6 test cases from the allow-temperature-changes test plan (TC001-TC006)
  * Created for 10-minute deadline
  */
 
