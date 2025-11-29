@@ -452,7 +452,15 @@ program
   .option(
     "-t, --temperature <temp>",
     "temperature for API requests (0.0-2.0, default: 0.7)",
-    "0.7"
+    (value) => {
+      const temp = parseFloat(value);
+      if (isNaN(temp) || temp < 0 || temp > 2) {
+        console.error(`Error: Temperature must be between 0.0 and 2.0 (got ${value})`);
+        process.exit(1);
+      }
+      return temp;
+    },
+    0.7
   )
   .option(
     "--max-tokens <tokens>",
@@ -602,7 +610,7 @@ program
               .filter(cmd => cmd.length > 0)
           : [];
 
-        const temperature = parseFloat(options.temperature) || 0.7;
+        const temperature = options.temperature ?? 0.7;
         const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
 
         await processPromptHeadless(
@@ -631,7 +639,7 @@ program
       const loadedContext = options.fresh ? { systemPrompt: "", chatHistory: [] } : historyManager.loadContext();
       const hasSystemPrompt = loadedContext.systemPrompt && loadedContext.systemPrompt.trim().length > 0;
       const runStartupHook = !hasSystemPrompt; // Run hook if no system prompt exists
-      const temperature = parseFloat(options.temperature) || 0.7;
+      const temperature = options.temperature ?? 0.7;
       const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
       const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature, maxTokens);
       currentAgent = agent; // Store reference for cleanup
@@ -1062,7 +1070,15 @@ gitCommand
   .option(
     "-t, --temperature <temp>",
     "temperature for API requests (0.0-2.0, default: 0.7)",
-    "0.7"
+    (value) => {
+      const temp = parseFloat(value);
+      if (isNaN(temp) || temp < 0 || temp > 2) {
+        console.error(`Error: Temperature must be between 0.0 and 2.0 (got ${value})`);
+        process.exit(1);
+      }
+      return temp;
+    },
+    0.7
   )
   .option(
     "--max-tokens <tokens>",
@@ -1106,7 +1122,7 @@ gitCommand
       }
 
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
-      const temperature = parseFloat(options.temperature) || 0.7;
+      const temperature = options.temperature ?? 0.7;
 
       // Validate API key
       try {

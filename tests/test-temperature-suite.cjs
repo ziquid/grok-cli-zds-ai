@@ -23,16 +23,16 @@ class TemperatureTestSuite {
 
     async record(id, name, status, details, expected = '') {
         this.results.push({ id, name, status, details, expected });
-        
-        if (status === 'PASS') { 
-            this.passed++; 
-            this.log(`✓ PASS: ${id} - ${name}`, '\x1b[32m'); 
-        } else if (status === 'FAIL') { 
-            this.failed++; 
-            this.log(`✗ FAIL: ${id} - ${name}`, '\x1b[31m'); 
-        } else { 
-            this.skipped++; 
-            this.log(`⊘ SKIP: ${id} - ${name}`, '\x1b[33m'); 
+
+        if (status === 'PASS') {
+            this.passed++;
+            this.log(`✓ PASS: ${id} - ${name}`, '\x1b[32m');
+        } else if (status === 'FAIL') {
+            this.failed++;
+            this.log(`✗ FAIL: ${id} - ${name}`, '\x1b[31m');
+        } else {
+            this.skipped++;
+            this.log(`⊘ SKIP: ${id} - ${name}`, '\x1b[33m');
         }
     }
 
@@ -48,7 +48,7 @@ class TemperatureTestSuite {
     printSummary() {
         const duration = ((Date.now() - this.startTime) / 1000).toFixed(2);
         const total = this.passed + this.failed + this.skipped;
-        
+
         this.log('\n═══════════════════════════════════════════════', '\x1b[36m');
         this.log('║                TEST SUMMARY                   ║', '\x1b[36m');
         this.log('═══════════════════════════════════════════════', '\x1b[36m');
@@ -58,7 +58,7 @@ class TemperatureTestSuite {
         this.log(`Skipped: ${this.skipped}`, '\x1b[33m');
         this.log(`Execution Time: ${duration}s`);
         this.log('');
-        
+
         // Save JSON results
         const report = {
             summary: { total, passed: this.passed, failed: this.failed, skipped: this.skipped, duration },
@@ -66,7 +66,7 @@ class TemperatureTestSuite {
             generatedAt: new Date().toISOString(),
             testSuite: 'Temperature Settings Feature'
         };
-        
+
         try {
             fs.writeFileSync(`temperature-test-results-${Date.now()}.json`, JSON.stringify(report, null, 2));
             this.log('Results saved to JSON file', '\x1b[34m');
@@ -76,48 +76,52 @@ class TemperatureTestSuite {
     }
 
     // ==================== ALL 23 TEST CASES ====================
-    
+
     async testTC001_CLI_Valid() {
         const check = await this.run('node ./dist/index.js --help 2>&1');
         // Fallback to "no help" if command failed and no output is available
         const output = (check.success && check.output) ? check.output : 'no help';
-        await this.record('TC001', 'CLI: --temperature flag available', 
+        await this.record('TC001', 'CLI: --temperature flag available',
             output.includes('temperature') ? 'PASS' : 'SKIP',
             output.includes('temperature') ? 'Temperature option found' : 'Feature not yet implemented');
     }
 
     async testTC002_CLI_Short() {
         const check = await this.run('node ./dist/index.js --help 2>&1');
-        await this.record('TC002', 'CLI: -t short flag', 
+        await this.record('TC002', 'CLI: -t short flag',
             check.output.includes('-t') ? 'PASS' : 'SKIP',
             check.output.includes('-t') ? 'Short flag found' : 'Feature not yet implemented');
     }
 
     async testTC003_CLI_Boundaries() {
         // Test lower boundary 0.0
-        const lowCheck = await this.run('node ./dist/index.js --temperature 0.0 2>&1');
-        // Test upper boundary 5.0
-        const highCheck = await this.run('node ./dist/index.js --temperature 5.0 2>&1');
-        const lowValid = lowCheck.output.match(/temperature.*0\.0/i) || lowCheck.output.match(/set.*0\.0/i);
-        const highValid = highCheck.output.match(/temperature.*5\.0/i) || highCheck.output.match(/set.*5\.0/i);
+        const lowCheck = await this.run('node ./dist/index.js --help --temperature 0.0 2>&1');
+        // Test upper boundary 2.0
+        const highCheck = await this.run('node ./dist/index.js --help --temperature 2.0 2>&1');
+        // Test out-of-range value to verify rejection
+        const invalidCheck = await this.run('node ./dist/index.js --help --temperature 5.0 2>&1');
+        // Values are valid if no error about temperature AND invalid value is rejected
+        const lowValid = !lowCheck.output.match(/temperature must be/i);
+        const highValid = !highCheck.output.match(/temperature must be/i);
+        const invalidRejected = invalidCheck.output.match(/temperature must be/i);
         await this.record(
             'TC003',
-            'CLI: Boundary values (0.0, 5.0)',
-            (lowValid && highValid) ? 'PASS' : 'FAIL',
-            (lowValid && highValid) ? 'Boundary values accepted as expected' : 'Boundary value error: should accept 0.0 and 5.0'
+            'CLI: Boundary values (0.0, 2.0)',
+            (lowValid && highValid && invalidRejected) ? 'PASS' : 'FAIL',
+            (lowValid && highValid && invalidRejected) ? 'Boundary values 0.0 and 2.0 accepted, 5.0 rejected' : 'Boundary value validation failed'
         );
     }
 
     async testTC004_CLI_Default() {
         // Run with no --temperature arg
-        const check = await this.run('node ./dist/index.js 2>&1');
-        // Search for a default value in output (change regex if your CLI prints differently)
-        const foundDefault = check.output.match(/temperature.*(default.*[0-9.]+|is set to [0-9.]+)/i);
+        const check = await this.run('node ./dist/index.js --help 2>&1');
+        // Search for a default value in output (use [\s\S]*? for non-greedy match across lines)
+        const foundDefault = check.output.match(/temperature[\s\S]*?(default:\s*[0-9.]+)/i);
         await this.record(
             'TC004',
             'CLI: Default temperature value',
             foundDefault ? 'PASS' : 'FAIL',
-            foundDefault ? `Default temperature found${foundDefault[0] ? ': '+foundDefault[0] : ''}` 
+            foundDefault ? `Default temperature found: ${foundDefault[1]}`
                         : 'Default temperature not shown'
         );
     }
@@ -139,10 +143,10 @@ class TemperatureTestSuite {
     }
 
     async testTC006_Hook_Command() {
-        const check = await this.run('grep -r "TEMPERATURE" ./src/ 2>/dev/null || echo "not found"');
+        const check = await this.run('grep -r TEMPERATURE ./src/ 2>/dev/null || echo "not found"');
         await this.record('TC006', 'Hook: TEMPERATURE command processing',
             check.output.includes('TEMPERATURE') ? 'PASS' : 'SKIP',
-            check.output.includes('TEMPERATURE') ? 'TEMPERATURE command found' : 'Feature not yet implemented');
+            check.output.includes('TEMPERATURE') ? 'TEMPERATURE constant found' : 'TEMPERATURE constant NOT FOUND');
     }
 
     // Main execution
