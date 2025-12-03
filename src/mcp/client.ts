@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResult, CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { EventEmitter } from "events";
 import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
 import crypto from "crypto";
@@ -82,9 +82,7 @@ export class MCPManager extends EventEmitter {
           version: "1.0.0"
         },
         {
-          capabilities: {
-            tools: {}
-          }
+          capabilities: {}
         }
       );
 
@@ -218,7 +216,7 @@ export class MCPManager extends EventEmitter {
     return await client.callTool({
       name: tool.originalToolName,
       arguments: arguments_
-    });
+    }, CallToolResultSchema) as CallToolResult;
   }
 
   async getTools(): Promise<MCPTool[]> {
