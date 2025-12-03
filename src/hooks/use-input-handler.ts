@@ -8,6 +8,7 @@ import { HELP_TEXT } from "../utils/slash-commands.js";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
+import { handleRephraseChoice } from "../utils/rephrase-handler.js";
 
 // Timeout (ms) for double ESC detection
 const DOUBLE_ESC_TIMEOUT_MS = 500;
@@ -58,6 +59,8 @@ export function useInputHandler({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [showRephraseMenu, setShowRephraseMenu] = useState(false);
+  const [selectedRephraseIndex, setSelectedRephraseIndex] = useState(0);
   const [autoEditEnabled, setAutoEditEnabled] = useState(() => {
     const confirmationService = ConfirmationService.getInstance();
     const sessionFlags = confirmationService.getSessionFlags();
@@ -87,6 +90,16 @@ export function useInputHandler({
     if (showModelSelection) {
       setShowModelSelection(false);
       setSelectedModelIndex(0);
+      return;
+    }
+    if (showRephraseMenu) {
+      // ESC in rephrase menu = cancel (option 5)
+      const result = handleRephraseChoice("5", agent);
+      const historyManager = ChatHistoryManager.getInstance();
+      historyManager.saveContext(agent.getSystemPrompt(), result.updatedChatHistory, agent.getSessionState());
+      setChatHistory(result.updatedChatHistory);
+      setShowRephraseMenu(false);
+      setSelectedRephraseIndex(0);
       return;
     }
     if (isProcessing || isStreaming) {
@@ -203,6 +216,38 @@ export function useInputHandler({
         setChatHistory((prev) => [...prev, confirmEntry]);
         setShowModelSelection(false);
         setSelectedModelIndex(0);
+        return true;
+      }
+    }
+
+    // Handle rephrase menu navigation
+    if (showRephraseMenu) {
+      const numOptions = 5;
+
+      if (key.upArrow) {
+        setSelectedRephraseIndex((prev) =>
+          prev === 0 ? numOptions - 1 : prev - 1
+        );
+        return true;
+      }
+      if (key.downArrow) {
+        setSelectedRephraseIndex((prev) => (prev + 1) % numOptions);
+        return true;
+      }
+      if (key.tab || key.return) {
+        const choice = String(selectedRephraseIndex + 1);
+        const result = handleRephraseChoice(choice, agent);
+        const historyManager = ChatHistoryManager.getInstance();
+        historyManager.saveContext(agent.getSystemPrompt(), result.updatedChatHistory, agent.getSessionState());
+        setChatHistory(result.updatedChatHistory);
+        setShowRephraseMenu(false);
+        setSelectedRephraseIndex(0);
+
+        // If preFillPrompt exists (options 3 and 4), set input
+        if (result.preFillPrompt) {
+          setInput(result.preFillPrompt);
+          setCursorPosition(result.preFillPrompt.length);
+        }
         return true;
       }
     }
@@ -329,6 +374,25 @@ export function useInputHandler({
     // Handle ESC and Ctrl+C during streaming/processing (bypass normal input handling)
     if ((isProcessing || isStreaming) && (key.escape || (key.ctrl && inputChar === "c") || inputChar === "\x03")) {
       handleEscape();
+    }
+  });
+
+  // Additional input handler for rephrase menu number keys
+  useInput((inputChar: string, key: Key) => {
+    if (showRephraseMenu && inputChar >= "1" && inputChar <= "5") {
+      const choice = inputChar;
+      const result = handleRephraseChoice(choice, agent);
+      const historyManager = ChatHistoryManager.getInstance();
+      historyManager.saveContext(agent.getSystemPrompt(), result.updatedChatHistory, agent.getSessionState());
+      setChatHistory(result.updatedChatHistory);
+      setShowRephraseMenu(false);
+      setSelectedRephraseIndex(0);
+
+      // If preFillPrompt exists (options 3 and 4), set input
+      if (result.preFillPrompt) {
+        setInput(result.preFillPrompt);
+        setCursorPosition(result.preFillPrompt.length);
+      }
     }
   });
 
@@ -1267,6 +1331,13 @@ Respond with ONLY the commit message, no additional text.`;
       setIsStreaming(false);
     }
 
+    // Check if this was a rephrase command and show menu
+    const rephraseState = agent.getRephraseState();
+    if (rephraseState) {
+      setShowRephraseMenu(true);
+      setSelectedRephraseIndex(0);
+    }
+
     setIsProcessing(false);
     processingStartTime.current = 0;
   };
@@ -1279,6 +1350,8 @@ Respond with ONLY the commit message, no additional text.`;
     selectedCommandIndex,
     showModelSelection,
     selectedModelIndex,
+    showRephraseMenu,
+    selectedRephraseIndex,
     commandSuggestions,
     availableModels,
     agent,

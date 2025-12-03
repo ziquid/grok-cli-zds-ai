@@ -7,6 +7,7 @@ import { useInputHandler } from "../../hooks/use-input-handler.js";
 import { LoadingSpinner } from "./loading-spinner.js";
 import { CommandSuggestions } from "./command-suggestions.js";
 import { ModelSelection } from "./model-selection.js";
+import { RephraseMenu } from "./rephrase-menu.js";
 import { ChatHistory } from "./chat-history.js";
 import { ChatInput } from "./chat-input.js";
 import { MCPStatus } from "./mcp-status.js";
@@ -60,6 +61,8 @@ function ChatInterfaceWithAgent({
     selectedCommandIndex,
     showModelSelection,
     selectedModelIndex,
+    showRephraseMenu,
+    selectedRephraseIndex,
     commandSuggestions,
     availableModels,
     autoEditEnabled,
@@ -521,6 +524,12 @@ function ChatInterfaceWithAgent({
             selectedIndex={selectedModelIndex}
             isVisible={showModelSelection}
             currentModel={agent.getCurrentModel()}
+          />
+
+          <RephraseMenu
+            messageType={agent.getRephraseState()?.messageType || "user"}
+            selectedIndex={selectedRephraseIndex}
+            isVisible={showRephraseMenu}
           />
         </>
       )}

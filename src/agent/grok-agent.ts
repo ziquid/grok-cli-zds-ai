@@ -108,6 +108,10 @@ export interface ChatEntry {
   toolResult?: { success: boolean; output?: string; error?: string; displayOutput?: string };
   isStreaming?: boolean;
   preserveFormatting?: boolean;
+  metadata?: {
+    rephrased_note?: string;
+    [key: string]: any;
+  };
 }
 
 export interface StreamingChunk {
@@ -157,6 +161,12 @@ export class GrokAgent extends EventEmitter {
   private activeTaskColor: string = "white";
   private apiKeyEnvVar: string = "GROK_API_KEY";
   private pendingContextEditSession: { tmpJsonPath: string; contextFilePath: string } | null = null;
+  private rephraseState: {
+    originalAssistantMessageIndex: number;
+    rephraseRequestIndex: number;
+    newResponseIndex: number;
+    messageType: "user" | "system";
+  } | null = null;
 
   constructor(
     apiKey: string,
@@ -438,6 +448,43 @@ Current working directory: ${process.cwd()}`;
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // Detect rephrase commands
+    let isRephraseCommand = false;
+    let isSystemRephrase = false;
+    let messageToSend = message;
+    let messageType: "user" | "system" = "user";
+
+    if (message.startsWith("/system rephrase")) {
+      isRephraseCommand = true;
+      isSystemRephrase = true;
+      messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
+      messageType = "system";
+    } else if (message.startsWith("/rephrase")) {
+      isRephraseCommand = true;
+      messageToSend = message; // Keep full text including "/rephrase"
+      messageType = "user";
+    }
+
+    // If this is a rephrase command, find the last assistant message
+    if (isRephraseCommand) {
+      // Find index of last assistant message in chatHistory
+      let lastAssistantIndex = -1;
+      for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+        if (this.chatHistory[i].type === "assistant") {
+          lastAssistantIndex = i;
+          break;
+        }
+      }
+
+      if (lastAssistantIndex === -1) {
+        throw new Error("No previous assistant message to rephrase");
+      }
+
+      // Store rephrase state (will be updated with newResponseIndex after response)
+      // For now, just mark that we're in rephrase mode
+      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType);
+    }
+
     // Before adding the new user message, check if there are incomplete tool calls
     // from a previous interrupted turn. This prevents malformed message sequences
     // that cause Ollama 500 errors.
@@ -470,14 +517,14 @@ Current working directory: ${process.cwd()}`;
       }
     }
 
-    // Add user message to conversation
+    // Add user/system message to conversation
     const userEntry: ChatEntry = {
-      type: "user",
-      content: message,
+      type: messageType,
+      content: messageToSend,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: "user", content: message });
+    this.messages.push({ role: messageType, content: messageToSend });
     await this.emitContextChange();
 
     const newEntries: ChatEntry[] = [userEntry];
@@ -715,6 +762,17 @@ Current working directory: ${process.cwd()}`;
               content: trimmedContent,
             });
             newEntries.push(responseEntry);
+
+            // Update rephrase state with the new response index
+            if (this.rephraseState && this.rephraseState.newResponseIndex === -1) {
+              const newResponseIndex = this.chatHistory.length - 1;
+              this.setRephraseState(
+                this.rephraseState.originalAssistantMessageIndex,
+                this.rephraseState.rephraseRequestIndex,
+                newResponseIndex,
+                this.rephraseState.messageType
+              );
+            }
           }
 
           // TODO: HACK - This is a temporary fix to prevent duplicate responses.
@@ -902,6 +960,43 @@ Current working directory: ${process.cwd()}`;
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
+    // Detect rephrase commands
+    let isRephraseCommand = false;
+    let isSystemRephrase = false;
+    let messageToSend = message;
+    let messageType: "user" | "system" = "user";
+
+    if (message.startsWith("/system rephrase")) {
+      isRephraseCommand = true;
+      isSystemRephrase = true;
+      messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
+      messageType = "system";
+    } else if (message.startsWith("/rephrase")) {
+      isRephraseCommand = true;
+      messageToSend = message; // Keep full text including "/rephrase"
+      messageType = "user";
+    }
+
+    // If this is a rephrase command, find the last assistant message
+    if (isRephraseCommand) {
+      // Find index of last assistant message in chatHistory
+      let lastAssistantIndex = -1;
+      for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+        if (this.chatHistory[i].type === "assistant") {
+          lastAssistantIndex = i;
+          break;
+        }
+      }
+
+      if (lastAssistantIndex === -1) {
+        throw new Error("No previous assistant message to rephrase");
+      }
+
+      // Store rephrase state (will be updated with newResponseIndex after response)
+      // For now, just mark that we're in rephrase mode
+      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType);
+    }
+
     // Before adding the new user message, check if there are incomplete tool calls
     // from a previous interrupted turn. This prevents malformed message sequences
     // that cause Ollama 500 errors.
@@ -934,14 +1029,14 @@ Current working directory: ${process.cwd()}`;
       }
     }
 
-    // Add user message to both API conversation and chat history
+    // Add user/system message to both API conversation and chat history
     const userEntry: ChatEntry = {
-      type: "user",
-      content: message,
+      type: messageType,
+      content: messageToSend,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: "user", content: message });
+    this.messages.push({ role: messageType, content: messageToSend });
     await this.emitContextChange();
 
     // Yield user message so UI can display it immediately
@@ -1148,6 +1243,17 @@ Current working directory: ${process.cwd()}`;
         this.chatHistory.push(assistantEntry);
 
         await this.emitContextChange();
+
+        // Update rephrase state if this is a final response (no tool calls)
+        if (this.rephraseState && this.rephraseState.newResponseIndex === -1 && (!accumulatedMessage.tool_calls || accumulatedMessage.tool_calls.length === 0)) {
+          const newResponseIndex = this.chatHistory.length - 1;
+          this.setRephraseState(
+            this.rephraseState.originalAssistantMessageIndex,
+            this.rephraseState.rephraseRequestIndex,
+            newResponseIndex,
+            this.rephraseState.messageType
+          );
+        }
 
         // Handle tool calls if present
         if (accumulatedMessage.tool_calls?.length > 0) {
@@ -1913,6 +2019,18 @@ Current working directory: ${process.cwd()}`;
 
   clearPendingContextEditSession(): void {
     this.pendingContextEditSession = null;
+  }
+
+  setRephraseState(originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system"): void {
+    this.rephraseState = { originalAssistantMessageIndex, rephraseRequestIndex, newResponseIndex, messageType };
+  }
+
+  getRephraseState(): { originalAssistantMessageIndex: number; rephraseRequestIndex: number; newResponseIndex: number; messageType: "user" | "system" } | null {
+    return this.rephraseState;
+  }
+
+  clearRephraseState(): void {
+    this.rephraseState = null;
   }
 
   async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {

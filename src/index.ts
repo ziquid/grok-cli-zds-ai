@@ -17,6 +17,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { handleRephraseChoice, getRephraseMenuOptions } from "./utils/rephrase-handler.js";
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -1018,6 +1019,97 @@ program
                     // Save context after processing completes
                     saveContext();
                     break;
+                }
+              }
+
+              // Check if this was a rephrase command and show menu
+              const rephraseState = agent.getRephraseState();
+              if (rephraseState) {
+                console.log('\nRephrase options:');
+                const menuOptions = getRephraseMenuOptions(rephraseState.messageType);
+                menuOptions.forEach(option => console.log(`  ${option}`));
+
+                let rephraseChoice: string | undefined;
+                while (!rephraseChoice || !['1', '2', '3', '4', '5'].includes(rephraseChoice)) {
+                  const choiceResult = await prompts.default({
+                    type: 'text',
+                    name: 'choice',
+                    message: 'Choose option (1-5):',
+                    initial: ''
+                  });
+
+                  if (choiceResult.choice === undefined) {
+                    // User cancelled (Ctrl+C), treat as option 5
+                    rephraseChoice = '5';
+                  } else {
+                    rephraseChoice = choiceResult.choice.trim();
+                  }
+                }
+
+                // Use shared handler to process the choice
+                const result = handleRephraseChoice(rephraseChoice, agent);
+                saveContext();
+
+                // Handle options that need re-prompting (3 and 4)
+                if (result.preFillPrompt && (rephraseChoice === '3' || rephraseChoice === '4')) {
+                  const promptMessage = rephraseChoice === '3'
+                    ? '\nTry again (edit command if needed):'
+                    : rephraseState.messageType === 'user'
+                      ? '\nResending as system message:'
+                      : '\nResending as user message:';
+
+                  console.log(promptMessage);
+
+                  const retryResult = await prompts.default({
+                    type: 'text',
+                    name: 'input',
+                    message: '',
+                    initial: result.preFillPrompt
+                  });
+
+                  if (retryResult.input && retryResult.input.trim()) {
+                    // Process the new command
+                    for await (const chunk of agent.processUserMessageStream(retryResult.input.trim())) {
+                      switch (chunk.type) {
+                        case 'user_message':
+                          break;
+                        case 'content':
+                          if (chunk.content) {
+                            process.stdout.write(chunk.content);
+                          }
+                          break;
+                        case 'tool_calls':
+                          if (chunk.tool_calls) {
+                            chunk.tool_calls.forEach(toolCall => {
+                              console.log(`\n🔧 ${toolCall.function.name}...`);
+                            });
+                          }
+                          break;
+                        case 'tool_result':
+                          break;
+                        case 'done':
+                          console.log();
+                          saveContext();
+                          break;
+                      }
+                    }
+
+                    // Check if there's a new rephrase state to handle
+                    const newRephraseState = agent.getRephraseState();
+                    if (newRephraseState) {
+                      // This will be handled in the next iteration of the loop
+                      continue;
+                    }
+                  }
+                } else {
+                  // For options 1, 2, and 5, show confirmation message
+                  if (rephraseChoice === '1') {
+                    console.log('✓ Kept as new response');
+                  } else if (rephraseChoice === '2') {
+                    console.log('✓ Original response replaced');
+                  } else if (rephraseChoice === '5') {
+                    console.log('✓ Rephrase cancelled');
+                  }
                 }
               }
             }
