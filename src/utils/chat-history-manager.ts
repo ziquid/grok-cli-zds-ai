@@ -210,34 +210,44 @@ export class ChatHistoryManager {
   backupHistory(): string | null {
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupSuffix = `.backup-${timestamp}.json`;
+
+      // Create context-backup subdirectory
+      const contextDir = path.dirname(this.historyFilePath);
+      const backupDir = path.join(contextDir, 'context-backup');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
 
       let backupPath: string | null = null;
 
       // Backup main history file
       if (fs.existsSync(this.historyFilePath)) {
-        backupPath = this.historyFilePath.replace('.json', backupSuffix);
+        const baseFileName = path.basename(this.historyFilePath, '.json');
+        backupPath = path.join(backupDir, `${baseFileName}.${timestamp}.json`);
         fs.copyFileSync(this.historyFilePath, backupPath);
       }
 
       // Backup messages file
       const messagesFilePath = this.historyFilePath.replace('.json', '.messages.json');
       if (fs.existsSync(messagesFilePath)) {
-        const messagesBackupPath = messagesFilePath.replace('.json', backupSuffix);
+        const baseFileName = path.basename(messagesFilePath, '.json');
+        const messagesBackupPath = path.join(backupDir, `${baseFileName}.${timestamp}.json`);
         fs.copyFileSync(messagesFilePath, messagesBackupPath);
       }
 
       // Backup state file
       const stateFilePath = this.historyFilePath.replace('.json', '.state.json');
       if (fs.existsSync(stateFilePath)) {
-        const stateBackupPath = stateFilePath.replace('.json', backupSuffix);
+        const baseFileName = path.basename(stateFilePath, '.json');
+        const stateBackupPath = path.join(backupDir, `${baseFileName}.${timestamp}.json`);
         fs.copyFileSync(stateFilePath, stateBackupPath);
       }
 
       // Backup debug log file
       const debugLogPath = this.historyFilePath.replace('.json', '.debug.log');
       if (fs.existsSync(debugLogPath)) {
-        const debugBackupPath = debugLogPath.replace('.log', `.backup-${timestamp}.log`);
+        const baseFileName = path.basename(debugLogPath, '.log');
+        const debugBackupPath = path.join(backupDir, `${baseFileName}.${timestamp}.log`);
         fs.copyFileSync(debugLogPath, debugBackupPath);
       }
 
