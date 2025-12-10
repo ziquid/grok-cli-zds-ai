@@ -291,13 +291,6 @@ export function useInputHandler({
         // Sync UI with reloaded context
         setChatHistory(agent.getChatHistory());
 
-        const successEntry: ChatEntry = {
-          type: "system",
-          content: "✓ Context replaced with edited version",
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, successEntry]);
-
         // Clean up temp file
         try {
           fs.unlinkSync(tmpJsonPath);
@@ -307,12 +300,6 @@ export function useInputHandler({
       } else {
         // User cancelled or said no
         const fs = await import("fs");
-        const cancelEntry: ChatEntry = {
-          type: "system",
-          content: "Context edit cancelled",
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, cancelEntry]);
 
         // Clean up temp file
         try {
@@ -497,14 +484,6 @@ export function useInputHandler({
         console.error("Error during /clear command:", error);
         setIsProcessing(false);
         setIsStreaming(false);
-
-        // Show error to user
-        const errorEntry: ChatEntry = {
-          type: "system",
-          content: `ERROR: Failed to clear cache: ${error instanceof Error ? error.message : String(error)}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, errorEntry]);
         return true;
       }
     }
@@ -543,13 +522,7 @@ export function useInputHandler({
     }
 
     if (trimmedInput === "/ink") {
-      // Already in ink mode - show message
-      const alreadyEntry: ChatEntry = {
-        type: "system",
-        content: "You are already in Ink UI mode",
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, alreadyEntry]);
+      // Already in ink mode
       clearInput();
       return true;
     }
@@ -688,12 +661,7 @@ Available models: ${modelNames.join(", ")}`,
           clearInput();
           return true;
         } catch (error) {
-          const errorEntry: ChatEntry = {
-            type: "system",
-            content: `ERROR: Failed to view context: ${error instanceof Error ? error.message : String(error)}`,
-            timestamp: new Date(),
-          };
-          setChatHistory((prev) => [...prev, errorEntry]);
+          console.error("Error viewing context:", error);
           clearInput();
           return true;
         }
@@ -792,12 +760,7 @@ Available models: ${modelNames.join(", ")}`,
               (global as any).inkInstance = newInstance;
             }
 
-            const errorEntry: ChatEntry = {
-              type: "system",
-              content: `ERROR: Edited context file contains invalid JSON: ${validationError}`,
-              timestamp: new Date(),
-            };
-            setChatHistory((prev) => [...prev, errorEntry]);
+            console.error("Edited context file contains invalid JSON:", validationError);
 
             // Clean up temp file
             try {
@@ -853,12 +816,7 @@ Available models: ${modelNames.join(", ")}`,
           clearInput();
           return true;
         } catch (error) {
-          const errorEntry: ChatEntry = {
-            type: "system",
-            content: `ERROR: Failed to edit context: ${error instanceof Error ? error.message : String(error)}`,
-            timestamp: new Date(),
-          };
-          setChatHistory((prev) => [...prev, errorEntry]);
+          console.error("Failed to edit context:", error);
           clearInput();
           return true;
         }

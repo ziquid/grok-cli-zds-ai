@@ -182,17 +182,7 @@ export async function processSlashCommand(
       return true;
     } catch (error) {
       const errorMessage = `ERROR: Failed to clear cache: ${error instanceof Error ? error.message : String(error)}`;
-
-      if (isHeadless) {
-        console.error(errorMessage);
-      } else {
-        const errorEntry: ChatEntry = {
-          type: "system",
-          content: errorMessage,
-          timestamp: new Date(),
-        };
-        addChatEntry(errorEntry);
-      }
+      console.error(errorMessage);
 
       if (setProcessingStates) {
         setProcessingStates({
@@ -262,12 +252,6 @@ export async function processSlashCommand(
 
     // Check if already in ink mode
     if (isInkMode) {
-      const alreadyEntry: ChatEntry = {
-        type: "system",
-        content: "You are already in Ink UI mode",
-        timestamp: new Date(),
-      };
-      addChatEntry(alreadyEntry);
       if (clearInput) clearInput();
       return true;
     }
@@ -293,12 +277,6 @@ export async function processSlashCommand(
 
     // Check if already in plain console mode
     if (!isInkMode) {
-      const alreadyEntry: ChatEntry = {
-        type: "system",
-        content: "You are already in plain console mode",
-        timestamp: new Date(),
-      };
-      addChatEntry(alreadyEntry);
       if (clearInput) clearInput();
       return true;
     }

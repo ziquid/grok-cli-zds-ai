@@ -1611,19 +1611,9 @@ Current working directory: ${process.cwd()}`;
       // Validate tool arguments against schema
       const validationError = await this.validateToolArguments(toolCall.function.name, args);
       if (validationError) {
-        // Add system message explaining the validation error
-        const systemMsg = `Tool call validation failed: ${validationError}. Please try again with correct parameters.`;
-        console.warn(`[VALIDATION ERROR] ${systemMsg}`);
-
-        this.messages.push({
-          role: 'system',
-          content: systemMsg
-        });
-        this.chatHistory.push({
-          type: 'system',
-          content: systemMsg,
-          timestamp: new Date()
-        });
+        // Validation failed - return error
+        const errorMsg = `Tool call validation failed: ${validationError}. Please try again with correct parameters.`;
+        console.warn(`[VALIDATION ERROR] ${errorMsg}`);
 
         return {
           success: false,
@@ -2041,12 +2031,6 @@ Current working directory: ${process.cwd()}`;
 
     if (!hookPath && hookMandatory) {
       const reason = "Persona hook is mandatory but not configured";
-      // Note: Don't add to this.messages during tool execution - only chatHistory
-      this.chatHistory.push({
-        type: 'system',
-        content: `Failed to change persona to "${persona}": ${reason}`,
-        timestamp: new Date()
-      });
       return {
         success: false,
         error: reason
@@ -2076,12 +2060,6 @@ Current working directory: ${process.cwd()}`;
         await this.processHookResult(hookResult);
         // Note: We ignore the return value here since we're already rejecting the persona
 
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: 'system',
-          content: `Failed to change persona to "${persona}": ${reason}`,
-          timestamp: new Date()
-        });
         return {
           success: false,
           error: reason
@@ -2089,12 +2067,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: 'system',
-          content: `Persona hook timed out (auto-approved)`,
-          timestamp: new Date()
-        });
+        // Hook timed out but was auto-approved
       }
 
       // Process hook commands (ENV, MODEL, SYSTEM)
@@ -2119,25 +2092,7 @@ Current working directory: ${process.cwd()}`;
     this.personaColor = color || "white";
     process.env.ZDS_AI_AGENT_PERSONA = persona;
 
-    // Add system message for recordkeeping
-    let systemContent: string;
-    if (oldPersona) {
-      const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
-      const newColorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
-      systemContent = `Assistant changed the persona from "${oldPersona}"${oldColorStr} to "${this.persona}"${newColorStr}`;
-    } else {
-      const colorStr = this.personaColor && this.personaColor !== "white" ? ` (${this.personaColor})` : "";
-      systemContent = `Assistant set the persona to "${this.persona}"${colorStr}`;
-    }
-
-    // Note: Don't add to this.messages during tool execution - only chatHistory
-    // System messages added during tool execution create invalid message sequences
-    // because they get inserted between tool_calls and tool_results
-    this.chatHistory.push({
-      type: 'system',
-      content: systemContent,
-      timestamp: new Date()
-    });
+    // Persona hook generates success message - no need for redundant CLI message
 
     this.emit('personaChange', {
       persona: this.persona,
@@ -2155,12 +2110,6 @@ Current working directory: ${process.cwd()}`;
 
     if (!hookPath && hookMandatory) {
       const reason = "Mood hook is mandatory but not configured";
-      // Note: Don't add to this.messages during tool execution - only chatHistory
-      this.chatHistory.push({
-        type: 'system',
-        content: `Failed to change mood to "${mood}": ${reason}`,
-        timestamp: new Date()
-      });
       return {
         success: false,
         error: reason
@@ -2188,12 +2137,6 @@ Current working directory: ${process.cwd()}`;
         // Process rejection commands (MODEL, SYSTEM)
         await this.processHookResult(hookResult);
 
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: 'system',
-          content: `Failed to change mood to "${mood}": ${reason}`,
-          timestamp: new Date()
-        });
         return {
           success: false,
           error: reason
@@ -2201,12 +2144,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: 'system',
-          content: `Mood hook timed out (auto-approved)`,
-          timestamp: new Date()
-        });
+        // Hook timed out but was auto-approved
       }
 
       // Process hook commands (ENV, MODEL, SYSTEM)
@@ -2292,11 +2230,6 @@ Current working directory: ${process.cwd()}`;
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task start";
-
-        this.messages.push({
-          role: 'system',
-          content: `Failed to start task "${activeTask}": ${reason}`
-        });
         return {
           success: false,
           error: reason
@@ -2304,10 +2237,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        this.messages.push({
-          role: 'system',
-          content: `Task start hook timed out (auto-approved)`
-        });
+        // Hook timed out but was auto-approved
       }
     }
 
@@ -2365,11 +2295,6 @@ Current working directory: ${process.cwd()}`;
 
       if (!hookResult.approved) {
         const reason = hookResult.reason || "Hook rejected task status transition";
-
-        this.messages.push({
-          role: 'system',
-          content: `Failed to transition task "${this.activeTask}" from ${this.activeTaskAction} to ${action}: ${reason}`
-        });
         return {
           success: false,
           error: reason
@@ -2377,10 +2302,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        this.messages.push({
-          role: 'system',
-          content: `Task transition hook timed out (auto-approved)`
-        });
+        // Hook timed out but was auto-approved
       }
     }
 
@@ -2444,11 +2366,6 @@ Current working directory: ${process.cwd()}`;
 
       if (!hookResult.approved) {
         const hookReason = hookResult.reason || "Hook rejected task stop";
-
-        this.messages.push({
-          role: 'system',
-          content: `Failed to stop task "${this.activeTask}": ${hookReason}`
-        });
         return {
           success: false,
           error: hookReason
@@ -2456,10 +2373,7 @@ Current working directory: ${process.cwd()}`;
       }
 
       if (hookResult.timedOut) {
-        this.messages.push({
-          role: 'system',
-          content: `Task stop hook timed out (auto-approved)`
-        });
+        // Hook timed out but was auto-approved
       }
     }
 

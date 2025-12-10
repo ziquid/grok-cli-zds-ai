@@ -439,9 +439,9 @@ async function processPromptHeadless(
 }
 
 program
-  .name("grok")
+  .name("zai-cli")
   .description(
-    "A conversational AI CLI tool powered by Grok with text editor capabilities"
+    "A conversational AI CLI tool with text editor capabilities"
   )
   .version(version)
   .option("-d, --directory <dir>", "set working directory", process.cwd())
@@ -516,7 +516,7 @@ program
     "--show-context-stats",
     "display token usage stats for the specified context file and exit"
   )
-  .argument("[message...]", "Initial message to send to Grok")
+  .argument("[message...]", "Initial message to send to the AI")
   .allowExcessArguments(true)
   .action(async (message, options) => {
     if (options.directory) {
