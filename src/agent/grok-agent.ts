@@ -1796,6 +1796,9 @@ Current working directory: ${process.cwd()}`;
         case "pngInfo":
           return await this.imageTool.pngInfo(args.filename);
 
+        case "listImageModels":
+          return await this.imageTool.listImageModels();
+
         case "readXlsx":
           return await this.fileConversionTool.readXlsx(
             args.filename,
