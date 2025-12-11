@@ -1,4 +1,5 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions.js";
 import {
   GROK_TOOLS,
   addMCPToolsToGrokTools,
@@ -9,6 +10,8 @@ import {
 import { loadMCPConfig } from "../mcp/config.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { logApiError } from "../utils/error-logger.js";
+import { parseImagesFromMessage, hasImageReferences } from "../utils/image-encoder.js";
+import { getTextContent } from "../utils/content-utils.js";
 import fs from "fs";
 import {
   TextEditorTool,
@@ -101,7 +104,7 @@ function sanitizeToolArguments(args: string | undefined): string {
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
-  content?: string;
+  content?: string | ChatCompletionContentPart[];
   timestamp: Date;
   tool_calls?: GrokToolCall[];
   toolCall?: GrokToolCall;
@@ -329,21 +332,24 @@ Current working directory: ${process.cwd()}`;
       switch (entry.type) {
         case "system":
           // All system messages from chatHistory go into conversation (persona, mood, etc.)
+          // System messages must always be strings
           historyMessages.push({
             role: "system",
-            content: entry.content,
+            content: getTextContent(entry.content),
           });
           break;
         case "user":
+          // User messages can have images (content arrays)
           historyMessages.push({
             role: "user",
-            content: entry.content,
+            content: entry.content || "",
           });
           break;
         case "assistant":
+          // Assistant messages are always text (no images in responses)
           const assistantMessage: GrokMessage = {
             role: "assistant",
-            content: entry.content || "", // Ensure content is never null/undefined
+            content: getTextContent(entry.content) || "", // Ensure content is never null/undefined
           };
           if (entry.tool_calls && entry.tool_calls.length > 0) {
             // For assistant messages with tool calls, collect the tool results that correspond to them
@@ -518,13 +524,41 @@ Current working directory: ${process.cwd()}`;
     }
 
     // Add user/system message to conversation
+    // Check for image references and parse if present
+    // Note: System messages can only have string content, so images are only supported for user messages
+    const supportsVision = this.grokClient.getSupportsVision();
+    let messageContent: string | ChatCompletionContentPart[] = messageToSend;
+
+    if (messageType === "user" && hasImageReferences(messageToSend) && supportsVision) {
+      // Parse images from message (only for user messages)
+      const parsed = parseImagesFromMessage(messageToSend);
+
+      if (parsed.images.length > 0) {
+        // Construct content array with text and images
+        messageContent = [
+          { type: "text", text: parsed.text },
+          ...parsed.images
+        ];
+      } else {
+        // No valid images found (errors will be in parsed.text)
+        messageContent = parsed.text;
+      }
+    }
+
     const userEntry: ChatEntry = {
       type: messageType,
-      content: messageToSend,
+      content: messageContent,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: messageType, content: messageToSend });
+
+    // Push to messages array with proper typing based on role
+    if (messageType === "user") {
+      this.messages.push({ role: "user", content: messageContent });
+    } else {
+      // System messages must have string content only
+      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : messageToSend });
+    }
     await this.emitContextChange();
 
     const newEntries: ChatEntry[] = [userEntry];
@@ -711,10 +745,11 @@ Current working directory: ${process.cwd()}`;
             // Collect system messages that appeared after this assistant message
             for (let i = assistantIndex + 1; i < this.chatHistory.length; i++) {
               const entry = this.chatHistory[i];
-              if (entry.type === 'system' && entry.content && entry.content.trim()) {
+              const content = getTextContent(entry.content);
+              if (entry.type === 'system' && content && content.trim()) {
                 this.messages.push({
                   role: 'system',
-                  content: entry.content
+                  content: content
                 });
               }
               // Stop if we hit another assistant or user message (next turn)
@@ -1030,13 +1065,41 @@ Current working directory: ${process.cwd()}`;
     }
 
     // Add user/system message to both API conversation and chat history
+    // Check for image references and parse if present
+    // Note: System messages can only have string content, so images are only supported for user messages
+    const supportsVision = this.grokClient.getSupportsVision();
+    let messageContent: string | ChatCompletionContentPart[] = messageToSend;
+
+    if (messageType === "user" && hasImageReferences(messageToSend) && supportsVision) {
+      // Parse images from message (only for user messages)
+      const parsed = parseImagesFromMessage(messageToSend);
+
+      if (parsed.images.length > 0) {
+        // Construct content array with text and images
+        messageContent = [
+          { type: "text", text: parsed.text },
+          ...parsed.images
+        ];
+      } else {
+        // No valid images found (errors will be in parsed.text)
+        messageContent = parsed.text;
+      }
+    }
+
     const userEntry: ChatEntry = {
       type: messageType,
-      content: messageToSend,
+      content: messageContent,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: messageType, content: messageToSend });
+
+    // Push to messages array with proper typing based on role
+    if (messageType === "user") {
+      this.messages.push({ role: "user", content: messageContent });
+    } else {
+      // System messages must have string content only
+      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : messageToSend });
+    }
     await this.emitContextChange();
 
     // Yield user message so UI can display it immediately
@@ -1384,10 +1447,11 @@ Current working directory: ${process.cwd()}`;
             // Collect system messages that appeared after this assistant message
             for (let i = assistantIndex + 1; i < this.chatHistory.length; i++) {
               const entry = this.chatHistory[i];
-              if (entry.type === 'system' && entry.content && entry.content.trim()) {
+              const content = getTextContent(entry.content);
+              if (entry.type === 'system' && content && content.trim()) {
                 this.messages.push({
                   role: 'system',
-                  content: entry.content
+                  content: content
                 });
               }
               // Stop if we hit another assistant or user message (next turn)
@@ -1453,7 +1517,7 @@ Current working directory: ${process.cwd()}`;
       this.chatHistory.push(errorEntry);
       yield {
         type: "content",
-        content: errorEntry.content,
+        content: getTextContent(errorEntry.content),
       };
 
       // Mark first message as processed even on error
@@ -1945,15 +2009,15 @@ Current working directory: ${process.cwd()}`;
 
       if (entry.type === 'user') {
         lines.push(`(${msgNum}) ${userName} (user) - ${timestamp}`);
-        lines.push(entry.content || "");
+        lines.push(getTextContent(entry.content) || "");
         lines.push("");
       } else if (entry.type === 'assistant') {
         lines.push(`(${msgNum}) ${agentName} (assistant) - ${timestamp}`);
-        lines.push(entry.content || "");
+        lines.push(getTextContent(entry.content) || "");
         lines.push("");
       } else if (entry.type === 'system') {
         lines.push(`(${msgNum}) System (system) - ${timestamp}`);
-        lines.push(entry.content || "");
+        lines.push(getTextContent(entry.content) || "");
         lines.push("");
       } else if (entry.type === 'tool_call') {
         const toolCall = entry.toolCall;
@@ -1966,7 +2030,7 @@ Current working directory: ${process.cwd()}`;
         const toolCall = entry.toolCall;
         const toolName = toolCall?.function?.name || "unknown";
         lines.push(`(${msgNum}) System (tool_result: ${toolName}) - ${timestamp}`);
-        lines.push(entry.content || "");
+        lines.push(getTextContent(entry.content) || "");
         lines.push("");
       }
     });

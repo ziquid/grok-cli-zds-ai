@@ -173,9 +173,10 @@ function ChatInterfaceWithAgent({
                 if (chunk.userEntry && !userMessageAdded) {
                   setChatHistory((prev) => {
                     // Check if this exact message is already in history
+                    // For content comparison, stringify to handle both string and array content
                     const alreadyExists = prev.some(entry =>
                       entry.type === "user" &&
-                      entry.content === chunk.userEntry!.content
+                      JSON.stringify(entry.content) === JSON.stringify(chunk.userEntry!.content)
                     );
                     if (!alreadyExists) {
                       userMessageAdded = true;
@@ -198,11 +199,14 @@ function ChatInterfaceWithAgent({
                     streamingEntry = newStreamingEntry;
                   } else {
                     setChatHistory((prev) =>
-                      prev.map((entry, idx) =>
-                        idx === prev.length - 1 && entry.isStreaming
-                          ? { ...entry, content: (entry.content || "") + chunk.content }
-                          : entry
-                      )
+                      prev.map((entry, idx) => {
+                        if (idx === prev.length - 1 && entry.isStreaming) {
+                          // Streaming responses are always text
+                          const existingContent = typeof entry.content === 'string' ? entry.content : '';
+                          return { ...entry, content: existingContent + chunk.content };
+                        }
+                        return entry;
+                      })
                     );
                   }
                 }

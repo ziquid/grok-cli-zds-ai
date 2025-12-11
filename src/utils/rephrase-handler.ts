@@ -1,4 +1,5 @@
 import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { getTextContent } from "./content-utils.js";
 
 export interface RephraseHandlerResult {
   updatedChatHistory: ChatEntry[];
@@ -62,7 +63,7 @@ export function handleRephraseChoice(
 
     case "3": // Try again - remove both, pre-fill prompt
       {
-        const rephraseCommand = updatedHistory[rephraseRequestIndex].content || "";
+        const rephraseCommand = getTextContent(updatedHistory[rephraseRequestIndex].content);
         preFillPrompt = rephraseCommand;
 
         // Remove new response first (higher index), then rephrase request
@@ -76,7 +77,7 @@ export function handleRephraseChoice(
 
     case "4": // Toggle message type and try again
       {
-        const rephraseCommand = updatedHistory[rephraseRequestIndex].content || "";
+        const rephraseCommand = getTextContent(updatedHistory[rephraseRequestIndex].content);
         const toggledType = messageType === "user" ? "system" : "user";
 
         // Construct the new command

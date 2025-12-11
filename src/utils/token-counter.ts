@@ -30,15 +30,28 @@ export class TokenCounter {
     for (const message of messages) {
       // Every message follows <|start|>{role/name}\n{content}<|end|\>\n
       totalTokens += 3; // Base tokens per message
-      
-      if (message.content && typeof message.content === 'string') {
-        totalTokens += this.countTokens(message.content);
+
+      if (message.content) {
+        if (typeof message.content === 'string') {
+          totalTokens += this.countTokens(message.content);
+        } else if (Array.isArray(message.content)) {
+          // For content arrays (vision messages), count text and approximate image tokens
+          for (const item of message.content as any[]) {
+            if (item.type === 'text' && 'text' in item) {
+              totalTokens += this.countTokens(item.text);
+            } else if (item.type === 'image_url') {
+              // Images typically cost ~85-170 tokens depending on size
+              // Use conservative estimate of 150 tokens per image
+              totalTokens += 150;
+            }
+          }
+        }
       }
-      
+
       if (message.role) {
         totalTokens += this.countTokens(message.role);
       }
-      
+
       // Add extra tokens for tool calls if present
       if (message.tool_calls) {
         totalTokens += this.countTokens(JSON.stringify(message.tool_calls));

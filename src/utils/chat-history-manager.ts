@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import type { ChatEntry } from "../agent/grok-agent.js";
+import { getTextContent } from "./content-utils.js";
 
 const HISTORY_FILE_NAME = "chat-history.json";
 const HISTORY_DIR = path.join(os.homedir(), ".grok");
@@ -137,7 +138,7 @@ export class ChatHistoryManager {
 
         // Only extract system prompt if it's at index 0
         if (entries.length > 0 && entries[0].type === "system") {
-          contextData.systemPrompt = entries[0].content;
+          contextData.systemPrompt = getTextContent(entries[0].content);
           contextData.chatHistory = entries.slice(1); // Everything after index 0
         }
 

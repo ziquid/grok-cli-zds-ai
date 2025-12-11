@@ -339,6 +339,38 @@ Add to `~/.grok/user-settings.json`:
 
 **Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-code-fast-1)
 
+### Image Support
+
+zai-cli supports sending images to vision-capable AI models.  Use the `@` prefix to reference image files in your messages:
+
+```sh
+# Absolute path
+zai-cli --prompt "What's in this image? @/Users/joseph/photos/image.jpg"
+
+# Relative path
+zai-cli --prompt "Analyze @./screenshot.png"
+
+# Tilde expansion
+zai-cli --prompt "Describe @~/Pictures/photo.jpg"
+
+# Paths with spaces (quoted)
+zai-cli --prompt 'Compare these images: @"~/My Pictures/photo1.jpg" @"~/My Pictures/photo2.jpg"'
+
+# Paths with spaces (escaped)
+zai-cli --prompt "What's here? @/Users/joseph/My\ Documents/image.png"
+```
+
+**Supported Image Formats**: .jpg, .jpeg, .png, .gif, .webp, .bmp
+
+**Vision-Capable Models**: Image support works with vision models like:
+- `grok-4-1-fast-reasoning`
+- `grok-vision-beta`
+- Other vision-enabled models (via custom base URLs)
+
+**Automatic Fallback**: If you send an image to a model that doesn't support vision, zai-cli will automatically detect the error and retry with text-only content.
+
+**Interactive Mode**: The `@` syntax works in both interactive and headless (`--prompt`) modes.
+
 ### Command Line Options
 
 ```sh

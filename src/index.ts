@@ -13,6 +13,7 @@ import { ConfirmationService } from "./utils/confirmation-service.js";
 import { ChatHistoryManager } from "./utils/chat-history-manager.js";
 import { createMCPCommand } from "./commands/mcp.js";
 import { getAuthConfig, validateApiKey } from "./utils/auth-helper.js";
+import { getTextContent } from "./utils/content-utils.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -273,8 +274,9 @@ Respond with ONLY the commit message, no additional text.`;
 
     // Extract the commit message from the AI response
     for (const entry of commitMessageEntries) {
-      if (entry.type === "assistant" && entry.content.trim()) {
-        commitMessage = entry.content.trim();
+      const content = getTextContent(entry.content);
+      if (entry.type === "assistant" && content.trim()) {
+        commitMessage = content.trim();
         break;
       }
     }
@@ -404,8 +406,9 @@ async function processPromptHeadless(
     // Skip assistant messages that have tool_calls - those are intermediate, not final responses
     const assistantResponses: string[] = [];
     for (const entry of chatEntries) {
-      if (entry.type === "assistant" && entry.content && entry.content.trim() && !entry.tool_calls) {
-        assistantResponses.push(entry.content);
+      const content = getTextContent(entry.content);
+      if (entry.type === "assistant" && content && content.trim() && !entry.tool_calls) {
+        assistantResponses.push(content);
       }
     }
 

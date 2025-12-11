@@ -54,6 +54,7 @@ export class GrokClient {
   private defaultMaxTokens: number;
   private backendName: string;
   private supportsTools: boolean = true;
+  private supportsVision: boolean = true;
 
   constructor(apiKey: string, model?: string, baseURL?: string, displayName?: string) {
     const finalBaseURL = baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1";
@@ -89,8 +90,9 @@ export class GrokClient {
 
   async setModel(model: string): Promise<void> {
     this.currentModel = model;
-    // Reset tool support flag when switching models
+    // Reset tool and vision support flags when switching models
     await this.enableTools();
+    this.enableVision();
   }
 
   private async enableTools(): Promise<void> {
@@ -115,6 +117,14 @@ export class GrokClient {
     }
   }
 
+  private enableVision(): void {
+    if (this.supportsVision) {
+      return; // Already enabled
+    }
+
+    this.supportsVision = true;
+  }
+
   getCurrentModel(): string {
     return this.currentModel;
   }
@@ -129,6 +139,10 @@ export class GrokClient {
 
   getSupportsTools(): boolean {
     return this.supportsTools;
+  }
+
+  getSupportsVision(): boolean {
+    return this.supportsVision;
   }
 
   async chat(
@@ -210,6 +224,35 @@ export class GrokClient {
           // Rebuild request payload without tools
           delete requestPayload.tools;
           delete requestPayload.tool_choice;
+
+          continue;
+        }
+
+        // Check if model doesn't support vision
+        const isVisionNotSupported = error.status === 400 &&
+                                     error.message &&
+                                     (error.message.toLowerCase().includes('does not support vision') ||
+                                      error.message.toLowerCase().includes('does not support images') ||
+                                      error.message.toLowerCase().includes('image inputs are not supported') ||
+                                      error.message.toLowerCase().includes('image_url'));
+
+        if (isVisionNotSupported && this.supportsVision) {
+          // Disable vision for this model and rebuild request without images
+          this.supportsVision = false;
+          console.error(`Model does not support vision.  Retrying without images...`);
+
+          // Strip images from all messages
+          requestPayload.messages = requestPayload.messages.map((msg: any) => {
+            if (Array.isArray(msg.content)) {
+              // Keep only text content, remove image_url entries
+              const textContent = msg.content.filter((item: any) => item.type === 'text');
+              return {
+                ...msg,
+                content: textContent.length > 0 ? textContent[0].text : ''
+              };
+            }
+            return msg;
+          });
 
           continue;
         }
@@ -352,6 +395,35 @@ export class GrokClient {
           // Rebuild request payload without tools
           delete requestPayload.tools;
           delete requestPayload.tool_choice;
+
+          continue;
+        }
+
+        // Check if model doesn't support vision
+        const isVisionNotSupported = error.status === 400 &&
+                                     error.message &&
+                                     (error.message.toLowerCase().includes('does not support vision') ||
+                                      error.message.toLowerCase().includes('does not support images') ||
+                                      error.message.toLowerCase().includes('image inputs are not supported') ||
+                                      error.message.toLowerCase().includes('image_url'));
+
+        if (isVisionNotSupported && this.supportsVision) {
+          // Disable vision for this model and rebuild request without images
+          this.supportsVision = false;
+          console.error(`Model does not support vision.  Retrying without images...`);
+
+          // Strip images from all messages
+          requestPayload.messages = requestPayload.messages.map((msg: any) => {
+            if (Array.isArray(msg.content)) {
+              // Keep only text content, remove image_url entries
+              const textContent = msg.content.filter((item: any) => item.type === 'text');
+              return {
+                ...msg,
+                content: textContent.length > 0 ? textContent[0].text : ''
+              };
+            }
+            return msg;
+          });
 
           continue;
         }

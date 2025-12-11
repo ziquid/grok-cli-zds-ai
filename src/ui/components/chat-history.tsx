@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { ChatEntry } from "../../agent/grok-agent.js";
 import { DiffRenderer } from "./diff-renderer.js";
 import { MarkdownRenderer } from "../utils/markdown-renderer.js";
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions.js";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
@@ -10,6 +11,17 @@ interface ChatHistoryProps {
 }
 
 const TRUNCATE_LINES = 3;
+
+// Helper function to extract text content from ChatEntry (handles both string and array content)
+function getTextContent(content?: string | ChatCompletionContentPart[]): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  // For content arrays, extract and concatenate text parts
+  return content
+    .filter(item => item.type === "text")
+    .map(item => "text" in item ? item.text : "")
+    .join(" ");
+}
 
 // Helper function to truncate content to first N lines
 function truncateContent(content: string, maxLines: number = TRUNCATE_LINES): { truncated: string; hiddenLines: number } {
@@ -67,7 +79,7 @@ const MemoizedChatEntry = React.memo(
           <Box key={index} flexDirection="column" marginTop={1}>
             <Box>
               <Text color="gray">
-                {">"} {entry.content || ""}
+                {">"} {getTextContent(entry.content)}
               </Text>
             </Box>
           </Box>
@@ -82,7 +94,7 @@ const MemoizedChatEntry = React.memo(
                 {entry.preserveFormatting ? (
                   // Preserve formatting: split lines and render each line as-is
                   (() => {
-                    const content = (entry.content || "").trim();
+                    const content = (getTextContent(entry.content)).trim();
                     const lines = content.split('\n');
                     return (
                       <Box flexDirection="column">
@@ -94,10 +106,10 @@ const MemoizedChatEntry = React.memo(
                   })()
                 ) : entry.tool_calls ? (
                   // If there are tool calls, just show plain text
-                  <Text color="white">{(entry.content || "").trim()}</Text>
+                  <Text color="white">{(getTextContent(entry.content)).trim()}</Text>
                 ) : (
                   // Normal chat: use MarkdownRenderer with reflowText
-                  <MarkdownRenderer content={(entry.content || "").trim()} />
+                  <MarkdownRenderer content={(getTextContent(entry.content)).trim()} />
                 )}
                 {entry.isStreaming && <Text color="cyan">█</Text>}
               </Box>
@@ -175,12 +187,13 @@ const MemoizedChatEntry = React.memo(
           }
           return content;
         };
+        const contentText = getTextContent(entry.content);
         const shouldShowDiff =
           entry.toolCall?.function?.name === "str_replace_editor" &&
           entry.toolResult?.success &&
-          entry.content.includes("Updated") &&
-          entry.content.includes("---") &&
-          entry.content.includes("+++");
+          contentText.includes("Updated") &&
+          contentText.includes("---") &&
+          contentText.includes("+++");
 
         const shouldShowFileContent =
           (entry.toolCall?.function?.name === "view_file" ||
@@ -201,7 +214,7 @@ const MemoizedChatEntry = React.memo(
               {isExecuting ? (
                 <Text color="cyan">⎿ Executing...</Text>
               ) : (() => {
-                const content = entry.content || "";
+                const content = getTextContent(entry.content);
                 const displayOutput = entry.toolResult?.displayOutput;
 
                 // Only show displayOutput if it exists and provides additional value
@@ -223,7 +236,7 @@ const MemoizedChatEntry = React.memo(
             </Box>
             {shouldShowDiff && !isExecuting && (
               <Box marginLeft={4} flexDirection="column">
-                {renderDiff(entry.content || "", filePath)}
+                {renderDiff(getTextContent(entry.content), filePath)}
               </Box>
             )}
           </Box>
@@ -236,8 +249,8 @@ const MemoizedChatEntry = React.memo(
               <Text color="blue">🔧 System: </Text>
               <Box flexDirection="column" marginLeft={2}>
                 <Text color="blue" dimColor>
-                  {(entry.content || "").split('\n').slice(0, 3).join('\n')}
-                  {(entry.content || "").split('\n').length > 3 ? '\n...' : ''}
+                  {(getTextContent(entry.content)).split('\n').slice(0, 3).join('\n')}
+                  {(getTextContent(entry.content)).split('\n').length > 3 ? '\n...' : ''}
                 </Text>
               </Box>
             </Box>
@@ -260,7 +273,7 @@ export function ChatHistory({
   const filteredEntries = isConfirmationActive
     ? entries.filter(
         (entry) =>
-          !(entry.type === "tool_call" && entry.content === "Executing...")
+          !(entry.type === "tool_call" && getTextContent(entry.content) === "Executing...")
       )
     : entries;
 

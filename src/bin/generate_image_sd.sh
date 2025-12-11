@@ -199,15 +199,17 @@ echo "Dimensions: ${WIDTH}x${HEIGHT}, CFG Scale: $CFG_SCALE, Seed: $SEED"
 # Payload
 PAYLOAD=$(jq -n \
   --arg prompt "$PROMPT" --arg negative_prompt "$NEGATIVE_PROMPT, EasyNegative" --argjson steps "$STEPS" \
-  --arg sampler_name "$SAMPLER" --argjson width $WIDTH --argjson height $HEIGHT \
+  --arg sampler_index "$SAMPLER" --argjson width $WIDTH --argjson height $HEIGHT \
   --argjson cfg_scale $CFG_SCALE --arg sd_model_checkpoint "$MODEL_CHECKPOINT"  \
   --argjson seed $SEED \
   '{
     prompt: $prompt, negative_prompt: $negative_prompt, steps: $steps,
-    sampler_name: $sampler_name, width: $width, height: $height, cfg_scale: $cfg_scale,
+    sampler_index: $sampler_index, width: $width, height: $height, cfg_scale: $cfg_scale,
     sd_model_checkpoint: $sd_model_checkpoint, seed: $seed,
     batch_size: 1, n_iter: 1, send_images: true
   }')
+
+echo PAYLOAD: $PAYLOAD >> $LOGFILE
 
 # Curl to JSON file
 curl -s -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$ENDPOINT" > "$OUTPUT_JSON" 2>> "$LOGFILE"
