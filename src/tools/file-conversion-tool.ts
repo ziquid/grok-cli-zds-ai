@@ -1,18 +1,9 @@
 import { exec } from "child_process";
 import { promisify } from "util";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import { ToolResult } from "../types/index.js";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 
 const execAsync = promisify(exec);
-
-// Get the directory of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Path to bundled read_xlsx.py script (relative to dist/tools/)
-const READ_XLSX_SCRIPT = join(__dirname, "../bin/read_xlsx.py");
 
 export class FileConversionTool implements ToolDiscovery {
   private agent: any; // Reference to the GrokAgent
@@ -47,8 +38,8 @@ export class FileConversionTool implements ToolDiscovery {
       // Escape filename for shell
       const escapedFilename = filename.replace(/'/g, "'\\''");
 
-      // Build command using bundled read_xlsx.py script
-      let command = `'${READ_XLSX_SCRIPT}' '${escapedFilename}'`;
+      // Build command using read_xlsx.py from PATH
+      let command = `read_xlsx.py '${escapedFilename}'`;
 
       // Add sheet name if provided
       if (sheetName) {
@@ -164,8 +155,8 @@ export class FileConversionTool implements ToolDiscovery {
       // Escape filename for shell
       const escapedFilename = filename.replace(/'/g, "'\\''");
 
-      // Build command to list sheets using bundled script
-      const command = `'${READ_XLSX_SCRIPT}' '${escapedFilename}' --list-sheets`;
+      // Build command to list sheets using read_xlsx.py from PATH
+      const command = `read_xlsx.py '${escapedFilename}' --list-sheets`;
 
       try {
         const { stdout, stderr } = await execAsync(command, {

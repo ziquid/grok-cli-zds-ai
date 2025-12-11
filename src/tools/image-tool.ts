@@ -22,7 +22,7 @@ export class ImageTool implements ToolDiscovery {
 
   /**
    * Generate an image using AI image generation.
-   * Uses generate_image_asl.sh script with Stable Diffusion.
+   * Uses generate_image_sd.sh script with Stable Diffusion.
    */
   async generateImage(
     prompt: string,
@@ -117,8 +117,8 @@ export class ImageTool implements ToolDiscovery {
       const escapedPrompt = finalPrompt.replace(/'/g, "'\\''");
       const escapedNegativePrompt = finalNegativePromptWithNsfw.replace(/'/g, "'\\''");
 
-      // Build command using generate_image_asl.sh
-      let command = `generate_image_asl.sh '${escapedPrompt}' '${escapedNegativePrompt}'`;
+      // Build command using generate_image_sd.sh
+      let command = `generate_image_sd.sh '${escapedPrompt}' '${escapedNegativePrompt}'`;
 
       if (finalMove) {
         command += ' --move';
@@ -321,6 +321,60 @@ export class ImageTool implements ToolDiscovery {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error reading PNG metadata",
         output: error instanceof Error ? error.message : "Unknown error reading PNG metadata"
+      };
+    }
+  }
+
+  /**
+   * List available Stable Diffusion models installed on the server.
+   * Uses generate_image_sd.sh --list-models.
+   */
+  async listImageModels(): Promise<ToolResult> {
+    try {
+      const command = `generate_image_sd.sh --list-models`;
+
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: 30000 // 30 second timeout
+        });
+
+        if (stderr && !stdout) {
+          return {
+            success: false,
+            error: `Failed to list image models: ${stderr}`,
+            output: stderr
+          };
+        }
+
+        const modelList = stdout.trim();
+        if (!modelList) {
+          return {
+            success: false,
+            error: "No models found",
+            output: "No models found"
+          };
+        }
+
+        return {
+          success: true,
+          output: modelList,
+          displayOutput: "Available Stable Diffusion models listed"
+        };
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error";
+        const stderr = error.stderr || "";
+
+        return {
+          success: false,
+          error: `Failed to list image models: ${errorMessage}${stderr ? '\n' + stderr : ''}`,
+          output: `Failed to list image models: ${errorMessage}${stderr ? '\n' + stderr : ''}`
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error listing image models",
+        output: error instanceof Error ? error.message : "Unknown error listing image models"
       };
     }
   }

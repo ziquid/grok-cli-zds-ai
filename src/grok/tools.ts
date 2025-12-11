@@ -728,6 +728,18 @@ const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
     function: {
+      name: "listImageModels",
+      description: "List available Stable Diffusion models installed on the server",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "readXlsx",
       description: "Read an Excel/XLSX file and return its contents in various formats (text, JSON, CSV)",
       parameters: {
