@@ -8,6 +8,7 @@ export const HELP_TEXT = `ZAI CLI Help:
 
 Built-in Commands:
   /clear      - Clear chat history (current session + persisted)
+  /compact    - Reduce context size (keep last 20 messages)
   /context    - Show context usage info
   /context view - View full context in pager (markdown format)
   /context edit - Edit context JSON file (opens in $EDITOR)
@@ -138,6 +139,35 @@ export async function processSlashCommand(
       return true;
     }
     return true; // Empty command after !
+  }
+
+  // /compact command
+  if (trimmedInput === "/compact") {
+    try {
+      const removedCount = agent.compactContext(20);
+
+      const message = removedCount > 0
+        ? `Context compacted: removed ${removedCount} messages, kept last 20 messages`
+        : `Context already compact`;
+
+      // Add system message to chat history
+      addChatEntry({
+        type: 'system',
+        content: message,
+        timestamp: new Date()
+      });
+
+      // In headless mode, output confirmation
+      if (isHeadless) {
+        console.log(message);
+      }
+
+      return true;
+    } catch (error) {
+      const errorMessage = `ERROR: Failed to compact context: ${error instanceof Error ? error.message : String(error)}`;
+      console.error(errorMessage);
+      return true;
+    }
   }
 
   // /clear command

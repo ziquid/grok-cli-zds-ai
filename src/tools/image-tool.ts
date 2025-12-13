@@ -188,11 +188,11 @@ export class ImageTool implements ToolDiscovery {
 
   /**
    * Caption an image using AI image captioning.
-   * Uses joycaption script.
+   * Uses joycaption or fastcaption.sh script.
    */
   async captionImage(
     filename: string,
-    prompt?: string
+    backend: "joy" | "fast" = "fast"
   ): Promise<ToolResult> {
     try {
       if (!filename) {
@@ -203,19 +203,9 @@ export class ImageTool implements ToolDiscovery {
         };
       }
 
-      // Build command using joycaption
-      let command = `joycaption '${filename.replace(/'/g, "'\\''")}'`;
-
-      let sanitizationWarning: string | undefined;
-      if (prompt) {
-        // Sanitize prompt: allow only alphanumeric, spaces, periods, commas, dashes, and asterisks
-        const sanitized = prompt.replace(/[^a-zA-Z0-9 .,\-*]/g, '');
-        if (sanitized !== prompt) {
-          sanitizationWarning = `Prompt was sanitized from "${prompt}" to "${sanitized}"`;
-          console.warn(`Warning: Prompt contained invalid characters and was sanitized. Original: "${prompt}", Sanitized: "${sanitized}"`);
-        }
-        command += ` --prompt "${sanitized}"`;
-      }
+      // Build command based on backend selection
+      const scriptName = backend === "fast" ? "fastcaption.sh" : "joycaption";
+      const command = `${scriptName} '${filename.replace(/'/g, "'\\''")}'`;
 
       try {
         const { stdout, stderr } = await execAsync(command, {
@@ -236,8 +226,7 @@ export class ImageTool implements ToolDiscovery {
         return {
           success: true,
           output: caption,
-          displayOutput: `Caption: ${caption}`,
-          ...(sanitizationWarning && { warning: sanitizationWarning })
+          displayOutput: `Caption: ${caption}`
         };
       } catch (error: any) {
         // Extract error details

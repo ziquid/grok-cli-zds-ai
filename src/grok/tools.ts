@@ -699,9 +699,10 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             type: "string",
             description: "Path to the image file to caption",
           },
-          prompt: {
+          backend: {
             type: "string",
-            description: "Optional prompt to guide the captioning process",
+            enum: ["joy", "fast"],
+            description: "Captioning backend to use: 'joy' for joycaption (slower, higher quality) or 'fast' for fastcaption.sh (faster, good quality). Default: 'fast'",
           },
         },
         required: ["filename"],

@@ -23,6 +23,7 @@ export interface SessionState {
   baseUrl: string;
   apiKeyEnvVar: string;
   model: string;
+  supportsVision?: boolean;
 }
 
 export interface ContextData {

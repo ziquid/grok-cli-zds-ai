@@ -145,6 +145,10 @@ export class GrokClient {
     return this.supportsVision;
   }
 
+  setSupportsVision(value: boolean): void {
+    this.supportsVision = value;
+  }
+
   async chat(
     messages: GrokMessage[],
     tools?: GrokTool[],
@@ -258,6 +262,11 @@ export class GrokClient {
           });
 
           continue;
+        }
+
+        // Check if 413 error when vision already disabled -- context too large
+        if (error.status === 413 && !this.supportsVision) {
+          throw new Error('CONTEXT_TOO_LARGE: ' + error.message);
         }
 
         // Check if it's a 429 rate limit error
@@ -432,6 +441,11 @@ export class GrokClient {
           });
 
           continue;
+        }
+
+        // Check if 413 error when vision already disabled -- context too large
+        if (error.status === 413 && !this.supportsVision) {
+          throw new Error('CONTEXT_TOO_LARGE: ' + error.message);
         }
 
         // Check if it's a 429 rate limit error

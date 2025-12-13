@@ -872,6 +872,26 @@ Current working directory: ${process.cwd()}`;
 
       return newEntries;
     } catch (error: any) {
+      // Check if context is too large (413 error when vision already disabled)
+      if (error.message && error.message.startsWith('CONTEXT_TOO_LARGE:')) {
+        const beforeCount = this.chatHistory.length;
+        this.compactContext(20);
+        const afterCount = this.chatHistory.length;
+        const removedCount = beforeCount - afterCount;
+
+        const compactEntry: ChatEntry = {
+          type: "system",
+          content: `Context was too large for backend. Automatically compacted: removed ${removedCount} older messages, keeping last 20 messages. Please retry your request.`,
+          timestamp: new Date(),
+        };
+        this.chatHistory.push(compactEntry);
+
+        // Mark first message as processed
+        this.firstMessageProcessed = true;
+
+        return [userEntry, compactEntry];
+      }
+
       const errorEntry: ChatEntry = {
         type: "assistant",
         content: `Sorry, I encountered an error: ${error.message}`,
@@ -1509,6 +1529,27 @@ Current working directory: ${process.cwd()}`;
         return;
       }
 
+      // Check if context is too large (413 error when vision already disabled)
+      if (error.message && error.message.startsWith('CONTEXT_TOO_LARGE:')) {
+        const beforeCount = this.chatHistory.length;
+        this.compactContext(20);
+        const afterCount = this.chatHistory.length;
+        const removedCount = beforeCount - afterCount;
+
+        const compactEntry: ChatEntry = {
+          type: "system",
+          content: `Context was too large for backend. Automatically compacted: removed ${removedCount} older messages, keeping last 20 messages. Please retry your request.`,
+          timestamp: new Date(),
+        };
+        this.chatHistory.push(compactEntry);
+        yield {
+          type: "content",
+          content: getTextContent(compactEntry.content),
+        };
+        yield { type: "done" };
+        return;
+      }
+
       const errorEntry: ChatEntry = {
         type: "assistant",
         content: `Sorry, I encountered an error: ${error.message}`,
@@ -1855,7 +1896,7 @@ Current working directory: ${process.cwd()}`;
           );
 
         case "captionImage":
-          return await this.imageTool.captionImage(args.filename, args.prompt);
+          return await this.imageTool.captionImage(args.filename, args.backend);
 
         case "pngInfo":
           return await this.imageTool.pngInfo(args.filename);
@@ -2542,6 +2583,8 @@ Current working directory: ${process.cwd()}`;
 
   setModel(model: string): void {
     this.grokClient.setModel(model);
+    // Reset supportsVision flag for new model
+    this.grokClient.setSupportsVision(true);
     // Update token counter for new model
     this.tokenCounter.dispose();
     this.tokenCounter = createTokenCounter(model);
@@ -3005,6 +3048,7 @@ Current working directory: ${process.cwd()}`;
       baseUrl: this.grokClient.getBaseURL(),
       apiKeyEnvVar: this.apiKeyEnvVar,
       model: this.getCurrentModel(),
+      supportsVision: this.grokClient.getSupportsVision(),
     };
   }
 
@@ -3027,6 +3071,7 @@ Current working directory: ${process.cwd()}`;
     baseUrl?: string;
     apiKeyEnvVar?: string;
     model?: string;
+    supportsVision?: boolean;
   }): Promise<void> {
     // Restore session ID
     if (state.session) {
@@ -3052,6 +3097,11 @@ Current working directory: ${process.cwd()}`;
           const model = state.model || this.getCurrentModel();
           this.grokClient = new GrokClient(apiKey, model, state.baseUrl, state.backend);
           this.apiKeyEnvVar = state.apiKeyEnvVar;
+
+          // Restore supportsVision flag if present
+          if (state.supportsVision !== undefined) {
+            this.grokClient.setSupportsVision(state.supportsVision);
+          }
 
           // Reinitialize MCP servers when restoring session
           try {
@@ -3104,6 +3154,61 @@ Current working directory: ${process.cwd()}`;
         console.warn(`Failed to restore active task "${state.activeTask}":`, error);
       }
     }
+  }
+
+  /**
+   * Compact conversation context by keeping system prompt and last N messages
+   * Reduces context size when it grows too large for backend to handle
+   * @returns Number of messages removed
+   */
+  compactContext(keepLastMessages: number = 20): number {
+    if (this.chatHistory.length <= keepLastMessages) {
+      // Nothing to compact
+      return 0;
+    }
+
+    const removedCount = this.chatHistory.length - keepLastMessages;
+    const keptMessages = this.chatHistory.slice(-keepLastMessages);
+
+    // Clear both arrays
+    this.chatHistory = keptMessages;
+    this.messages = [];
+
+    // Add system message noting the compaction
+    const compactionNote: ChatEntry = {
+      type: 'system',
+      content: `Context compacted: removed ${removedCount} older messages, keeping last ${keepLastMessages} messages.`,
+      timestamp: new Date()
+    };
+    this.chatHistory.push(compactionNote);
+
+    // Rebuild this.messages from compacted chatHistory
+    for (const entry of this.chatHistory) {
+      if (entry.type === 'system') {
+        this.messages.push({
+          role: 'system',
+          content: entry.content as string
+        });
+      } else if (entry.type === 'user') {
+        this.messages.push({
+          role: 'user',
+          content: entry.content!
+        });
+      } else if (entry.type === 'assistant') {
+        this.messages.push({
+          role: 'assistant',
+          content: entry.content as string
+        });
+      } else if (entry.type === 'tool_result') {
+        this.messages.push({
+          role: 'tool',
+          tool_call_id: entry.toolResult!.output || '',
+          content: JSON.stringify(entry.toolResult)
+        });
+      }
+    }
+
+    return removedCount;
   }
 
   /**
