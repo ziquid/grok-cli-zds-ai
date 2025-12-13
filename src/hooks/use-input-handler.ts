@@ -391,6 +391,7 @@ export function useInputHandler({
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
+    { command: "/compact", description: "Reduce context size (keep last 20 messages)" },
     { command: "/context", description: "Show context usage info" },
     { command: "/context view", description: "View context in pager" },
     { command: "/context edit", description: "Edit context JSON" },
@@ -484,6 +485,36 @@ export function useInputHandler({
         console.error("Error during /clear command:", error);
         setIsProcessing(false);
         setIsStreaming(false);
+        return true;
+      }
+    }
+
+    if (trimmedInput === "/compact") {
+      try {
+        const removedCount = agent.compactContext(20);
+
+        const message = removedCount > 0
+          ? `Context compacted: removed ${removedCount} messages, kept last 20 messages`
+          : `Context already compact`;
+
+        const compactEntry: ChatEntry = {
+          type: "system",
+          content: message,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, compactEntry]);
+        clearInput();
+        return true;
+      } catch (error) {
+        const errorMessage = `ERROR: Failed to compact context: ${error instanceof Error ? error.message : String(error)}`;
+        console.error(errorMessage);
+        const errorEntry: ChatEntry = {
+          type: "system",
+          content: errorMessage,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+        clearInput();
         return true;
       }
     }

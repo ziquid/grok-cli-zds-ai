@@ -105,9 +105,10 @@ export function parseImagesFromMessage(
 
   // Pattern: @ followed by either:
   //   1. Quoted path: @"path with spaces"
-  //   2. Unquoted path: @path (stops at whitespace)
+  //   2. Unquoted path starting with path separator: @/, @\, @~/, @./, @../
   // Captures quoted content in group 1, unquoted content in group 2
-  const imagePattern = /@"([^"]+)"|@([^\s]+)/g;
+  // This excludes Discord usernames like @username (no path separator)
+  const imagePattern = /@"([^"]+)"|@([/\\~.][^\s]*)/g;
 
   // Extract all @path references
   let match;
@@ -170,5 +171,5 @@ export function parseImagesFromMessage(
  * Check if a message contains image references
  */
 export function hasImageReferences(message: string): boolean {
-  return /@"([^"]+)"|@([^\s]+)/.test(message);
+  return /@"([^"]+)"|@([/\\~.][^\s]*)/.test(message);
 }
