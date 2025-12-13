@@ -503,6 +503,13 @@ export function useInputHandler({
           timestamp: new Date(),
         };
         setChatHistory((prev) => [...prev, compactEntry]);
+
+        // Save compacted context to disk
+        const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+        const historyManager = ChatHistoryManager.getInstance();
+        const sessionState = agent.getSessionState();
+        historyManager.saveContext(agent.getSystemPrompt(), agent.getChatHistory(), sessionState);
+
         clearInput();
         return true;
       } catch (error) {

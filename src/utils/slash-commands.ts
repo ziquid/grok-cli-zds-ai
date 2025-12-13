@@ -157,6 +157,12 @@ export async function processSlashCommand(
         timestamp: new Date()
       });
 
+      // Save compacted context to disk
+      const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+      const historyManager = ChatHistoryManager.getInstance();
+      const sessionState = agent.getSessionState();
+      historyManager.saveContext(agent.getSystemPrompt(), agent.getChatHistory(), sessionState);
+
       // In headless mode, output confirmation
       if (isHeadless) {
         console.log(message);
