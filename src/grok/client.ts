@@ -228,13 +228,16 @@ export class GrokClient {
           continue;
         }
 
-        // Check if model doesn't support vision
-        const isVisionNotSupported = error.status === 400 &&
-                                     error.message &&
-                                     (error.message.toLowerCase().includes('does not support vision') ||
-                                      error.message.toLowerCase().includes('does not support images') ||
-                                      error.message.toLowerCase().includes('image inputs are not supported') ||
-                                      error.message.toLowerCase().includes('image_url'));
+        // Check if model doesn't support vision (400 errors) or request is too large (413 errors)
+        const isVisionNotSupported = ((error.status === 400 &&
+                                       error.message &&
+                                       (error.message.toLowerCase().includes('does not support vision') ||
+                                        error.message.toLowerCase().includes('does not support images') ||
+                                        error.message.toLowerCase().includes('image inputs are not supported') ||
+                                        error.message.toLowerCase().includes('image_url'))) ||
+                                      (error.status === 413 &&
+                                       error.message &&
+                                       error.message.toLowerCase().includes('request entity too large')));
 
         if (isVisionNotSupported && this.supportsVision) {
           // Disable vision for this model and rebuild request without images
@@ -399,13 +402,16 @@ export class GrokClient {
           continue;
         }
 
-        // Check if model doesn't support vision
-        const isVisionNotSupported = error.status === 400 &&
-                                     error.message &&
-                                     (error.message.toLowerCase().includes('does not support vision') ||
-                                      error.message.toLowerCase().includes('does not support images') ||
-                                      error.message.toLowerCase().includes('image inputs are not supported') ||
-                                      error.message.toLowerCase().includes('image_url'));
+        // Check if model doesn't support vision (400 errors) or request is too large (413 errors)
+        const isVisionNotSupported = ((error.status === 400 &&
+                                       error.message &&
+                                       (error.message.toLowerCase().includes('does not support vision') ||
+                                        error.message.toLowerCase().includes('does not support images') ||
+                                        error.message.toLowerCase().includes('image inputs are not supported') ||
+                                        error.message.toLowerCase().includes('image_url'))) ||
+                                      (error.status === 413 &&
+                                       error.message &&
+                                       error.message.toLowerCase().includes('request entity too large')));
 
         if (isVisionNotSupported && this.supportsVision) {
           // Disable vision for this model and rebuild request without images
