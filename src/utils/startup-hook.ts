@@ -1,9 +1,6 @@
 import { getSettingsManager } from "./settings-manager.js";
 import { GrokAgent } from "../agent/grok-agent.js";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { executeOperationHook, applyHookCommands, applyEnvVariables } from "./hook-executor.js";
 
 /**
  * Execute the startup hook command if configured
@@ -18,16 +15,35 @@ export async function executeStartupHook(): Promise<string | undefined> {
   }
 
   try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const { stdout, stderr } = await execAsync(startupHook, {
-      timeout: 10000, // 10 second timeout
-      maxBuffer: 1024 * 1024, // 1MB max output
-      shell,
-    });
+    // Execute startup hook using hook executor to properly parse ENV commands
+    const hookResult = await executeOperationHook(
+      startupHook,
+      "startup",
+      {},
+      10000,  // 10 second timeout
+      false   // Not mandatory
+    );
 
-    // Combine stdout and stderr
-    const output = (stdout + (stderr ? `\nSTDERR:\n${stderr}` : "")).trim();
-    return output || undefined;
+    if (!hookResult.approved || !hookResult.commands || hookResult.commands.length === 0) {
+      return undefined;
+    }
+
+    // Apply hook commands to extract ENV variables and output
+    const results = applyHookCommands(hookResult.commands);
+
+    // Apply ENV variables to process.env BEFORE instance hook runs
+    applyEnvVariables(results.env);
+
+    // Combine tool result and system output for the system prompt
+    const outputParts: string[] = [];
+    if (results.toolResult) {
+      outputParts.push(results.toolResult);
+    }
+    if (results.system) {
+      outputParts.push(results.system);
+    }
+
+    return outputParts.length > 0 ? outputParts.join("\n") : undefined;
   } catch (error: any) {
     console.warn("Startup hook failed:", error.message);
     return undefined;
