@@ -676,7 +676,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           },
           move: {
             type: "boolean",
-            description: "Move the generated image to ZAI folder (default: false)",
+            description: "Move the generated image to external folder (default: false)",
           },
           seed: {
             type: "integer",

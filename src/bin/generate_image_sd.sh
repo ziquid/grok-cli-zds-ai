@@ -35,7 +35,7 @@ if [[ "$1" == --help || "$1" == -h || $# -eq 0 ]]; then
   echo "  <negative prompt>        Text prompt for what to avoid (optional)"
   echo
   echo Options:
-  echo "  --move                   Move generated image to ZAI directory"
+  echo "  --move                   Move generated image to external folder"
   echo "  --width <num>            Set width (default: $WIDTH)"
   echo "  --height <num>           Set height (default: $HEIGHT)"
   echo "  --cfg-scale <value>      Set CFG scale (default: $CFG_SCALE)"
