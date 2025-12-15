@@ -12,6 +12,7 @@ import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { logApiError } from "../utils/error-logger.js";
 import { parseImagesFromMessage, hasImageReferences } from "../utils/image-encoder.js";
 import { getTextContent } from "../utils/content-utils.js";
+import { Variable } from "./prompt-variables.js";
 import fs from "fs";
 import {
   TextEditorTool,
@@ -523,26 +524,31 @@ Current working directory: ${process.cwd()}`;
       }
     }
 
+    // Clear one-shot variables
+    Variable.clearOneShot();
+
+    // Parse images once if present (for both text extraction and later assembly)
+    const parsed = hasImageReferences(messageToSend)
+      ? parseImagesFromMessage(messageToSend)
+      : { text: messageToSend, images: [] };
+
+    // Set USER:PROMPT variable (text only, images stripped)
+    Variable.set("USER:PROMPT", parsed.text);
+
+    // Assemble final message from variables
+    const assembledMessage = Variable.renderFull("USER");
+
     // Add user/system message to conversation
-    // Check for image references and parse if present
     // Note: System messages can only have string content, so images are only supported for user messages
     const supportsVision = this.grokClient.getSupportsVision();
-    let messageContent: string | ChatCompletionContentPart[] = messageToSend;
+    let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
 
-    if (messageType === "user" && hasImageReferences(messageToSend) && supportsVision) {
-      // Parse images from message (only for user messages)
-      const parsed = parseImagesFromMessage(messageToSend);
-
-      if (parsed.images.length > 0) {
-        // Construct content array with text and images
-        messageContent = [
-          { type: "text", text: parsed.text },
-          ...parsed.images
-        ];
-      } else {
-        // No valid images found (errors will be in parsed.text)
-        messageContent = parsed.text;
-      }
+    if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
+      // Construct content array with assembled text and images
+      messageContent = [
+        { type: "text", text: assembledMessage },
+        ...parsed.images
+      ];
     }
 
     const userEntry: ChatEntry = {
@@ -1084,26 +1090,31 @@ Current working directory: ${process.cwd()}`;
       }
     }
 
+    // Clear one-shot variables
+    Variable.clearOneShot();
+
+    // Parse images once if present (for both text extraction and later assembly)
+    const parsed = hasImageReferences(messageToSend)
+      ? parseImagesFromMessage(messageToSend)
+      : { text: messageToSend, images: [] };
+
+    // Set USER:PROMPT variable (text only, images stripped)
+    Variable.set("USER:PROMPT", parsed.text);
+
+    // Assemble final message from variables
+    const assembledMessage = Variable.renderFull("USER");
+
     // Add user/system message to both API conversation and chat history
-    // Check for image references and parse if present
     // Note: System messages can only have string content, so images are only supported for user messages
     const supportsVision = this.grokClient.getSupportsVision();
-    let messageContent: string | ChatCompletionContentPart[] = messageToSend;
+    let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
 
-    if (messageType === "user" && hasImageReferences(messageToSend) && supportsVision) {
-      // Parse images from message (only for user messages)
-      const parsed = parseImagesFromMessage(messageToSend);
-
-      if (parsed.images.length > 0) {
-        // Construct content array with text and images
-        messageContent = [
-          { type: "text", text: parsed.text },
-          ...parsed.images
-        ];
-      } else {
-        // No valid images found (errors will be in parsed.text)
-        messageContent = parsed.text;
-      }
+    if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
+      // Construct content array with assembled text and images
+      messageContent = [
+        { type: "text", text: assembledMessage },
+        ...parsed.images
+      ];
     }
 
     const userEntry: ChatEntry = {
@@ -1118,7 +1129,7 @@ Current working directory: ${process.cwd()}`;
       this.messages.push({ role: "user", content: messageContent });
     } else {
       // System messages must have string content only
-      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : messageToSend });
+      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : assembledMessage });
     }
     await this.emitContextChange();
 
