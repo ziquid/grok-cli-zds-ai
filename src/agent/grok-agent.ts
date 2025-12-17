@@ -3203,9 +3203,14 @@ Current working directory: ${process.cwd()}`;
     // Restore cwd early (hooks may need correct working directory)
     if (state.cwd) {
       try {
-        process.chdir(state.cwd);
+        const fs = await import('fs');
+        // Only attempt to change directory if it exists
+        if (fs.existsSync(state.cwd)) {
+          process.chdir(state.cwd);
+        }
+        // Silently skip if directory doesn't exist (common in containerized environments)
       } catch (error) {
-        console.warn(`Failed to restore working directory to ${state.cwd}:`, error);
+        // Silently skip on any error - working directory restoration is non-critical
       }
     }
 
