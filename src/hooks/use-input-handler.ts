@@ -497,12 +497,8 @@ export function useInputHandler({
           ? `Context compacted: removed ${removedCount} messages, kept last 20 messages`
           : `Context already compact`;
 
-        const compactEntry: ChatEntry = {
-          type: "system",
-          content: message,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, compactEntry]);
+        // Sync React state with agent's compacted history (which already includes the compaction note)
+        setChatHistory(agent.getChatHistory());
 
         // Save compacted context to disk
         const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");

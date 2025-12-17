@@ -15,6 +15,7 @@ export interface UserSettings {
   maxTokens?: number; // Default max tokens for API responses (no upper limit, default: undefined = API default)
   startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
   instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
+  prePromptHook?: string; // Command to run before each prompt is sent to the LLM
   taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
@@ -349,6 +350,13 @@ export class SettingsManager {
    */
   public isMoodHookMandatory(): boolean {
     return this.getUserSetting("moodHookMandatory") ?? false;
+  }
+
+  /**
+   * Get prePrompt hook command from user settings
+   */
+  public getPrePromptHook(): string | undefined {
+    return this.getUserSetting("prePromptHook");
   }
 
   /**

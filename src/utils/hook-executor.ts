@@ -1,9 +1,43 @@
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 
 const ENV_PREFIX = "ZDS_AI_AGENT_";
+
+/**
+ * Expand tilde in path to home directory
+ * Supports ~, ~/path, and ~username/path
+ */
+function expandTilde(filePath: string): string {
+  if (!filePath.startsWith("~")) {
+    return filePath;
+  }
+
+  // Handle ~ or ~/path (current user)
+  if (filePath === "~" || filePath.startsWith("~/")) {
+    return filePath.replace("~", os.homedir());
+  }
+
+  // Handle ~username/path (other users)
+  // Extract username from ~username/path
+  const match = filePath.match(/^~([^/]+)(\/.*)?$/);
+  if (match) {
+    const username = match[1];
+    const restOfPath = match[2] || "";
+
+    try {
+      // Use shell to expand ~username
+      const expandedHome = execSync(`eval echo ~${username}`, { encoding: 'utf-8' }).trim();
+      return expandedHome + restOfPath;
+    } catch (error) {
+      // If expansion fails, return original path
+      return filePath;
+    }
+  }
+
+  return filePath;
+}
 
 export interface HookResult {
   approved: boolean;
@@ -13,13 +47,13 @@ export interface HookResult {
 }
 
 export interface HookCommand {
-  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR";
+  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR" | "SET" | "SET_FILE" | "SET_TEMP_FILE";
   value: string;
 }
 
 /**
  * Parse hook output for command directives
- * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", or "API_KEY_ENV_VAR " are commands
+ * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", "API_KEY_ENV_VAR ", "SET ", "SET_FILE ", or "SET_TEMP_FILE " are commands
  * Other lines are treated as TOOL_RESULT if present
  */
 function parseHookOutput(stdout: string): HookCommand[] {
@@ -47,6 +81,12 @@ function parseHookOutput(stdout: string): HookCommand[] {
       commands.push({ type: "BASE_URL", value: line.slice(9) });
     } else if (line.startsWith("API_KEY_ENV_VAR ")) {
       commands.push({ type: "API_KEY_ENV_VAR", value: line.slice(16) });
+    } else if (line.startsWith("SET_TEMP_FILE ")) {
+      commands.push({ type: "SET_TEMP_FILE", value: line.slice(14) });
+    } else if (line.startsWith("SET_FILE ")) {
+      commands.push({ type: "SET_FILE", value: line.slice(9) });
+    } else if (line.startsWith("SET ")) {
+      commands.push({ type: "SET", value: line.slice(4) });
     } else if (line.trim()) {
       // Non-empty lines without a command prefix are treated as TOOL_RESULT
       commands.push({ type: "TOOL_RESULT", value: line });
@@ -64,6 +104,7 @@ export interface HookCommandResults {
   backend?: string;
   baseUrl?: string;
   apiKeyEnvVar?: string;
+  promptVars: Map<string, string>;
 }
 
 /**
@@ -72,17 +113,21 @@ export interface HookCommandResults {
  * ENV VAR= (empty value) will unset the variable
  * TOOL_RESULT commands are aggregated into a single string
  * SYSTEM commands are aggregated into a single string
- * SYSTEM_FILE commands read file contents (up to 20k) and add to system string
+ * SYSTEM_FILE commands read file contents (up to 20,000 bytes) and add to system string
  * MODEL commands set the model to use (last one wins if multiple)
  * BACKEND commands set the backend to use (last one wins if multiple)
  * BASE_URL commands set the base URL to use (last one wins if multiple)
  * API_KEY_ENV_VAR commands set the env var name for API key (last one wins if multiple)
+ * SET commands set prompt variables (text limited to 10,000 bytes)
+ * SET_FILE commands read file contents (up to 20,000 bytes) and set prompt variables
+ * SET_TEMP_FILE commands read file contents (up to 20,000 bytes), set prompt variables, and delete file
  * Returns extracted values for caller to use
  */
 export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
   const env: Record<string, string> = {};
   const toolResultLines: string[] = [];
   const systemLines: string[] = [];
+  const promptVars: Map<string, string> = new Map();
   let model: string | undefined = undefined;
   let backend: string | undefined = undefined;
   let baseUrl: string | undefined = undefined;
@@ -110,9 +155,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       const filePath = cmd.value.trim();
       try {
         // Expand ~ to home directory
-        const expandedPath = filePath.startsWith("~/")
-          ? path.join(os.homedir(), filePath.slice(2))
-          : filePath;
+        const expandedPath = expandTilde(filePath);
 
         const MAX_FILE_SIZE = 20000;
 
@@ -145,6 +188,86 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       baseUrl = cmd.value.trim();
     } else if (cmd.type === "API_KEY_ENV_VAR") {
       apiKeyEnvVar = cmd.value.trim();
+    } else if (cmd.type === "SET") {
+      // Parse "VAR_NAME=value"
+      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.*)$/);
+      if (match) {
+        const [, varName, value] = match;
+
+        // Limit text values to 10,000 bytes
+        const MAX_TEXT_SIZE = 10000;
+        let finalValue = value;
+        if (finalValue.length > MAX_TEXT_SIZE) {
+          finalValue = finalValue.substring(0, MAX_TEXT_SIZE) + "\n\n[Text truncated at 10,000 bytes]";
+        }
+
+        promptVars.set(varName, finalValue);
+      }
+    } else if (cmd.type === "SET_FILE") {
+      // Parse "VAR_NAME=/path/to/file"
+      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.+)$/);
+      if (match) {
+        const [, varName, filePath] = match;
+
+        try {
+          const expandedPath = expandTilde(filePath);
+          const MAX_FILE_SIZE = 20000;
+          const stats = fs.statSync(expandedPath);
+
+          let fileContents: string;
+          if (stats.size > MAX_FILE_SIZE) {
+            // File too large -- read first 20000 bytes
+            const fd = fs.openSync(expandedPath, 'r');
+            const buffer = Buffer.alloc(MAX_FILE_SIZE);
+            fs.readSync(fd, buffer, 0, MAX_FILE_SIZE, 0);
+            fs.closeSync(fd);
+            fileContents = buffer.toString('utf-8') + `\n\n[File truncated at ${MAX_FILE_SIZE} characters]`;
+          } else {
+            // Read entire file
+            fileContents = fs.readFileSync(expandedPath, 'utf-8');
+          }
+
+          promptVars.set(varName, fileContents);
+        } catch (error) {
+          // Add error to variable value
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          promptVars.set(varName, `[Error reading file ${filePath}: ${errorMsg}]`);
+        }
+      }
+    } else if (cmd.type === "SET_TEMP_FILE") {
+      // Parse "VAR_NAME=/path/to/file"
+      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.+)$/);
+      if (match) {
+        const [, varName, filePath] = match;
+
+        try {
+          const expandedPath = expandTilde(filePath);
+          const MAX_FILE_SIZE = 20000;
+          const stats = fs.statSync(expandedPath);
+
+          let fileContents: string;
+          if (stats.size > MAX_FILE_SIZE) {
+            // File too large -- read first 20000 bytes
+            const fd = fs.openSync(expandedPath, 'r');
+            const buffer = Buffer.alloc(MAX_FILE_SIZE);
+            fs.readSync(fd, buffer, 0, MAX_FILE_SIZE, 0);
+            fs.closeSync(fd);
+            fileContents = buffer.toString('utf-8') + `\n\n[File truncated at ${MAX_FILE_SIZE} characters]`;
+          } else {
+            // Read entire file
+            fileContents = fs.readFileSync(expandedPath, 'utf-8');
+          }
+
+          promptVars.set(varName, fileContents);
+
+          // Delete temp file after reading
+          fs.unlinkSync(expandedPath);
+        } catch (error) {
+          // Add error to variable value (file might not exist or delete might fail)
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          promptVars.set(varName, `[Error with temp file ${filePath}: ${errorMsg}]`);
+        }
+      }
     }
   }
 
@@ -156,6 +279,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     backend,
     baseUrl,
     apiKeyEnvVar,
+    promptVars,
   };
 }
 
@@ -195,9 +319,7 @@ export async function executeOperationHook(
   contextMax?: number
 ): Promise<HookResult> {
   // Expand ~ to home directory
-  const expandedPath = hookPath.startsWith("~/")
-    ? path.join(os.homedir(), hookPath.slice(2))
-    : hookPath;
+  const expandedPath = expandTilde(hookPath);
 
   // Build environment using ZDS_AI_AGENT_* naming convention
   // Note: These variables are only set in the child process and are automatically
@@ -309,9 +431,7 @@ export async function executeToolApprovalHook(
   contextMax?: number
 ): Promise<HookResult> {
   // Expand ~ to home directory
-  const expandedPath = hookPath.startsWith("~/")
-    ? path.join(os.homedir(), hookPath.slice(2))
-    : hookPath;
+  const expandedPath = expandTilde(hookPath);
 
   // Build environment with tool info using ZDS_AI_AGENT_* naming convention
   // Note: These variables are only set in the child process and are automatically

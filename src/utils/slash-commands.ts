@@ -150,12 +150,8 @@ export async function processSlashCommand(
         ? `Context compacted: removed ${removedCount} messages, kept last 20 messages`
         : `Context already compact`;
 
-      // Add system message to chat history
-      addChatEntry({
-        type: 'system',
-        content: message,
-        timestamp: new Date()
-      });
+      // compactContext() already added the compaction note to agent.chatHistory
+      // No need to add it again via addChatEntry()
 
       // Save compacted context to disk
       const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");

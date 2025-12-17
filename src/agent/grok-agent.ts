@@ -239,6 +239,7 @@ export class GrokAgent extends EventEmitter {
 
   private startupHookOutput?: string;
   private systemPrompt: string = "Initializing..."; // THE system prompt (always at messages[0])
+  private hasRunInstanceHook: boolean = false;
 
   /**
    * Initialize the agent with dynamic system prompt
@@ -247,26 +248,6 @@ export class GrokAgent extends EventEmitter {
   async initialize(): Promise<void> {
     // Build system message
     await this.buildSystemMessage();
-
-    // Execute instance hook on every startup (fresh or not)
-    const settings = getSettingsManager();
-    const instanceHookPath = settings.getInstanceHook();
-    if (instanceHookPath) {
-      const hookResult = await executeOperationHook(
-        instanceHookPath,
-        "instance",
-        {},
-        30000,
-        false,  // Instance hook is not mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-        // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM)
-        await this.processHookResult(hookResult);
-      }
-    }
   }
 
   /**
@@ -527,6 +508,45 @@ Current working directory: ${process.cwd()}`;
     // Clear one-shot variables
     Variable.clearOneShot();
 
+    // Execute instance hook once per session (after first clearOneShot)
+    if (!this.hasRunInstanceHook) {
+      this.hasRunInstanceHook = true;
+      const settings = getSettingsManager();
+      const instanceHookPath = settings.getInstanceHook();
+      if (instanceHookPath) {
+        const hookResult = await executeOperationHook(
+          instanceHookPath,
+          "instance",
+          {},
+          30000,
+          false,  // Instance hook is not mandatory
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
+        );
+
+        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+          // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, SET*)
+          const results = applyHookCommands(hookResult.commands);
+
+          // Apply prompt variables from SET* commands
+          for (const [varName, value] of results.promptVars.entries()) {
+            Variable.set(varName, value);
+          }
+
+          // Process other hook commands (MODEL, BACKEND, ENV)
+          await this.processHookCommands(results);
+
+          // Add SYSTEM message to messages array if present
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system
+            });
+          }
+        }
+      }
+    }
+
     // Parse images once if present (for both text extraction and later assembly)
     const parsed = hasImageReferences(messageToSend)
       ? parseImagesFromMessage(messageToSend)
@@ -534,6 +554,32 @@ Current working directory: ${process.cwd()}`;
 
     // Set USER:PROMPT variable (text only, images stripped)
     Variable.set("USER:PROMPT", parsed.text);
+
+    // Execute prePrompt hook if configured
+    const hookPath = getSettingsManager().getPrePromptHook();
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "prePrompt",
+        { USER_MESSAGE: parsed.text },
+        30000,
+        false,  // prePrompt hook is never mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
+      );
+
+      if (hookResult.approved && hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+
+        // Set prompt variables from hook output (SET, SET_FILE, SET_TEMP_FILE)
+        for (const [varName, value] of results.promptVars.entries()) {
+          Variable.set(varName, value);
+        }
+
+        // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
+        await this.processHookCommands(results);
+      }
+    }
 
     // Assemble final message from variables
     const assembledMessage = Variable.renderFull("USER");
@@ -1093,6 +1139,45 @@ Current working directory: ${process.cwd()}`;
     // Clear one-shot variables
     Variable.clearOneShot();
 
+    // Execute instance hook once per session (after first clearOneShot)
+    if (!this.hasRunInstanceHook) {
+      this.hasRunInstanceHook = true;
+      const settings = getSettingsManager();
+      const instanceHookPath = settings.getInstanceHook();
+      if (instanceHookPath) {
+        const hookResult = await executeOperationHook(
+          instanceHookPath,
+          "instance",
+          {},
+          30000,
+          false,  // Instance hook is not mandatory
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
+        );
+
+        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+          // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, SET*)
+          const results = applyHookCommands(hookResult.commands);
+
+          // Apply prompt variables from SET* commands
+          for (const [varName, value] of results.promptVars.entries()) {
+            Variable.set(varName, value);
+          }
+
+          // Process other hook commands (MODEL, BACKEND, ENV)
+          await this.processHookCommands(results);
+
+          // Add SYSTEM message to messages array if present
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system
+            });
+          }
+        }
+      }
+    }
+
     // Parse images once if present (for both text extraction and later assembly)
     const parsed = hasImageReferences(messageToSend)
       ? parseImagesFromMessage(messageToSend)
@@ -1100,6 +1185,32 @@ Current working directory: ${process.cwd()}`;
 
     // Set USER:PROMPT variable (text only, images stripped)
     Variable.set("USER:PROMPT", parsed.text);
+
+    // Execute prePrompt hook if configured
+    const hookPath = getSettingsManager().getPrePromptHook();
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "prePrompt",
+        { USER_MESSAGE: parsed.text },
+        30000,
+        false,  // prePrompt hook is never mandatory
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
+      );
+
+      if (hookResult.approved && hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+
+        // Set prompt variables from hook output (SET, SET_FILE, SET_TEMP_FILE)
+        for (const [varName, value] of results.promptVars.entries()) {
+          Variable.set(varName, value);
+        }
+
+        // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
+        await this.processHookCommands(results);
+      }
+    }
 
     // Assemble final message from variables
     const assembledMessage = Variable.renderFull("USER");

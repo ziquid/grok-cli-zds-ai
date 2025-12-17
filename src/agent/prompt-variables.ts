@@ -206,8 +206,14 @@ export class Variable {
 const PROMPT_VARS: VariableDef[] = [
   new VariableDef({ name: "USER:PRE", weight: 0, template: "Before you do any processing, please remember:\n%%\n\n" }),
   new VariableDef({
-    name: "USER:RAG",
+    name: "USER:ENV",
     weight: 10,
+    template: "---ENV---\nThe following environment variables have changed since the last prompt:\n\n%%\n\n"
+  }),
+  new VariableDef({ name: "USER:TIMESTAMP", weight: 11, template: "Current local time: %%\n\n" }),
+  new VariableDef({
+    name: "USER:RAG",
+    weight: 20,
     template: "---RAG---\nThe following data may aid you in performing this request or answering this question:\n\n%%\n\n---USER---\n"
   }),
   new VariableDef({ name: "USER:PROMPT", weight: 50 }),
