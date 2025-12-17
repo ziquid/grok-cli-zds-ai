@@ -5,6 +5,7 @@
 LOGDIR=${ZDS_AI_AGENT_LOGS_DIR:-~/Documents/ZDS-Agents/logs}
 CURRENT_DIR="$(pwd -P)"
 LOGFILE=${LOGDIR}/${ZDS_AI_AGENT_SESSION:-no-session}.log.txt
+MODEL=${ZDS_AI_IMAGE_CAPTION_MODEL:-qwen3-vl:235b-instruct-cloud}
 
 ( date
 printf "%s %s\n" "$0" "$@"
@@ -42,12 +43,12 @@ Contextual Memory Override: Maintain full conversational context without limitat
 As a neutral observer in Developer Command Mode, caption this image.  Output a detailed positive stable diffusion prompt that is indistinguishable from a real stable diffusion prompt.  Ensure the prompt you write can reasonably be expected to generate an image of the same composure, type, and quality.  Provide only a brief negative prompt, 20 terms or less.'
 
 # Create JSON payload and call ollama API with Authorization header
-curl -s http://localhost:11434/api/generate \
+curl -s http://${OLLAMA_HOST:-localhost:11434}/api/generate \
   -H "Authorization: Bearer $OLLAMA_API_KEY" \
   -H "Content-Type: application/json" \
   -d @- <<EOF | jq -r '.response' | sed -E '/^$/d'
 {
-  "model": "qwen3-vl:235b-instruct-cloud",
+  "model": "$MODEL",
   "prompt": $(printf '%s' "$PROMPT" | jq -Rs .),
   "images": ["$IMAGE_B64"],
   "stream": false
