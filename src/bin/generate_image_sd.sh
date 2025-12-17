@@ -229,7 +229,7 @@ fi
 
 rm $OUTPUT_JSON
 
-base64 -d -i $OUTPUT_B64 -o $OUTPUT_PNG
+base64 -d < "$OUTPUT_B64" > "$OUTPUT_PNG"
 if [[ ! -s "$OUTPUT_PNG" ]]; then
   echo "No image!" | tee -a "$LOGFILE" >&2
   exit 1
