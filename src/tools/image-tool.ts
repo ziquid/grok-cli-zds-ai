@@ -137,7 +137,8 @@ export class ImageTool implements ToolDiscovery {
 
       try {
         const { stdout, stderr } = await execAsync(command, {
-          timeout: 300000 // 5 minute timeout
+          timeout: 300000, // 5 minute timeout
+          env: process.env
         });
 
         // Parse output to find the generated file path
@@ -324,7 +325,8 @@ export class ImageTool implements ToolDiscovery {
 
       try {
         const { stdout, stderr } = await execAsync(command, {
-          timeout: 30000 // 30 second timeout
+          timeout: 30000, // 30 second timeout
+          env: process.env
         });
 
         if (stderr && !stdout) {
