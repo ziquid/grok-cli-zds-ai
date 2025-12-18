@@ -106,6 +106,7 @@ function sanitizeToolArguments(args: string | undefined): string {
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
   content?: string | ChatCompletionContentPart[];
+  originalContent?: string | ChatCompletionContentPart[];
   timestamp: Date;
   tool_calls?: GrokToolCall[];
   toolCall?: GrokToolCall;
@@ -600,6 +601,9 @@ Current working directory: ${process.cwd()}`;
     const userEntry: ChatEntry = {
       type: messageType,
       content: messageContent,
+      originalContent: messageType === "user" ? (parsed.images.length > 0 && supportsVision
+        ? [{ type: "text", text: parsed.text }, ...parsed.images]
+        : parsed.text) : undefined,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
@@ -1231,6 +1235,9 @@ Current working directory: ${process.cwd()}`;
     const userEntry: ChatEntry = {
       type: messageType,
       content: messageContent,
+      originalContent: messageType === "user" ? (parsed.images.length > 0 && supportsVision
+        ? [{ type: "text", text: parsed.text }, ...parsed.images]
+        : parsed.text) : undefined,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);

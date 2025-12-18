@@ -79,7 +79,7 @@ const MemoizedChatEntry = React.memo(
           <Box key={index} flexDirection="column" marginTop={1}>
             <Box>
               <Text color="gray">
-                {">"} {getTextContent(entry.content)}
+                {">"} {getTextContent(entry.originalContent ?? entry.content)}
               </Text>
             </Box>
           </Box>
