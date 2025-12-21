@@ -11,6 +11,8 @@ export class VariableDef {
   renderFull: boolean = true;
   persists: boolean = false;
   template: string = "%%";
+  adoptedChildren: string[] = [];
+  getter?: () => string;
 
   constructor(config: {
     name: string;
@@ -19,8 +21,21 @@ export class VariableDef {
     renderFull?: boolean;
     persists?: boolean;
     template?: string;
+    getter?: () => string;
   }) {
     Object.assign(this, config);
+
+    // Parse template for %VAR% references (adopted children)
+    if (this.template) {
+      const regex = /%([A-Z_:]+)%/g;
+      let match;
+      while ((match = regex.exec(this.template)) !== null) {
+        const varName = match[1];
+        if (varName !== "" && !this.adoptedChildren.includes(varName)) {
+          this.adoptedChildren.push(varName);
+        }
+      }
+    }
   }
 
   /**
@@ -120,18 +135,18 @@ export class Variable {
   }
 
   /**
-   * Find all full child variables of given parent.  Return sorted.
+   * Find birth child variables of given parent.  Return sorted.
    *
-   * Returns all children of a parent var, sorted by weight,
+   * Returns birth children (prefix match) of a parent var, sorted by weight,
    * where renderFull == true.
    *
    * @param parent: string
-   *   Parent name (e.g., "USER")
+   *   Parent name (e.g., "USER" or "SYSTEM")
    *
    * @returns variables[]
    *   All variables with prefix "parent:", renderFull=true, sorted by weight
    */
-  static findFullChildrenVars(parent: string): Variable[] {
+  static findBirthChildren(parent: string): Variable[] {
     const prefix = `${parent}:`;
     const found: Variable[] = [];
 
@@ -153,44 +168,141 @@ export class Variable {
   }
 
   /**
+   * Find all full child variables of given parent.  Return sorted.
+   *
+   * Returns all children of a parent var, sorted by weight,
+   * where renderFull == true.  Includes both birth children
+   * (prefix match "parent:") and adopted children (from template).
+   *
+   * @param parent: string
+   *   Parent name (e.g., "USER")
+   *
+   * @returns variables[]
+   *   All variables with prefix "parent:", renderFull=true, sorted by weight
+   */
+  static findFullChildrenVars(parent: string): Variable[] {
+    const found: Variable[] = [];
+
+    // Find birth children (prefix match)
+    found.push(...Variable.findBirthChildren(parent));
+
+    // Find adopted children (from parent's template)
+    const parentDef = VariableDef.getOrCreate(parent);
+    for (const adoptedName of parentDef.adoptedChildren) {
+      const adoptedVar = Variable.get(adoptedName);
+      if (adoptedVar && adoptedVar.renderFull && !found.includes(adoptedVar)) {
+        found.push(adoptedVar);
+      }
+    }
+
+    // Sort by weight (primary), then name alphabetically (secondary)
+    found.sort((a, b) => {
+      if (a.weight !== b.weight) {
+        return a.weight - b.weight;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return found;
+  }
+
+  /**
    * Render a variable fully (recursive)
-   * If variable has children, renders children and joins
-   * If variable has no children, renders its template
+   * If variable exists, renders its template (which may reference children)
+   * If variable doesn't exist but children do, renders children and joins
+   * If variable doesn't exist but has a getter, auto-creates it
    * @param name Variable name (e.g., "USER" or "USER:PROMPT")
+   * @param renderingStack Set of variables currently being rendered (for cycle detection)
    * @returns Rendered string
    */
-  static renderFull(name: string): string {
-    const children = Variable.findFullChildrenVars(name);
-
-    if (children.length > 0) {
-      // Has children - render each child recursively
-      const parts: string[] = [];
-      for (const child of children) {
-        parts.push(Variable.renderFull(child.name));
-      }
-      return parts.join("");
-    } else {
-      // No children - render this variable's template
-      const variable = Variable.get(name);
-      if (variable) {
-        return variable.renderFullTemplate();
-      }
-      return "";
+  static renderFull(name: string, renderingStack: Set<string> = new Set()): string {
+    // Check for circular dependency
+    if (renderingStack.has(name)) {
+      const parent = Array.from(renderingStack).pop() || "unknown";
+      return `ERROR: ${name} already rendered, refusing to render as child of ${parent}`;
     }
+
+    // Add to stack
+    renderingStack.add(name);
+
+    let variable = Variable.get(name);
+    let result = "";
+
+    // If variable doesn't exist but definition has getter, auto-create it
+    if (!variable) {
+      const def = VariableDef.getOrCreate(name);
+      if (def.getter) {
+        variable = new Variable(name);
+        Variable.variables.set(name, variable);
+      }
+    }
+
+    if (variable) {
+      // Variable exists - render its template
+      result = variable.renderFullTemplate(renderingStack);
+    } else {
+      // Variable doesn't exist - check if it has children or getter
+      const def = VariableDef.getOrCreate(name);
+      const children = Variable.findFullChildrenVars(name);
+
+      if (children.length > 0 || def.getter) {
+        // Create the variable instance so it can render properly
+        variable = new Variable(name);
+        Variable.variables.set(name, variable);
+        result = variable.renderFullTemplate(renderingStack);
+      }
+    }
+
+    // Remove from stack
+    renderingStack.delete(name);
+
+    return result;
   }
 
   /**
    * Render full value string using template.
    *
+   * @param renderingStack Set of variables currently being rendered (for cycle detection)
    * @returns string
    *   Rendered string
    */
-  renderFullTemplate(): string {
-    return this.template.replace("%%", this.renderFullValue());
+  renderFullTemplate(renderingStack: Set<string> = new Set()): string {
+    let rendered = this.template;
+    const isDefaultTemplate = this.template === "%%";
+
+    // First, substitute %VAR% patterns (adopted children)
+    rendered = rendered.replace(/%([A-Z_:]+)%/g, (match, varName) => {
+      if (varName === "") return match;
+      return Variable.renderFull(varName, renderingStack);
+    });
+
+    // Then, substitute %% with own values + birth children
+    const birthChildren = Variable.findBirthChildren(this.name);
+    const birthRendered = birthChildren
+      .map(child => Variable.renderFull(child.name, renderingStack))
+      .join("");
+    const ownValues = this.renderFullValue();
+    rendered = rendered.replace("%%", ownValues + birthRendered);
+
+    // If using default template and has birth children, wrap with XML tags
+    if (isDefaultTemplate && birthChildren.length > 0) {
+      const tagName = this.name.toLowerCase().replace(/:/g, "-");
+      rendered = `<${tagName}>\n${rendered}\n</${tagName}>\n`;
+    }
+
+    return rendered;
   }
 
   /**
    * Render full values as a string, from values array.
+   *
+   * If this variable has a getter function, computes the current value
+   * and updates values array only if the value changed (sets isNew flag).
+   *
+   * After rendering, clears the isNew flag since the variable has been consumed.
+   *
+   * ASSUMPTION: Getter functions always return a single string value,
+   * never an array. If this assumption changes, this logic needs revision.
    *
    * @param separator: string
    *   The string to use as a separator.  Defaults to "\n\n".
@@ -198,29 +310,65 @@ export class Variable {
    * @returns string
    *   values joined as a string (double-nl-separated)
    */
-  renderFullValue(separator: string = "\n\n"): string {
-    return this.values.join(separator);
+  renderFullValue(separator: string = "\n"): string {
+    // If this variable has a getter, update value dynamically
+    if (this.def.getter) {
+      const newValue = this.def.getter();
+      const oldValue = this.values[0];
+
+      // Only update if value changed
+      if (oldValue !== newValue) {
+        this.values = [newValue];
+        this.isNew = true;
+      }
+    }
+
+    const result = this.values.join(separator);
+
+    // Clear isNew flag after rendering (variable has been consumed)
+    this.isNew = false;
+
+    return result;
   }
 }
 
 const PROMPT_VARS: VariableDef[] = [
-  new VariableDef({ name: "USER:PRE", weight: 0, template: "Before you do any processing, please remember:\n%%\n\n" }),
+  new VariableDef({ name: "ZDS:PRE", weight: 0 }),
+  new VariableDef({ name: "USER:PRE", weight: 0, template: "<pre explanation=\"Before you do any processing, please remember:\">\n%%\n</pre>\n" }),
   new VariableDef({
     name: "USER:ENV",
     weight: 10,
-    template: "---ENV---\nThe following environment variables have changed since the last prompt:\n\n%%\n\n"
+    template: "<env explanation=\"The following environment variables have changed since the last prompt:\">\n%%\n</env>\n"
   }),
-  new VariableDef({ name: "USER:TIMESTAMP", weight: 11, template: "Current local time: %%\n\n" }),
+  new VariableDef({ name: "USER:TIMESTAMP", weight: 11, template: "<timestamp explanation=\"Current local time:\">%%</timestamp>\n" }),
   new VariableDef({
     name: "USER:RAG",
     weight: 20,
-    template: "---RAG---\nThe following data may aid you in performing this request or answering this question:\n\n%%\n\n---USER---\n"
+    template: "<rag explanation=\"The following data may aid you in performing this request or answering this question:\">\n%%\n</rag>\n"
   }),
   new VariableDef({ name: "USER:PROMPT", weight: 50 }),
   new VariableDef({
     name: "USER:GUIDANCE",
     weight: 90,
-    template: "\n\n---GUIDANCE---\nUse the following information to guide your response:\n%%"
+    template: "\n<guidance explanation=\"Use the following information to guide your response:\">\n%%\n</guidance>\n"
   }),
-  new VariableDef({ name: "USER:POST", weight: 99, template: "\n\n---POST---\nPlease also observe these:\n%%" }),
+  new VariableDef({ name: "USER:POST", weight: 99, template: "\n<post explanation=\"Please also observe these:\">\n%%\n</post>\n" }),
+  new VariableDef({
+    name: "SYSTEM",
+    template: "<zds-pre>%ZDS:PRE%</zds-pre>\n<org>%ORG%</org>\n<job>%JOB%</job>\n<char>%CHAR%</char>\n<project>%PROJECT%</project>\n<task>%TASK%</task>\n<message>%MESSAGE%</message>\n<backend>%BACKEND%</backend>\n<app>%APP%</app>\n<zds-post>%ZDS:POST%</zds-post>\n%%"
+  }),
+  new VariableDef({ name: "ZDS:POST", weight: 99 }),
+  new VariableDef({
+    name: "APP:TOOLS",
+    weight: 70,
+    persists: true,
+    template: "<tools>%%</tools>\n"
+  }),
+  new VariableDef({
+    name: "APP:CWD",
+    weight: 80,
+    persists: true,
+    template: "<current-working-directory>%%</current-working-directory>\n",
+    getter: () => process.cwd()
+  }),
 ];
