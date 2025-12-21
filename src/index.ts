@@ -733,6 +733,10 @@ program
           historyManager.saveMessages(messages);
         };
 
+        // Save initial context after initialization completes
+        // This ensures context file exists even on fresh sessions before first message
+        saveContext();
+
         // Process initial message if provided
         if (initialMessage) {
           try {
@@ -940,6 +944,11 @@ program
                   const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
                   const historyManager = ChatHistoryManager.getInstance();
                   const contextFilePath = historyManager.getContextFilePath();
+
+                  // If context file doesn't exist yet, save it first
+                  if (!fs.existsSync(contextFilePath)) {
+                    saveContext();
+                  }
 
                   // Create temp copy
                   const tmpJsonPath = `${contextFilePath}.tmp`;

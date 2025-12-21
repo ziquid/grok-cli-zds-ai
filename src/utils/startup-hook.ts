@@ -1,6 +1,7 @@
 import { getSettingsManager } from "./settings-manager.js";
 import { GrokAgent } from "../agent/grok-agent.js";
 import { executeOperationHook, applyHookCommands, applyEnvVariables } from "./hook-executor.js";
+import { Variable } from "../agent/prompt-variables.js";
 
 /**
  * Execute the startup hook command if configured
@@ -33,6 +34,11 @@ export async function executeStartupHook(): Promise<string | undefined> {
 
     // Apply ENV variables to process.env BEFORE instance hook runs
     applyEnvVariables(results.env);
+
+    // Apply prompt variables to Variable system
+    for (const [varName, value] of results.promptVars) {
+      Variable.set(varName, value);
+    }
 
     // Combine tool result and system output for the system prompt
     const outputParts: string[] = [];

@@ -711,6 +711,11 @@ Available models: ${modelNames.join(", ")}`,
           const historyManager = ChatHistoryManager.getInstance();
           const contextFilePath = historyManager.getContextFilePath();
 
+          // If context file doesn't exist yet, save it first
+          if (!fs.existsSync(contextFilePath)) {
+            historyManager.saveContext(agent.getSystemPrompt(), agent.getChatHistory(), agent.getSessionState());
+          }
+
           // Create temp copy
           const tmpJsonPath = `${contextFilePath}.tmp`;
           fs.copyFileSync(contextFilePath, tmpJsonPath);

@@ -141,6 +141,11 @@ function ChatInterfaceWithAgent({
         timestamp: entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp)
       }));
       setChatHistory(agentHistory);
+
+      // Save initial context after initialization completes
+      // This ensures context file exists even on fresh sessions before first message
+      historyManager.saveContext(agent.getSystemPrompt(), agent.getChatHistory(), agent.getSessionState());
+      historyManager.saveMessages(agent.getMessages());
     };
 
     initializeHistory();

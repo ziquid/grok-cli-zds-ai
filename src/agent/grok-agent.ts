@@ -256,20 +256,15 @@ export class GrokAgent extends EventEmitter {
    * Updates this.systemPrompt which is always used for messages[0]
    */
   async buildSystemMessage(): Promise<void> {
-    // Add startup hook output if provided
-    const startupHookSection = this.startupHookOutput
-      ? `${this.startupHookOutput}\n`
-      : "";
-
     // Generate dynamic tool list using introspect tool
     const toolsResult = await this.introspect.introspect("tools");
     const toolsSection = toolsResult.success ? toolsResult.output : "Tools: Unknown";
 
-    // Build THE system prompt
-    this.systemPrompt = `${startupHookSection}
-${toolsSection}
+    // Set APP:TOOLS variable
+    Variable.set("APP:TOOLS", toolsSection);
 
-Current working directory: ${process.cwd()}`;
+    // Build THE system prompt
+    this.systemPrompt = Variable.renderFull('SYSTEM');
 
     // Update messages[0] with the system prompt
     this.messages[0] = {
