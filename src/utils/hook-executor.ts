@@ -47,13 +47,13 @@ export interface HookResult {
 }
 
 export interface HookCommand {
-  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR" | "SET" | "SET_FILE" | "SET_TEMP_FILE";
+  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR" | "SET" | "SET_FILE" | "SET_TEMP_FILE" | "PREFILL";
   value: string;
 }
 
 /**
  * Parse hook output for command directives
- * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", "API_KEY_ENV_VAR ", "SET ", "SET_FILE ", or "SET_TEMP_FILE " are commands
+ * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", "API_KEY_ENV_VAR ", "SET ", "SET_FILE ", "SET_TEMP_FILE ", or "PREFILL " are commands
  * Other lines are treated as TOOL_RESULT if present
  */
 function parseHookOutput(stdout: string): HookCommand[] {
@@ -87,6 +87,8 @@ function parseHookOutput(stdout: string): HookCommand[] {
       commands.push({ type: "SET_FILE", value: line.slice(9) });
     } else if (line.startsWith("SET ")) {
       commands.push({ type: "SET", value: line.slice(4) });
+    } else if (line.startsWith("PREFILL ")) {
+      commands.push({ type: "PREFILL", value: line.slice(8) });
     } else if (line.trim()) {
       // Non-empty lines without a command prefix are treated as TOOL_RESULT
       commands.push({ type: "TOOL_RESULT", value: line });
@@ -104,6 +106,7 @@ export interface HookCommandResults {
   backend?: string;
   baseUrl?: string;
   apiKeyEnvVar?: string;
+  prefill?: string;
   promptVars: Map<string, string>;
 }
 
@@ -118,6 +121,7 @@ export interface HookCommandResults {
  * BACKEND commands set the backend to use (last one wins if multiple)
  * BASE_URL commands set the base URL to use (last one wins if multiple)
  * API_KEY_ENV_VAR commands set the env var name for API key (last one wins if multiple)
+ * PREFILL commands set assistant prefill text (last one wins if multiple)
  * SET commands set prompt variables (text limited to 10,000 bytes)
  * SET_FILE commands read file contents (up to 20,000 bytes) and set prompt variables
  * SET_TEMP_FILE commands read file contents (up to 20,000 bytes), set prompt variables, and delete file
@@ -132,6 +136,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
   let backend: string | undefined = undefined;
   let baseUrl: string | undefined = undefined;
   let apiKeyEnvVar: string | undefined = undefined;
+  let prefill: string | undefined = undefined;
 
   for (const cmd of commands) {
     if (cmd.type === "ENV") {
@@ -268,6 +273,9 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
           promptVars.set(varName, `[Error with temp file ${filePath}: ${errorMsg}]`);
         }
       }
+    } else if (cmd.type === "PREFILL") {
+      // PREFILL sets the assistant prefill text (last one wins if multiple)
+      prefill = cmd.value;
     }
   }
 
@@ -279,6 +287,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     backend,
     baseUrl,
     apiKeyEnvVar,
+    prefill,
     promptVars,
   };
 }

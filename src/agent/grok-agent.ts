@@ -171,7 +171,9 @@ export class GrokAgent extends EventEmitter {
     rephraseRequestIndex: number;
     newResponseIndex: number;
     messageType: "user" | "system";
+    prefillText?: string;
   } | null = null;
+  private hookPrefillText: string | null = null;
 
   constructor(
     apiKey: string,
@@ -437,16 +439,27 @@ export class GrokAgent extends EventEmitter {
     let isSystemRephrase = false;
     let messageToSend = message;
     let messageType: "user" | "system" = "user";
+    let prefillText: string | undefined;
 
     if (message.startsWith("/system rephrase")) {
       isRephraseCommand = true;
       isSystemRephrase = true;
       messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
       messageType = "system";
+      // Extract prefill text after "/system rephrase "
+      const prefillMatch = message.match(/^\/system rephrase\s+(.+)$/);
+      if (prefillMatch) {
+        prefillText = prefillMatch[1];
+      }
     } else if (message.startsWith("/rephrase")) {
       isRephraseCommand = true;
       messageToSend = message; // Keep full text including "/rephrase"
       messageType = "user";
+      // Extract prefill text after "/rephrase "
+      const prefillMatch = message.match(/^\/rephrase\s+(.+)$/);
+      if (prefillMatch) {
+        prefillText = prefillMatch[1];
+      }
     }
 
     // If this is a rephrase command, find the last assistant message
@@ -466,7 +479,7 @@ export class GrokAgent extends EventEmitter {
 
       // Store rephrase state (will be updated with newResponseIndex after response)
       // For now, just mark that we're in rephrase mode
-      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType);
+      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType, prefillText);
     }
 
     // Before adding the new user message, check if there are incomplete tool calls
@@ -539,6 +552,11 @@ export class GrokAgent extends EventEmitter {
               content: results.system
             });
           }
+
+          // Store prefill text from hook if present
+          if (results.prefill) {
+            this.hookPrefillText = results.prefill;
+          }
         }
       }
     }
@@ -574,6 +592,11 @@ export class GrokAgent extends EventEmitter {
 
         // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
         await this.processHookCommands(results);
+
+        // Store prefill text from hook if present
+        if (results.prefill) {
+          this.hookPrefillText = results.prefill;
+        }
       }
     }
 
@@ -618,6 +641,22 @@ export class GrokAgent extends EventEmitter {
     let consecutiveNonToolResponses = 0;
 
     try {
+      // If this is a rephrase with prefill text, add the assistant message now
+      if (this.rephraseState?.prefillText) {
+        this.messages.push({
+          role: "assistant",
+          content: this.rephraseState.prefillText
+        });
+      }
+
+      // If a hook returned prefill text, add the assistant message now
+      if (this.hookPrefillText) {
+        this.messages.push({
+          role: "assistant",
+          content: this.hookPrefillText
+        });
+      }
+
       // Always fetch tools fresh - getAllGrokTools() handles lazy refresh internally
       const supportsTools = this.grokClient.getSupportsTools();
 
@@ -835,7 +874,19 @@ export class GrokAgent extends EventEmitter {
           );
         } else {
           // No tool calls in this response - only add it if there's actual content
-          const trimmedContent = assistantMessage.content?.trim();
+          let trimmedContent = assistantMessage.content?.trim();
+
+          // If this was a rephrase with prefill, prepend the prefill text to the response
+          if (trimmedContent && this.rephraseState?.prefillText) {
+            trimmedContent = this.rephraseState.prefillText + trimmedContent;
+          }
+
+          // If a hook provided prefill, prepend it to the response
+          if (trimmedContent && this.hookPrefillText) {
+            trimmedContent = this.hookPrefillText + trimmedContent;
+            this.hookPrefillText = null; // Clear after use
+          }
+
           if (trimmedContent) {
             const responseEntry: ChatEntry = {
               type: "assistant",
@@ -856,7 +907,8 @@ export class GrokAgent extends EventEmitter {
                 this.rephraseState.originalAssistantMessageIndex,
                 this.rephraseState.rephraseRequestIndex,
                 newResponseIndex,
-                this.rephraseState.messageType
+                this.rephraseState.messageType,
+                this.rephraseState.prefillText
               );
             }
           }
@@ -1071,16 +1123,27 @@ export class GrokAgent extends EventEmitter {
     let isSystemRephrase = false;
     let messageToSend = message;
     let messageType: "user" | "system" = "user";
+    let prefillText: string | undefined;
 
     if (message.startsWith("/system rephrase")) {
       isRephraseCommand = true;
       isSystemRephrase = true;
       messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
       messageType = "system";
+      // Extract prefill text after "/system rephrase "
+      const prefillMatch = message.match(/^\/system rephrase\s+(.+)$/);
+      if (prefillMatch) {
+        prefillText = prefillMatch[1];
+      }
     } else if (message.startsWith("/rephrase")) {
       isRephraseCommand = true;
       messageToSend = message; // Keep full text including "/rephrase"
       messageType = "user";
+      // Extract prefill text after "/rephrase "
+      const prefillMatch = message.match(/^\/rephrase\s+(.+)$/);
+      if (prefillMatch) {
+        prefillText = prefillMatch[1];
+      }
     }
 
     // If this is a rephrase command, find the last assistant message
@@ -1100,7 +1163,7 @@ export class GrokAgent extends EventEmitter {
 
       // Store rephrase state (will be updated with newResponseIndex after response)
       // For now, just mark that we're in rephrase mode
-      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType);
+      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType, prefillText);
     }
 
     // Before adding the new user message, check if there are incomplete tool calls
@@ -1173,6 +1236,11 @@ export class GrokAgent extends EventEmitter {
               content: results.system
             });
           }
+
+          // Store prefill text from hook if present
+          if (results.prefill) {
+            this.hookPrefillText = results.prefill;
+          }
         }
       }
     }
@@ -1208,6 +1276,11 @@ export class GrokAgent extends EventEmitter {
 
         // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
         await this.processHookCommands(results);
+
+        // Store prefill text from hook if present
+        if (results.prefill) {
+          this.hookPrefillText = results.prefill;
+        }
       }
     }
 
@@ -1251,6 +1324,22 @@ export class GrokAgent extends EventEmitter {
       type: "user_message",
       userEntry: userEntry,
     };
+
+    // If this is a rephrase with prefill text, add the assistant message now
+    if (this.rephraseState?.prefillText) {
+      this.messages.push({
+        role: "assistant",
+        content: this.rephraseState.prefillText
+      });
+    }
+
+    // If a hook returned prefill text, add the assistant message now
+    if (this.hookPrefillText) {
+      this.messages.push({
+        role: "assistant",
+        content: this.hookPrefillText
+      });
+    }
 
     // Calculate input tokens
     let inputTokens = this.tokenCounter.countMessageTokens(
@@ -1305,6 +1394,25 @@ export class GrokAgent extends EventEmitter {
         let tool_calls_yielded = false;
         let streamFinished = false;
         let insideThinkTag = false;
+
+        // If this is a rephrase with prefill, yield the prefill text first and add to accumulated content
+        if (this.rephraseState?.prefillText) {
+          yield {
+            type: "content",
+            content: this.rephraseState.prefillText,
+          };
+          accumulatedContent = this.rephraseState.prefillText;
+        }
+
+        // If a hook provided prefill, yield it first and add to accumulated content
+        if (this.hookPrefillText) {
+          yield {
+            type: "content",
+            content: this.hookPrefillText,
+          };
+          accumulatedContent = this.hookPrefillText;
+          this.hookPrefillText = null; // Clear after use
+        }
 
         try {
           for await (const chunk of stream) {
@@ -2243,11 +2351,11 @@ export class GrokAgent extends EventEmitter {
     this.pendingContextEditSession = null;
   }
 
-  setRephraseState(originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system"): void {
-    this.rephraseState = { originalAssistantMessageIndex, rephraseRequestIndex, newResponseIndex, messageType };
+  setRephraseState(originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system", prefillText?: string): void {
+    this.rephraseState = { originalAssistantMessageIndex, rephraseRequestIndex, newResponseIndex, messageType, prefillText };
   }
 
-  getRephraseState(): { originalAssistantMessageIndex: number; rephraseRequestIndex: number; newResponseIndex: number; messageType: "user" | "system" } | null {
+  getRephraseState(): { originalAssistantMessageIndex: number; rephraseRequestIndex: number; newResponseIndex: number; messageType: "user" | "system"; prefillText?: string } | null {
     return this.rephraseState;
   }
 
@@ -3260,27 +3368,67 @@ export class GrokAgent extends EventEmitter {
     // Restore persona (hook may change backend/model and sets env vars)
     if (state.persona) {
       try {
-        await this.setPersona(state.persona, state.personaColor);
+        const result = await this.setPersona(state.persona, state.personaColor);
+        if (!result.success) {
+          // If persona hook failed (e.g., backend test failed), still set the persona values
+          // but don't change backend/model. This prevents losing persona state on transitory errors.
+          console.warn(`Persona hook failed, setting persona without backend change: ${result.error}`);
+          this.persona = state.persona;
+          this.personaColor = state.personaColor;
+          process.env.ZDS_AI_AGENT_PERSONA = state.persona;
+        }
       } catch (error) {
         console.warn(`Failed to restore persona "${state.persona}":`, error);
+        // Still set persona values even if hook crashed
+        this.persona = state.persona;
+        this.personaColor = state.personaColor;
+        process.env.ZDS_AI_AGENT_PERSONA = state.persona;
       }
     }
 
     // Restore mood (hook sets env vars)
     if (state.mood) {
       try {
-        await this.setMood(state.mood, state.moodColor);
+        const result = await this.setMood(state.mood, state.moodColor);
+        if (!result.success) {
+          // If mood hook failed (e.g., backend test failed), still set the mood values
+          // but don't change backend/model. This prevents losing mood state on transitory errors.
+          console.warn(`Mood hook failed, setting mood without backend change: ${result.error}`);
+          this.mood = state.mood;
+          this.moodColor = state.moodColor;
+          process.env.ZDS_AI_AGENT_MOOD = state.mood;
+        }
       } catch (error) {
         console.warn(`Failed to restore mood "${state.mood}":`, error);
+        // Still set mood values even if hook crashed
+        this.mood = state.mood;
+        this.moodColor = state.moodColor;
+        process.env.ZDS_AI_AGENT_MOOD = state.mood;
       }
     }
 
     // Restore active task (hook sets env vars)
     if (state.activeTask) {
       try {
-        await this.startActiveTask(state.activeTask, state.activeTaskAction, state.activeTaskColor);
+        const result = await this.startActiveTask(state.activeTask, state.activeTaskAction, state.activeTaskColor);
+        if (!result.success) {
+          // If task hook failed (e.g., backend test failed), still set the task values
+          // but don't change backend/model. This prevents losing task state on transitory errors.
+          console.warn(`Task hook failed, setting active task without backend change: ${result.error}`);
+          this.activeTask = state.activeTask;
+          this.activeTaskAction = state.activeTaskAction;
+          this.activeTaskColor = state.activeTaskColor;
+          process.env.ZDS_AI_AGENT_ACTIVE_TASK = state.activeTask;
+          process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = state.activeTaskAction;
+        }
       } catch (error) {
         console.warn(`Failed to restore active task "${state.activeTask}":`, error);
+        // Still set task values even if hook crashed
+        this.activeTask = state.activeTask;
+        this.activeTaskAction = state.activeTaskAction;
+        this.activeTaskColor = state.activeTaskColor;
+        process.env.ZDS_AI_AGENT_ACTIVE_TASK = state.activeTask;
+        process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = state.activeTaskAction;
       }
     }
   }

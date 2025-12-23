@@ -17,6 +17,9 @@ Built-in Commands:
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
   /no-ink     - Switch to plain console mode (restart required)
+  /rephrase [text] - Request rephrasing of last response
+                     Optional text prefills assistant's new response
+  /system rephrase [text] - Same as /rephrase but as system message
   /restart    - Restart the application (exit code 51)
   /exit       - Exit application
   exit, quit  - Exit application
