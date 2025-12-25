@@ -1,5 +1,5 @@
 import { getSettingsManager } from "./settings-manager.js";
-import { LLMAgent } from "../agent/llm-agent";
+import { LLMAgent } from "../agent/llm-agent.js";
 import { executeOperationHook, applyHookCommands, applyEnvVariables } from "./hook-executor.js";
 import { Variable } from "../agent/prompt-variables.js";
 
