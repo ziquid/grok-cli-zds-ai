@@ -1,4 +1,4 @@
-import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent";
 import { getTextContent } from "./content-utils.js";
 
 export interface RephraseHandlerResult {
@@ -13,7 +13,7 @@ export interface RephraseHandlerResult {
  */
 export function handleRephraseChoice(
   choice: string,
-  agent: GrokAgent
+  agent: LLMAgent
 ): RephraseHandlerResult {
   const rephraseState = agent.getRephraseState();
   if (!rephraseState) {

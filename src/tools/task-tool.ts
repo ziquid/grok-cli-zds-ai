@@ -2,7 +2,7 @@ import { ToolResult } from "../types/index.js";
 import { ToolDiscovery } from "./tool-discovery.js";
 
 export class TaskTool implements ToolDiscovery {
-  private agent: any; // Reference to the GrokAgent
+  private agent: any; // Reference to the LLMAgent
 
   setAgent(agent: any) {
     this.agent = agent;

@@ -6,7 +6,7 @@ import React from "react";
 import { render } from "ink";
 import { program } from "commander";
 import * as dotenv from "dotenv";
-import { GrokAgent } from "./agent/grok-agent.js";
+import { LLMAgent } from "./agent/llm-agent";
 import ChatInterface from "./ui/components/chat-interface.js";
 import { getSettingsManager } from "./utils/settings-manager.js";
 import { ConfirmationService } from "./utils/confirmation-service.js";
@@ -34,7 +34,7 @@ dotenv.config();
 // No global output suppression functions needed
 
 // Global reference to current agent for cleanup
-let currentAgent: GrokAgent | null = null;
+let currentAgent: LLMAgent | null = null;
 
 // Terminal restoration function
 function restoreTerminal() {
@@ -150,8 +150,8 @@ async function showAllTools(debugLogFile?: string): Promise<void> {
     await mcpManager.ensureServersInitialized();
 
     // Create a temporary agent and use introspect tool (no startup hook needed for listing tools)
-    const { GrokAgent } = await import('./agent/grok-agent.js');
-    const tempAgent = new GrokAgent("dummy");
+    const { LLMAgent } = await import('./agent/llm-agent');
+    const tempAgent = new LLMAgent("dummy");
     await tempAgent.initialize();
     const result = await tempAgent["introspect"].introspect("tools");
 
@@ -217,8 +217,8 @@ async function handleCommitAndPushHeadless(
   temperature?: number
 ): Promise<void> {
   try {
-    const { createGrokAgent } = await import('./utils/startup-hook.js');
-    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature);
+    const { createLLMAgent } = await import('./utils/startup-hook.js');
+    const agent = await createLLMAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode (auto-approve all operations)
@@ -353,8 +353,8 @@ async function processPromptHeadless(
   maxTokens?: number
 ): Promise<void> {
   try {
-    const { createGrokAgent } = await import('./utils/startup-hook.js');
-    const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature, maxTokens);
+    const { createLLMAgent } = await import('./utils/startup-hook.js');
+    const agent = await createLLMAgent(apiKey, baseURL, model, maxToolRounds, debugLogFile, true, temperature, maxTokens);
     currentAgent = agent; // Store reference for cleanup
 
     // Configure confirmation service for headless mode
@@ -644,7 +644,7 @@ program
       // Interactive mode: launch UI
 
       // Create agent for interactive mode only
-      const { createGrokAgent } = await import('./utils/startup-hook.js');
+      const { createLLMAgent } = await import('./utils/startup-hook.js');
       // Run startup hook for fresh sessions or when context doesn't have a system prompt
       const { ChatHistoryManager } = await import('./utils/chat-history-manager.js');
       const historyManager = ChatHistoryManager.getInstance();
@@ -653,7 +653,7 @@ program
       const runStartupHook = !hasSystemPrompt; // Run hook if no system prompt exists
       const temperature = options.temperature ?? 0.7;
       const maxTokens = options.maxTokens ? parseInt(options.maxTokens) : undefined;
-      const agent = await createGrokAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature, maxTokens);
+      const agent = await createLLMAgent(apiKey, baseURL, model, maxToolRounds, options.debugLog, runStartupHook, temperature, maxTokens);
       currentAgent = agent; // Store reference for cleanup
 
       // Configure confirmation service if auto-approve is enabled
@@ -1152,7 +1152,7 @@ program
       (global as any).inkInstance = inkInstance;
       (global as any).isInkMode = true;
     } catch (error: any) {
-      console.error("❌ Error initializing Grok CLI:", error.message);
+      console.error("❌ Error initializing ZDS AI CLI:", error.message);
       process.exit(1);
     }
   });
@@ -1177,7 +1177,7 @@ gitCommand
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
+    "AI model to use (e.g., grok-code-fast-1, grok-4-1-latest) (or set GROK_MODEL env var)"
   )
   .option(
     "-t, --temperature <temp>",

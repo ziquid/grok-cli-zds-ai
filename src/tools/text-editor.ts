@@ -8,7 +8,7 @@ import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 export class TextEditorTool implements ToolDiscovery {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
-  private agent: any; // Reference to GrokAgent for context awareness
+  private agent: any; // Reference to LLMAgent for context awareness
 
   setAgent(agent: any) {
     this.agent = agent;

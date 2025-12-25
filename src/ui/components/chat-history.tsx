@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { ChatEntry } from "../../agent/grok-agent.js";
+import { ChatEntry } from "../../agent/llm-agent";
 import { DiffRenderer } from "./diff-renderer.js";
 import { MarkdownRenderer } from "../utils/markdown-renderer.js";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions.js";

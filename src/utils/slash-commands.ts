@@ -1,12 +1,10 @@
-import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent";
 import { ConfirmationService } from "./confirmation-service.js";
 
 /**
- * Help text shared across all modes
+ * Built-in slash commands list - single source of truth
  */
-export const HELP_TEXT = `ZAI CLI Help:
-
-Built-in Commands:
+export const BUILT_IN_COMMANDS = `Built-in Commands:
   /clear      - Clear chat history (current session + persisted)
   /compact    - Reduce context size (keep last 20 messages)
   /context    - Show context usage info
@@ -16,13 +14,22 @@ Built-in Commands:
   /ink        - Switch to Ink UI mode (restart required)
   /introspect - Show available tools (internal and MCP)
   /models     - Switch between available models
+  /mood <text> [color] - Set current mood
   /no-ink     - Switch to plain console mode (restart required)
+  /persona <text> [color] - Set current persona
   /rephrase [text] - Request rephrasing of last response
                      Optional text prefills assistant's new response
   /system rephrase [text] - Same as /rephrase but as system message
   /restart    - Restart the application (exit code 51)
   /exit       - Exit application
-  exit, quit  - Exit application
+  exit, quit  - Exit application`;
+
+/**
+ * Help text shared across all modes
+ */
+export const HELP_TEXT = `ZAI CLI Help:
+
+${BUILT_IN_COMMANDS}
 
 CLI Options:
   --fresh     - Start with a fresh session (don't load previous history)
@@ -45,12 +52,6 @@ Enhanced Input Features:
 
 Direct Commands (executed immediately):
   !command    - Execute any shell command directly
-  ls [path]   - List directory contents
-  pwd         - Show current directory
-  cd <path>   - Change directory
-  cat <file>  - View file contents
-  mkdir <dir> - Create directory
-  touch <file>- Create empty file
 
 Model Configuration:
   Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
@@ -58,6 +59,7 @@ Model Configuration:
 History Persistence:
   Chat history is automatically saved and restored between sessions.
   Use /clear to reset both current and persisted history.
+  Use /compact to compact current and persisted history.
 
 For complex operations, just describe what you want in natural language.
 Examples:
@@ -70,7 +72,7 @@ Examples:
  * Allows different contexts (UI vs headless) to provide their own implementations
  */
 export interface SlashCommandContext {
-  agent: GrokAgent;
+  agent: LLMAgent;
   addChatEntry: (entry: ChatEntry) => void;
   clearInput?: () => void;
   resetHistory?: () => void;

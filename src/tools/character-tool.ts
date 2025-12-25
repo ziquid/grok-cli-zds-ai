@@ -4,7 +4,7 @@ import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.
 import { getSettingsManager } from "../utils/settings-manager.js";
 
 export class CharacterTool implements ToolDiscovery {
-  private agent: any; // Reference to the GrokAgent
+  private agent: any; // Reference to the LLMAgent
 
   setAgent(agent: any) {
     this.agent = agent;

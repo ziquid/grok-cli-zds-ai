@@ -10,7 +10,7 @@ When Ollama LLMs return duplicate JSON tool arguments (e.g., `{"persona":"X"}{"p
 - Ollama validates and rejects with 400 error
 
 ## Fix
-Added tool argument validation in `src/agent/grok-agent.ts`:
+Added tool argument validation in `src/agent/llm-agent.ts`:
 
 1. **`validateToolArguments()` method (lines 1153-1199)**:
    - Fetches tool schema from `getAllGrokTools()`
@@ -56,4 +56,4 @@ To test with Binti's case, the LLM needs to:
 The validation will catch this and provide clear feedback without hitting Ollama's 400 error.
 
 ## Files Modified
-- `src/agent/grok-agent.ts`: Added `validateToolArguments()` method and validation logic in `executeTool()`
+- `src/agent/llm-agent.ts`: Added `validateToolArguments()` method and validation logic in `executeTool()`

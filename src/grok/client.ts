@@ -4,9 +4,9 @@ import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { logApiError } from "../utils/error-logger.js";
 import fs from "fs";
 
-export type GrokMessage = ChatCompletionMessageParam;
+export type LLMMessage = ChatCompletionMessageParam;
 
-export interface GrokTool {
+export interface LLMTool {
   type: "function";
   function: {
     name: string;
@@ -19,7 +19,7 @@ export interface GrokTool {
   };
 }
 
-export interface GrokToolCall {
+export interface LLMToolCall {
   id: string;
   type: "function";
   function: {
@@ -37,18 +37,18 @@ export interface SearchOptions {
   search_parameters?: SearchParameters;
 }
 
-export interface GrokResponse {
+export interface LLMResponse {
   choices: Array<{
     message: {
       role: string;
       content: string | null;
-      tool_calls?: GrokToolCall[];
+      tool_calls?: LLMToolCall[];
     };
     finish_reason: string;
   }>;
 }
 
-export class GrokClient {
+export class LLMClient {
   private client: OpenAI;
   private currentModel: string = "grok-code-fast-1";
   private defaultMaxTokens: number;
@@ -150,14 +150,14 @@ export class GrokClient {
   }
 
   async chat(
-    messages: GrokMessage[],
-    tools?: GrokTool[],
+    messages: LLMMessage[],
+    tools?: LLMTool[],
     model?: string,
     searchOptions?: SearchOptions,
     temperature?: number,
     signal?: AbortSignal,
     maxTokens?: number
-  ): Promise<GrokResponse> {
+  ): Promise<LLMResponse> {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
 
@@ -203,7 +203,7 @@ export class GrokClient {
           requestPayload,
           { signal: signal as any }
         );
-        return response as GrokResponse;
+        return response as LLMResponse;
       } catch (error: any) {
         // Check if model doesn't support tools
         const isToolsNotSupported = error.status === 400 &&
@@ -299,12 +299,12 @@ export class GrokClient {
     }
 
     // Should never reach here, but TypeScript needs it
-    throw new Error('Grok API error: Max retries exceeded');
+    throw new Error('${this.backendName} API error: Max retries exceeded');
   }
 
   async *chatStream(
-    messages: GrokMessage[],
-    tools?: GrokTool[],
+    messages: LLMMessage[],
+    tools?: LLMTool[],
     model?: string,
     searchOptions?: SearchOptions,
     temperature?: number,
@@ -312,7 +312,7 @@ export class GrokClient {
     maxTokens?: number
   ): AsyncGenerator<any, void, unknown> {
     const maxRetries = 5;
-    const retryDelay = 10000; // 10 seconds
+    const retryDelay = 11000; // 11 seconds
 
     const requestPayload: any = {
       model: model || this.currentModel,
@@ -329,7 +329,6 @@ export class GrokClient {
 
     // Only add think parameter for backends that support it (Grok, Ollama)
     const backendLower = this.backendName.toLowerCase();
-    // Secure host check for "x.ai" (Grok)
     const supportsThink = backendLower === 'grok' ||
                           backendLower === 'ollama' ||
                           (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['x.ai', 'api.x.ai']) : false);
@@ -484,8 +483,8 @@ export class GrokClient {
   async search(
     query: string,
     searchParameters?: SearchParameters
-  ): Promise<GrokResponse> {
-    const searchMessage: GrokMessage = {
+  ): Promise<LLMResponse> {
+    const searchMessage: LLMMessage = {
       role: "user",
       content: query,
     };

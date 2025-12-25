@@ -50,7 +50,7 @@ export class YourTool implements ToolDiscovery {
 export { YourTool } from "./your-tool";
 ```
 
-### 3. Add to Agent (`src/agent/grok-agent.ts`)
+### 3. Add to Agent (`src/agent/llm-agent.ts`)
 
 **Import:**
 ```typescript
@@ -185,7 +185,7 @@ import { YourStatus } from "./your-status";
 <YourStatus agent={agent} />  {/* Add here */}
 ```
 
-### 3. Add Agent State and Methods (`src/agent/grok-agent.ts`)
+### 3. Add Agent State and Methods (`src/agent/llm-agent.ts`)
 
 **Properties:**
 ```typescript
@@ -311,12 +311,12 @@ useEffect(() => {
 | Tool implementations | `src/tools/*.ts` |
 | Tool exports | `src/tools/index.ts` |
 | Tool schemas for LLM | `src/grok/tools.ts` |
-| Tool execution router | `src/agent/grok-agent.ts` (executeTool method) |
+| Tool execution router | `src/agent/llm-agent.ts` (executeTool method) |
 | Slash commands | `src/hooks/use-input-handler.ts` |
 | Status bar widgets | `src/ui/components/*-status.tsx` |
 | Status bar layout | `src/ui/components/chat-interface.tsx` (around line 410) |
 | CLI flags | `src/index.ts` (program options) |
-| Agent state/methods | `src/agent/grok-agent.ts` |
+| Agent state/methods | `src/agent/llm-agent.ts` |
 
 ## Build and Install
 
@@ -479,7 +479,7 @@ Hooks are optional external scripts configured in `~/.grok/user-settings.json`:
 **Implementation**: See `src/utils/hook-executor.ts` for the `executeHook()` utility.
 
 ### Agent State
-Located in `src/agent/grok-agent.ts`:
+Located in `src/agent/llm-agent.ts`:
 
 ```typescript
 private activeTask: string = "";
@@ -537,7 +537,7 @@ Located at `src/ui/components/active-task-status.tsx`:
 - `transitionActiveTaskStatus(action, color?)`
 - `stopActiveTask(reason, documentationFile, color?)`
 
-**Agent Methods**: `src/agent/grok-agent.ts`
+**Agent Methods**: `src/agent/llm-agent.ts`
 - Same signatures as tool methods
 - Include business logic enforcement
 - Hook validation

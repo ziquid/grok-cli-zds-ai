@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { GrokAgent } from "../../agent/grok-agent.js";
+import { LLMAgent } from "../../agent/llm-agent";
 
 interface MoodStatusProps {
-  agent?: GrokAgent;
+  agent?: LLMAgent;
 }
 
 export const MoodStatus = React.memo(({ agent }: MoodStatusProps) => {

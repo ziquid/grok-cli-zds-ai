@@ -1,9 +1,10 @@
 import { ToolResult } from "../types/index.js";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
-import { getAllGrokTools } from "../grok/tools.js";
+import { getAllLLMTools } from "../grok/tools.js";
+import { BUILT_IN_COMMANDS } from "../utils/slash-commands.js";
 
 export class IntrospectTool implements ToolDiscovery {
-  private agent: any; // Reference to the GrokAgent for accessing tool class info
+  private agent: any; // Reference to the LLMAgent for accessing tool class info
 
   setAgent(agent: any) {
     this.agent = agent;
@@ -55,7 +56,7 @@ Workflow for using unknown MCP tools:
       // Handle tool:TOOL_NAME format for specific tool schema lookup
       if (target.startsWith("tool:")) {
         const toolName = target.substring(5); // Remove "tool:" prefix
-        const allTools = await getAllGrokTools();
+        const allTools = await getAllLLMTools();
         const tool = allTools.find(t => t.function.name === toolName);
 
         if (!tool) {
@@ -107,16 +108,9 @@ Workflow for using unknown MCP tools:
       }
 
       if (target === "commands") {
-        let output = "Available Slash Commands:\n\n";
-        output += "/context - Show context usage info\n";
-        output += "/context view - View conversation context as markdown\n";
-        output += "/context edit - Edit context JSON file\n";
-        output += "/clear - Clear chat history and start fresh\n";
-        output += "/exit or /quit - Exit the CLI\n";
-
         return {
           success: true,
-          output,
+          output: BUILT_IN_COMMANDS,
           displayOutput: "Slash commands"
         };
       }
@@ -179,7 +173,7 @@ Usage: ${usagePercent}%`;
 
       if (target === "tools") {
         // Check if the current model supports tools
-        const supportsTools = this.agent?.grokClient?.getSupportsTools();
+        const supportsTools = this.agent?.llmClient?.getSupportsTools();
         if (supportsTools === false) {
           return {
             success: true,
@@ -188,7 +182,7 @@ Usage: ${usagePercent}%`;
           };
         }
 
-        const allTools = await getAllGrokTools();
+        const allTools = await getAllLLMTools();
 
         // Separate internal and MCP tools
         const internalTools = allTools.filter(tool => !tool.function.name.startsWith("mcp__"));

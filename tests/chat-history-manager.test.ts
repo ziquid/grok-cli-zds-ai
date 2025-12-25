@@ -9,7 +9,7 @@
  */
 
 import { ChatHistoryManager, SessionState } from '../src/utils/chat-history-manager.js';
-import { ChatEntry } from '../src/agent/grok-agent.js';
+import { ChatEntry } from '../src/agent/llm-agent.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

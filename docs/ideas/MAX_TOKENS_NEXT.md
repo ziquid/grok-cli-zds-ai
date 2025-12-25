@@ -61,7 +61,7 @@ public getMaxTokens(): number | undefined {
 }
 ```
 
-### 3. GrokAgent (src/agent/grok-agent.ts)
+### 3. GrokAgent (src/agent/llm-agent.ts)
 
 Clear `MAX_TOKENS_NEXT` after each response completes:
 

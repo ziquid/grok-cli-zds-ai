@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 
 export class ZshTool implements ToolDiscovery {
   private confirmationService = ConfirmationService.getInstance();
-  private agent: any; // Reference to the GrokAgent
+  private agent: any; // Reference to the LLMAgent
 
   setAgent(agent: any) {
     this.agent = agent;

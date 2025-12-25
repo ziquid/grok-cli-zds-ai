@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import type { ChatEntry } from "../agent/grok-agent.js";
+import type { ChatEntry } from "../agent/llm-agent";
 import { getTextContent } from "./content-utils.js";
 
 const HISTORY_FILE_NAME = "chat-history.json";

@@ -1,9 +1,9 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import { LLMClient, LLMMessage, LLMToolCall } from "../grok/client.js";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions.js";
 import {
-  GROK_TOOLS,
-  addMCPToolsToGrokTools,
-  getAllGrokTools,
+  LLM_TOOLS,
+  addMCPToolsToLLMTools,
+  getAllLLMTools,
   getMCPManager,
   initializeMCPServers,
 } from "../grok/tools.js";
@@ -108,8 +108,8 @@ export interface ChatEntry {
   content?: string | ChatCompletionContentPart[];
   originalContent?: string | ChatCompletionContentPart[];
   timestamp: Date;
-  tool_calls?: GrokToolCall[];
-  toolCall?: GrokToolCall;
+  tool_calls?: LLMToolCall[];
+  toolCall?: LLMToolCall;
   toolResult?: { success: boolean; output?: string; error?: string; displayOutput?: string };
   isStreaming?: boolean;
   preserveFormatting?: boolean;
@@ -122,16 +122,16 @@ export interface ChatEntry {
 export interface StreamingChunk {
   type: "content" | "tool_calls" | "tool_result" | "done" | "token_count" | "user_message";
   content?: string;
-  tool_calls?: GrokToolCall[];
-  toolCall?: GrokToolCall;
+  tool_calls?: LLMToolCall[];
+  toolCall?: LLMToolCall;
   toolResult?: ToolResult;
   tokenCount?: number;
   userEntry?: ChatEntry;
   systemMessages?: ChatEntry[];
 }
 
-export class GrokAgent extends EventEmitter {
-  private grokClient: GrokClient;
+export class LLMAgent extends EventEmitter {
+  private llmClient: LLMClient;
   private textEditor: TextEditorTool;
   private morphEditor: MorphEditorTool | null;
   private zsh: ZshTool;
@@ -147,7 +147,7 @@ export class GrokAgent extends EventEmitter {
   private fileConversionTool: FileConversionTool;
   private restartTool: RestartTool;
   private chatHistory: ChatEntry[] = [];
-  private messages: GrokMessage[] = [];
+  private messages: LLMMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
   private mcpInitialized: boolean = false;
@@ -194,10 +194,10 @@ export class GrokAgent extends EventEmitter {
     this.maxTokens = maxTokens ?? manager.getMaxTokens();
     // Get display name from environment (set by zai/helpers)
     const displayName = process.env.GROK_BACKEND_DISPLAY_NAME;
-    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, displayName);
+    this.llmClient = new LLMClient(apiKey, modelToUse, baseURL, displayName);
 
     // Set apiKeyEnvVar based on backend name
-    const backendName = this.grokClient.getBackendName().toUpperCase();
+    const backendName = this.llmClient.getBackendName().toUpperCase();
     this.apiKeyEnvVar = `${backendName}_API_KEY`;
 
     this.textEditor = new TextEditorTool();
@@ -292,7 +292,7 @@ export class GrokAgent extends EventEmitter {
     // Instance hook now runs in initialize() for both fresh and existing sessions
 
     // Convert history to messages format for API calls
-    const historyMessages: GrokMessage[] = [];
+    const historyMessages: LLMMessage[] = [];
 
     // Track which tool_call_ids we've seen in assistant messages
     const seenToolCallIds = new Set<string>();
@@ -305,8 +305,8 @@ export class GrokAgent extends EventEmitter {
     }
 
     // Second pass: build history messages, only including tool_results that have matching tool_calls
-    const toolResultMessages: GrokMessage[] = [];
-    const toolCallIdToMessage: Map<string, GrokMessage> = new Map();
+    const toolResultMessages: LLMMessage[] = [];
+    const toolCallIdToMessage: Map<string, LLMMessage> = new Map();
 
     for (const entry of history) {
       switch (entry.type) {
@@ -327,14 +327,14 @@ export class GrokAgent extends EventEmitter {
           break;
         case "assistant":
           // Assistant messages are always text (no images in responses)
-          const assistantMessage: GrokMessage = {
+          const assistantMessage: LLMMessage = {
             role: "assistant",
             content: getTextContent(entry.content) || "", // Ensure content is never null/undefined
           };
           if (entry.tool_calls && entry.tool_calls.length > 0) {
             // For assistant messages with tool calls, collect the tool results that correspond to them
-            const correspondingToolResults: GrokMessage[] = [];
-            const toolCallsWithResults: GrokToolCall[] = [];
+            const correspondingToolResults: LLMMessage[] = [];
+            const toolCallsWithResults: LLMToolCall[] = [];
 
             entry.tool_calls.forEach(tc => {
               // Find the tool_result entry for this tool_call
@@ -401,7 +401,7 @@ export class GrokAgent extends EventEmitter {
   }
 
   private isGrokModel(): boolean {
-    const currentModel = this.grokClient.getCurrentModel();
+    const currentModel = this.llmClient.getCurrentModel();
     return currentModel.toLowerCase().includes("grok");
   }
 
@@ -605,7 +605,7 @@ export class GrokAgent extends EventEmitter {
 
     // Add user/system message to conversation
     // Note: System messages can only have string content, so images are only supported for user messages
-    const supportsVision = this.grokClient.getSupportsVision();
+    const supportsVision = this.llmClient.getSupportsVision();
     let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
 
     if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
@@ -657,12 +657,12 @@ export class GrokAgent extends EventEmitter {
         });
       }
 
-      // Always fetch tools fresh - getAllGrokTools() handles lazy refresh internally
-      const supportsTools = this.grokClient.getSupportsTools();
+      // Always fetch tools fresh - getAllLLMTools() handles lazy refresh internally
+      const supportsTools = this.llmClient.getSupportsTools();
 
-      let currentResponse = await this.grokClient.chat(
+      let currentResponse = await this.llmClient.chat(
         this.messages,
-        supportsTools ? await getAllGrokTools() : [],
+        supportsTools ? await getAllLLMTools() : [],
         undefined,
         this.isGrokModel() && this.shouldUseSearchFor(message)
           ? { search_parameters: { mode: "auto" } }
@@ -682,7 +682,7 @@ export class GrokAgent extends EventEmitter {
         const assistantMessage = currentResponse.choices?.[0]?.message;
 
         if (!assistantMessage) {
-          throw new Error("No response from Grok");
+          throw new Error("No response from LLM");
         }
 
         // Handle tool calls
@@ -861,9 +861,9 @@ export class GrokAgent extends EventEmitter {
             fs.appendFileSync(debugLogPath, `  ${JSON.stringify(msgSummary)}\n`);
           });
 
-          currentResponse = await this.grokClient.chat(
+          currentResponse = await this.llmClient.chat(
             this.messages,
-            supportsTools ? await getAllGrokTools() : [],
+            supportsTools ? await getAllLLMTools() : [],
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -927,9 +927,9 @@ export class GrokAgent extends EventEmitter {
           }
 
           // Short/empty response, give AI another chance
-          currentResponse = await this.grokClient.chat(
+          currentResponse = await this.llmClient.chat(
             this.messages,
-            supportsTools ? await getAllGrokTools() : [],
+            supportsTools ? await getAllLLMTools() : [],
             undefined,
             this.isGrokModel() && this.shouldUseSearchFor(message)
               ? { search_parameters: { mode: "auto" } }
@@ -967,7 +967,7 @@ export class GrokAgent extends EventEmitter {
 
       // Check if tool support changed during first message processing
       // If model doesn't support tools, regenerate system message without tool list
-      const supportsToolsAfter = this.grokClient.getSupportsTools();
+      const supportsToolsAfter = this.llmClient.getSupportsTools();
       if (!supportsToolsAfter && supportsTools) {
         // Tool support was disabled during first message - regenerate system message
         await this.buildSystemMessage();
@@ -1011,7 +1011,7 @@ export class GrokAgent extends EventEmitter {
 
   /**
    * Parse XML-formatted tool calls from message content (x.ai format)
-   * Converts <xai:function_call> elements to standard GrokToolCall format
+   * Converts <xai:function_call> elements to standard LLMToolCall format
    */
   private parseXMLToolCalls(message: any): any {
     if (!message.content || typeof message.content !== 'string') {
@@ -1027,7 +1027,7 @@ export class GrokAgent extends EventEmitter {
     }
 
     // Parse each XML tool call
-    const toolCalls: GrokToolCall[] = [];
+    const toolCalls: LLMToolCall[] = [];
     let cleanedContent = content;
 
     for (const match of matches) {
@@ -1289,7 +1289,7 @@ export class GrokAgent extends EventEmitter {
 
     // Add user/system message to both API conversation and chat history
     // Note: System messages can only have string content, so images are only supported for user messages
-    const supportsVision = this.grokClient.getSupportsVision();
+    const supportsVision = this.llmClient.getSupportsVision();
     let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
 
     if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
@@ -1357,8 +1357,8 @@ export class GrokAgent extends EventEmitter {
     let consecutiveNonToolResponses = 0;
 
     try {
-      // Always fetch tools fresh - getAllGrokTools() handles lazy refresh internally
-      const supportsTools = this.grokClient.getSupportsTools();
+      // Always fetch tools fresh - getAllLLMTools() handles lazy refresh internally
+      const supportsTools = this.llmClient.getSupportsTools();
 
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
@@ -1378,9 +1378,9 @@ export class GrokAgent extends EventEmitter {
         }
 
         // Stream response and accumulate
-        const stream = this.grokClient.chatStream(
+        const stream = this.llmClient.chatStream(
           this.messages,
-          supportsTools ? await getAllGrokTools() : [],
+          supportsTools ? await getAllLLMTools() : [],
           undefined,
           this.isGrokModel() && this.shouldUseSearchFor(message)
             ? { search_parameters: { mode: "auto" } }
@@ -1743,7 +1743,7 @@ export class GrokAgent extends EventEmitter {
 
       // Check if tool support changed during first message processing
       // If model doesn't support tools, regenerate system message without tool list
-      const supportsToolsAfter = this.grokClient.getSupportsTools();
+      const supportsToolsAfter = this.llmClient.getSupportsTools();
       if (!supportsToolsAfter && supportsTools) {
         // Tool support was disabled during first message - regenerate system message
         await this.buildSystemMessage();
@@ -1832,8 +1832,8 @@ export class GrokAgent extends EventEmitter {
   private async validateToolArguments(toolName: string, args: any): Promise<string | null> {
     try {
       // Get all tools (including MCP tools)
-      const supportsTools = this.grokClient.getSupportsTools();
-      const allTools = supportsTools ? await getAllGrokTools() : [];
+      const supportsTools = this.llmClient.getSupportsTools();
+      const allTools = supportsTools ? await getAllLLMTools() : [];
 
       // Find the tool schema
       const toolSchema = allTools.find(t => t.function.name === toolName);
@@ -1874,7 +1874,7 @@ export class GrokAgent extends EventEmitter {
     }
   }
 
-  private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
+  private async executeTool(toolCall: LLMToolCall): Promise<ToolResult> {
     try {
       // Parse arguments - handle empty string as empty object for parameter-less tools
       let argsString = toolCall.function.arguments?.trim() || "{}";
@@ -2192,7 +2192,7 @@ export class GrokAgent extends EventEmitter {
         .join("\n");
 
       // After successful MCP tool execution, invalidate cache for that server
-      // Next call to getAllGrokTools() will lazy-refresh this server
+      // Next call to getAllLLMTools() will lazy-refresh this server
       const serverNameMatch = toolName.match(/^mcp__(.+?)__/);
       if (serverNameMatch) {
         const serverName = serverNameMatch[1];
@@ -2810,13 +2810,13 @@ export class GrokAgent extends EventEmitter {
   }
 
   getCurrentModel(): string {
-    return this.grokClient.getCurrentModel();
+    return this.llmClient.getCurrentModel();
   }
 
   setModel(model: string): void {
-    this.grokClient.setModel(model);
+    this.llmClient.setModel(model);
     // Reset supportsVision flag for new model
-    this.grokClient.setSupportsVision(true);
+    this.llmClient.setSupportsVision(true);
     // Update token counter for new model
     this.tokenCounter.dispose();
     this.tokenCounter = createTokenCounter(model);
@@ -2827,7 +2827,7 @@ export class GrokAgent extends EventEmitter {
    * Removes tool_calls from the last assistant message and any corresponding tool results
    * @returns Cleaned copy of messages array, or original if no stripping needed
    */
-  static stripInProgressToolCalls(messages: GrokMessage[]): GrokMessage[] {
+  static stripInProgressToolCalls(messages: LLMMessage[]): LLMMessage[] {
     // Find the last assistant message
     let lastAssistantIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -2877,11 +2877,11 @@ export class GrokAgent extends EventEmitter {
     const previousTokenCounter = this.tokenCounter;
 
     // Strip in-progress tool calls to avoid sending incomplete assistant messages
-    const testMessages = GrokAgent.stripInProgressToolCalls(this.messages);
+    const testMessages = LLMAgent.stripInProgressToolCalls(this.messages);
 
     // Build request payload for logging
-    const supportsTools = this.grokClient.getSupportsTools();
-    const tools = supportsTools ? await getAllGrokTools() : [];
+    const supportsTools = this.llmClient.getSupportsTools();
+    const tools = supportsTools ? await getAllLLMTools() : [];
     const requestPayload = {
       model: newModel,
       messages: testMessages,
@@ -2892,12 +2892,12 @@ export class GrokAgent extends EventEmitter {
 
     try {
       // Temporarily set the new model
-      this.grokClient.setModel(newModel);
+      this.llmClient.setModel(newModel);
       this.tokenCounter = createTokenCounter(newModel);
 
       // Test with actual conversation context to verify the model can handle it
       // This catches issues like ollama models that fail to parse tool calls
-      const response = await this.grokClient.chat(
+      const response = await this.llmClient.chat(
         testMessages,
         tools,
         newModel,
@@ -2918,7 +2918,7 @@ export class GrokAgent extends EventEmitter {
 
     } catch (error: any) {
       // Test failed - roll back to previous model
-      this.grokClient.setModel(previousModel);
+      this.llmClient.setModel(previousModel);
       this.tokenCounter.dispose();
       this.tokenCounter = previousTokenCounter;
 
@@ -2953,9 +2953,9 @@ export class GrokAgent extends EventEmitter {
     apiKeyEnvVar: string,
     model?: string
   ): Promise<{ success: boolean; error?: string }> {
-    const previousClient = this.grokClient;
+    const previousClient = this.llmClient;
     const previousApiKeyEnvVar = this.apiKeyEnvVar;
-    const previousBackend = this.grokClient.getBackendName();
+    const previousBackend = this.llmClient.getBackendName();
     const previousModel = this.getCurrentModel();
 
     let requestPayload: any;
@@ -2972,7 +2972,7 @@ export class GrokAgent extends EventEmitter {
       newModel = model || this.getCurrentModel();
 
       // Create new client with new configuration
-      this.grokClient = new GrokClient(apiKey, newModel, baseUrl, backend);
+      this.llmClient = new LLMClient(apiKey, newModel, baseUrl, backend);
       // Store the API key env var name for session persistence
       this.apiKeyEnvVar = apiKeyEnvVar;
 
@@ -2987,11 +2987,11 @@ export class GrokAgent extends EventEmitter {
       }
 
       // Strip in-progress tool calls to avoid sending incomplete assistant messages
-      const testMessages = GrokAgent.stripInProgressToolCalls(this.messages);
+      const testMessages = LLMAgent.stripInProgressToolCalls(this.messages);
 
       // Build request payload for logging
-      const supportsTools = this.grokClient.getSupportsTools();
-      const tools = supportsTools ? await getAllGrokTools() : [];
+      const supportsTools = this.llmClient.getSupportsTools();
+      const tools = supportsTools ? await getAllLLMTools() : [];
       requestPayload = {
         backend,
         baseUrl,
@@ -3004,7 +3004,7 @@ export class GrokAgent extends EventEmitter {
 
       // Test with actual conversation context to verify the backend/model can handle it
       // This catches issues like ollama models that fail to parse tool calls
-      const response = await this.grokClient.chat(
+      const response = await this.llmClient.chat(
         testMessages,
         tools,
         newModel,
@@ -3024,7 +3024,7 @@ export class GrokAgent extends EventEmitter {
 
     } catch (error: any) {
       // Test failed - restore previous client and API key env var
-      this.grokClient = previousClient;
+      this.llmClient = previousClient;
       this.apiKeyEnvVar = previousApiKeyEnvVar;
 
       // Log test failure with full request/response for debugging (if we got far enough to build the payload)
@@ -3197,7 +3197,7 @@ export class GrokAgent extends EventEmitter {
 
   getBackend(): string {
     // Just return the backend name from the client (no detection)
-    return this.grokClient.getBackendName();
+    return this.llmClient.getBackendName();
   }
 
   abortCurrentOperation(): void {
@@ -3276,11 +3276,11 @@ export class GrokAgent extends EventEmitter {
       cwd: process.cwd(),
       contextCurrent: this.getCurrentTokenCount(),
       contextMax: this.getMaxContextSize(),
-      backend: this.grokClient.getBackendName(),
-      baseUrl: this.grokClient.getBaseURL(),
+      backend: this.llmClient.getBackendName(),
+      baseUrl: this.llmClient.getBaseURL(),
       apiKeyEnvVar: this.apiKeyEnvVar,
       model: this.getCurrentModel(),
-      supportsVision: this.grokClient.getSupportsVision(),
+      supportsVision: this.llmClient.getSupportsVision(),
     };
   }
 
@@ -3332,12 +3332,12 @@ export class GrokAgent extends EventEmitter {
         if (apiKey) {
           // Create new client with restored configuration
           const model = state.model || this.getCurrentModel();
-          this.grokClient = new GrokClient(apiKey, model, state.baseUrl, state.backend);
+          this.llmClient = new LLMClient(apiKey, model, state.baseUrl, state.backend);
           this.apiKeyEnvVar = state.apiKeyEnvVar;
 
           // Restore supportsVision flag if present
           if (state.supportsVision !== undefined) {
-            this.grokClient.setSupportsVision(state.supportsVision);
+            this.llmClient.setSupportsVision(state.supportsVision);
           }
 
           // Reinitialize MCP servers when restoring session

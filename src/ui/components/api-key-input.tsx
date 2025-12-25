@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
-import { GrokAgent } from "../../agent/grok-agent.js";
+import { LLMAgent } from "../../agent/llm-agent";
 import { getSettingsManager } from "../../utils/settings-manager.js";
 
 interface ApiKeyInputProps {
-  onApiKeySet: (agent: GrokAgent) => void;
+  onApiKeySet: (agent: LLMAgent) => void;
 }
 
 export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
@@ -49,8 +49,8 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
     setIsSubmitting(true);
     try {
       const apiKey = input.trim();
-      const { createGrokAgent } = await import('../../utils/startup-hook');
-      const agent = await createGrokAgent(apiKey, undefined, undefined, undefined, undefined, false);
+      const { createLLMAgent } = await import('../../utils/startup-hook');
+      const agent = await createLLMAgent(apiKey, undefined, undefined, undefined, undefined, false);
       
       // Set environment variable for current process
       process.env.GROK_API_KEY = apiKey;

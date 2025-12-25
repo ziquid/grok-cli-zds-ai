@@ -2,7 +2,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { ToolResult } from "../types/index.js";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
-import type { GrokAgent } from "../agent/grok-agent.js";
+import type { LLMAgent } from "../agent/llm-agent";
 
 const execAsync = promisify(exec);
 
@@ -10,9 +10,9 @@ const DEFAULT_NEGATIVE_PROMPT =
   "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs";
 
 export class ImageTool implements ToolDiscovery {
-  private agent: GrokAgent; // Reference to the GrokAgent
+  private agent: LLMAgent; // Reference to the LLMAgent
 
-  setAgent(agent: GrokAgent) {
+  setAgent(agent: LLMAgent) {
     this.agent = agent;
   }
 

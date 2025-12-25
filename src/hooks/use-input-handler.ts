@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useInput } from "ink";
-import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { useEnhancedInput, Key } from "./use-enhanced-input.js";
@@ -14,7 +14,7 @@ import { handleRephraseChoice } from "../utils/rephrase-handler.js";
 const DOUBLE_ESC_TIMEOUT_MS = 500;
 
 interface UseInputHandlerProps {
-  agent: GrokAgent;
+  agent: LLMAgent;
   chatHistory: ChatEntry[];
   setChatHistory: React.Dispatch<React.SetStateAction<ChatEntry[]>>;
   setIsProcessing: (processing: boolean) => void;
@@ -389,21 +389,28 @@ export function useInputHandler({
   }, [input]);
 
   const commandSuggestions: CommandSuggestion[] = [
-    { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
+    { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/compact", description: "Reduce context size (keep last 20 messages)" },
     { command: "/context", description: "Show context usage info" },
-    { command: "/context view", description: "View context in pager" },
     { command: "/context edit", description: "Edit context JSON" },
+    { command: "/context view", description: "View context in pager" },
+    { command: "/exit", description: "Exit the application" },
+    { command: "/help", description: "Show help information" },
     { command: "/ink", description: "Switch to Ink UI mode (restart required)" },
     { command: "/introspect", description: "Show available tools" },
-    { command: "/models", description: "Switch Grok Model" },
+    { command: "/introspect all", description: "Show tools, env, and context" },
+    { command: "/introspect commands", description: "Show available slash commands" },
+    { command: "/introspect context", description: "Show context/token usage" },
+    { command: "/introspect env", description: "Show environment variables" },
+    { command: "/introspect tools", description: "Show all available tools" },
+    { command: "/models", description: "Switch LLM Model" },
+    { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/no-ink", description: "Switch to plain console mode (restart required)" },
     { command: "/persona", description: "Set persona text (e.g., /persona debugging red)" },
-    { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
-    { command: "/commit-and-push", description: "AI commit & push to remote" },
+    { command: "/rephrase", description: "Request rephrasing of last response" },
     { command: "/restart", description: "Restart the application (exit code 51)" },
-    { command: "/exit", description: "Exit the application" },
+    { command: "/system rephrase", description: "Rephrase as system message" },
   ];
 
   // Load models from configuration with fallback to defaults

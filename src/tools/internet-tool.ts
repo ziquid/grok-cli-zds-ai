@@ -6,7 +6,7 @@ import { ToolDiscovery } from "./tool-discovery.js";
 const execAsync = promisify(exec);
 
 export class InternetTool implements ToolDiscovery {
-  private agent: any; // Reference to the GrokAgent
+  private agent: any; // Reference to the LLMAgent
 
   setAgent(agent: any) {
     this.agent = agent;

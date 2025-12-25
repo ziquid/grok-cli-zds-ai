@@ -3,6 +3,17 @@ import { CallToolResult, CallToolResultSchema } from "@modelcontextprotocol/sdk/
 import { EventEmitter } from "events";
 import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
 import crypto from "crypto";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8")
+);
+const version = packageJson.version;
 
 export interface MCPServerConfig {
   name: string;
@@ -78,8 +89,8 @@ export class MCPManager extends EventEmitter {
       // Create client
       const client = new Client(
         {
-          name: "grok-cli (ZDS AI build; zds-agents.com)",
-          version: "1.0.0"
+          name: "zds-ai-cli",
+          version: version
         },
         {
           capabilities: {}

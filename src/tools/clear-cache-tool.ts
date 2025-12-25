@@ -1,7 +1,7 @@
 import { ToolResult } from "../types/index.js";
 
 export class ClearCacheTool {
-  private agent: any; // Reference to the GrokAgent
+  private agent: any; // Reference to the LLMAgent
   private confirmationCode: string | null = null;
 
   setAgent(agent: any) {

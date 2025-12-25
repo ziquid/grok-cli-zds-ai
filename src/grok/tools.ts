@@ -1,10 +1,10 @@
-import { GrokTool } from "./client.js";
+import { LLMTool } from "./client.js";
 import { MCPManager, MCPTool } from "../mcp/client.js";
 import { loadMCPConfig } from "../mcp/config.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import fs from "fs";
 
-const BASE_GROK_TOOLS: GrokTool[] = [
+const BASE_LLM_TOOLS: LLMTool[] = [
   {
     type: "function",
     function: {
@@ -788,7 +788,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
 ];
 
 // Morph Fast Apply tool (conditional)
-const MORPH_EDIT_TOOL: GrokTool = {
+const MORPH_EDIT_TOOL: LLMTool = {
   type: "function",
   function: {
     name: "editFile",
@@ -815,8 +815,8 @@ const MORPH_EDIT_TOOL: GrokTool = {
 };
 
 // Function to build tools array conditionally
-function buildGrokTools(): GrokTool[] {
-  const tools = [...BASE_GROK_TOOLS];
+function buildLLMTools(): LLMTool[] {
+  const tools = [...BASE_LLM_TOOLS];
 
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
@@ -827,7 +827,7 @@ function buildGrokTools(): GrokTool[] {
 }
 
 // Export dynamic tools array
-export const GROK_TOOLS: GrokTool[] = buildGrokTools();
+export const LLM_TOOLS: LLMTool[] = buildLLMTools();
 
 // Global MCP manager instance
 let mcpManager: MCPManager | null = null;
@@ -863,7 +863,7 @@ export async function initializeMCPServers(debugLogFile?: string): Promise<void>
   }
 }
 
-export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
+export function convertMCPToolToLLMTool(mcpTool: MCPTool): LLMTool {
   // Normalize schema to ensure OpenAI compatibility
   let parameters = mcpTool.inputSchema || {
     type: "object",
@@ -889,22 +889,22 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
   };
 }
 
-export async function addMCPToolsToGrokTools(baseTools: GrokTool[]): Promise<GrokTool[]> {
+export async function addMCPToolsToLLMTools(baseTools: LLMTool[]): Promise<LLMTool[]> {
   if (!mcpManager) {
     const debugLogPath = ChatHistoryManager.getDebugLogPath();
-    fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: mcpManager is null\n`);
+    fs.appendFileSync(debugLogPath, `${new Date().toISOString()} -- addMCPToolsToLLMTools: mcpManager is null\n`);
     return baseTools;
   }
 
   const mcpTools = await mcpManager.getTools();
   const debugLogPath = ChatHistoryManager.getDebugLogPath();
-  fs.appendFileSync(debugLogPath, `${new Date().toISOString()} - addMCPToolsToGrokTools: ${mcpTools.length} MCP tools from manager\n`);
-  const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
+  fs.appendFileSync(debugLogPath, `${new Date().toISOString()} -- addMCPToolsToLLMTools: ${mcpTools.length} MCP tools from manager\n`);
+  const LLMMCPTools = mcpTools.map(convertMCPToolToLLMTool);
 
-  return [...baseTools, ...grokMCPTools];
+  return [...baseTools, ...LLMMCPTools];
 }
 
-export async function getAllGrokTools(): Promise<GrokTool[]> {
+export async function getAllLLMTools(): Promise<LLMTool[]> {
   const manager = getMCPManager();
   // Wait for servers to initialize before returning tools
   try {
@@ -912,5 +912,5 @@ export async function getAllGrokTools(): Promise<GrokTool[]> {
   } catch (error) {
     // Ignore initialization errors, just proceed with whatever tools we have
   }
-  return await addMCPToolsToGrokTools(GROK_TOOLS);
+  return await addMCPToolsToLLMTools(LLM_TOOLS);
 }
