@@ -55,6 +55,7 @@ export class LLMClient {
   private backendName: string;
   private supportsTools: boolean = true;
   private supportsVision: boolean = true;
+  private disableReasoningOverride: boolean = false;
 
   constructor(apiKey: string, model?: string, baseURL?: string, displayName?: string) {
     const finalBaseURL = baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1";
@@ -66,7 +67,11 @@ export class LLMClient {
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.defaultMaxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 1536;
     if (model) {
+      // Store the ORIGINAL model name (with suffix) for persistence
       this.currentModel = model;
+      // Parse and store the reasoning override flag
+      const { disableReasoning } = this.parseModelSuffix(model);
+      this.disableReasoningOverride = disableReasoning;
     }
 
     // Use provided display name, or derive from baseURL hostname as fallback
@@ -89,10 +94,25 @@ export class LLMClient {
   }
 
   async setModel(model: string): Promise<void> {
+    // Store the ORIGINAL model name (with suffix) for persistence
     this.currentModel = model;
+    // Parse and store the reasoning override flag
+    const { disableReasoning } = this.parseModelSuffix(model);
+    this.disableReasoningOverride = disableReasoning;
     // Reset tool and vision support flags when switching models
     await this.enableTools();
     this.enableVision();
+  }
+
+  private parseModelSuffix(model: string): { cleanModel: string; disableReasoning: boolean } {
+    const nothinkingSuffix = ':nothinking';
+    if (model.endsWith(nothinkingSuffix)) {
+      return {
+        cleanModel: model.slice(0, -nothinkingSuffix.length),
+        disableReasoning: true
+      };
+    }
+    return { cleanModel: model, disableReasoning: false };
   }
 
   private async enableTools(): Promise<void> {
@@ -161,8 +181,12 @@ export class LLMClient {
     const maxRetries = 5;
     const retryDelay = 10000; // 10 seconds
 
+    // Parse model suffix (from explicit param or current model)
+    const modelToUse = model || this.currentModel;
+    const cleanModelName = this.parseModelSuffix(modelToUse).cleanModel;
+
     const requestPayload: any = {
-      model: model || this.currentModel,
+      model: cleanModelName,
       messages,
       temperature: temperature ?? 0.7,
       max_tokens: maxTokens ?? this.defaultMaxTokens
@@ -181,6 +205,18 @@ export class LLMClient {
                           this.client.baseURL?.includes('x.ai');
     if (supportsThink) {
       requestPayload.think = false;
+    }
+
+    // Add reasoning parameter for OpenRouter
+    const isOpenRouter = this.client.baseURL?.includes('openrouter.ai');
+    if (isOpenRouter && this.disableReasoningOverride) {
+      requestPayload.reasoning = { enabled: false };
+    }
+
+    // Add reasoning parameter for NanoGPT
+    const isNanoGPT = this.client.baseURL?.includes('nanogpt');
+    if (isNanoGPT && this.disableReasoningOverride) {
+      requestPayload.reasoning = { effort: "none" };
     }
 
     // Add search parameters if specified and using Grok API (x.ai)
@@ -314,8 +350,12 @@ export class LLMClient {
     const maxRetries = 5;
     const retryDelay = 11000; // 11 seconds
 
+    // Parse model suffix (from explicit param or current model)
+    const modelToUse = model || this.currentModel;
+    const cleanModelName = this.parseModelSuffix(modelToUse).cleanModel;
+
     const requestPayload: any = {
-      model: model || this.currentModel,
+      model: cleanModelName,
       messages,
       temperature: temperature ?? 0.7,
       max_tokens: maxTokens ?? this.defaultMaxTokens,
@@ -334,6 +374,18 @@ export class LLMClient {
                           (this.client.baseURL ? this.isAllowedHost(this.client.baseURL, ['x.ai', 'api.x.ai']) : false);
     if (supportsThink) {
       requestPayload.think = false;
+    }
+
+    // Add reasoning parameter for OpenRouter
+    const isOpenRouter = this.client.baseURL?.includes('openrouter.ai');
+    if (isOpenRouter && this.disableReasoningOverride) {
+      requestPayload.reasoning = { enabled: false };
+    }
+
+    // Add reasoning parameter for NanoGPT
+    const isNanoGPT = this.client.baseURL?.includes('nanogpt');
+    if (isNanoGPT && this.disableReasoningOverride) {
+      requestPayload.reasoning = { effort: "none" };
     }
 
     // Venice uses venice_parameters.disable_thinking

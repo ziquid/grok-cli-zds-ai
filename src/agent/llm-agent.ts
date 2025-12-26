@@ -2817,9 +2817,13 @@ export class LLMAgent extends EventEmitter {
     this.llmClient.setModel(model);
     // Reset supportsVision flag for new model
     this.llmClient.setSupportsVision(true);
-    // Update token counter for new model
+    // Update token counter for new model (strip :nothinking suffix)
     this.tokenCounter.dispose();
-    this.tokenCounter = createTokenCounter(model);
+    const modelName = this.llmClient.getCurrentModel();
+    const cleanModel = modelName.endsWith(':nothinking')
+      ? modelName.slice(0, -':nothinking'.length)
+      : modelName;
+    this.tokenCounter = createTokenCounter(cleanModel);
   }
 
   /**
