@@ -44,6 +44,7 @@ export const ChatInput = React.memo(({
   if (isMultiline) {
     return (
       <Box
+        flexDirection="column"
         borderStyle="round"
         borderColor={borderColor}
         paddingY={0}

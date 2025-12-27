@@ -293,7 +293,9 @@ export function useEnhancedInput({
 
     // Handle regular character input
     if (inputChar && !key.ctrl && !key.meta) {
-      const result = insertText(input, cursorPosition, inputChar);
+      // Normalize carriage returns to newlines (for paste operations)
+      const normalizedChar = inputChar.replace(/\r/g, '\n');
+      const result = insertText(input, cursorPosition, normalizedChar);
       setInputState(result.text);
       setCursorPositionState(result.position);
       setOriginalInput(result.text);
