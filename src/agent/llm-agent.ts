@@ -2136,6 +2136,9 @@ export class LLMAgent extends EventEmitter {
         case "listImageModels":
           return await this.imageTool.listImageModels();
 
+        case "listImageLoras":
+          return await this.imageTool.listImageLoras();
+
         case "readXlsx":
           return await this.fileConversionTool.readXlsx(
             args.filename,

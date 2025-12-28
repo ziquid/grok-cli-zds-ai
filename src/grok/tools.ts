@@ -741,6 +741,18 @@ const BASE_LLM_TOOLS: LLMTool[] = [
   {
     type: "function",
     function: {
+      name: "listImageLoras",
+      description: "List available LoRA models installed on the server",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "readXlsx",
       description: "Read an Excel/XLSX file and return its contents in various formats (text, JSON, CSV)",
       parameters: {
@@ -779,6 +791,23 @@ const BASE_LLM_TOOLS: LLMTool[] = [
           filename: {
             type: "string",
             description: "Path to the XLSX file",
+          },
+        },
+        required: ["filename"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "extractTextFromImage",
+      description: "Extract text from image files using OCR (Optical Character Recognition)",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the image file to extract text from",
           },
         },
         required: ["filename"],

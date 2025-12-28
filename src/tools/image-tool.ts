@@ -3,6 +3,7 @@ import { promisify } from "util";
 import { ToolResult } from "../types/index.js";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 import type { LLMAgent } from "../agent/llm-agent";
+// import type { StreamingLLMAgent } from "../agent/streaming-agent";
 
 const execAsync = promisify(exec);
 
@@ -366,6 +367,107 @@ export class ImageTool implements ToolDiscovery {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error listing image models",
         output: error instanceof Error ? error.message : "Unknown error listing image models"
+      };
+    }
+  }
+
+  /**
+   * List available LoRA models installed on the server.
+   * Uses generate_image_sd.sh --list-loras.
+   */
+  async listImageLoras(): Promise<ToolResult> {
+    try {
+      const command = `generate_image_sd.sh --list-loras`;
+
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: 30000, // 30 second timeout
+          env: process.env
+        });
+
+        if (stderr && !stdout) {
+          return {
+            success: false,
+            error: `Failed to list LoRA models: ${stderr}`,
+            output: stderr
+          };
+        }
+
+        const loraList = stdout.trim();
+        if (!loraList) {
+          return {
+            success: false,
+            error: "No LoRA models found",
+            output: "No LoRA models found"
+          };
+        }
+
+        return {
+          success: true,
+          output: loraList,
+          displayOutput: "Available LoRA models listed"
+        };
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error";
+        const stderr = error.stderr || "";
+
+        return {
+          success: false,
+          error: `Failed to list LoRA models: ${errorMessage}${stderr ? '\n' + stderr : ''}`,
+          output: `Failed to list LoRA models: ${errorMessage}${stderr ? '\n' + stderr : ''}`
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error listing LoRA models",
+        output: error instanceof Error ? error.message : "Unknown error listing LoRA models"
+      };
+    }
+  }
+
+  /**
+   * Extract text from image files using OCR (Optical Character Recognition).
+   * Uses extract-text.sh with tesseract/textra for text extraction.
+   */
+  async extractTextFromImage(
+    filename: string
+  ): Promise<ToolResult> {
+    try {
+      // Execute OCR extraction
+      const command = `extract-text.sh "${filename}"`;
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: 60000, // 60 second timeout for OCR
+        shell: '/bin/zsh'
+      });
+
+      // Clean up output
+      const extractedText = stdout.trim();
+      const lineCount = extractedText.split('\n').length;
+      const wordCount = extractedText.split(/\s+/).filter(word => word.length > 0).length;
+
+      return {
+        success: true,
+        output: extractedText,
+        displayOutput: `OCR complete (${wordCount} words, ${lineCount} lines)`,
+        data: {
+          file: filename,
+          textLength: extractedText.length,
+          wordCount: wordCount,
+          lineCount: lineCount
+        }
+      };
+
+    } catch (error: any) {
+      // Extract error details
+      const errorMessage = error.message || "Unknown error";
+      const stderr = error.stderr || "";
+      const stdout = error.stdout || "";
+
+      return {
+        success: false,
+        error: `OCR text extraction failed (code ${error.code || 'unknown'}): ${errorMessage}${stderr ? '\nstderr: ' + stderr : ''}${stdout ? '\nstdout: ' + stdout : ''}`,
+        output: `Error code: ${error.code || 'unknown'}\n${errorMessage}${stderr ? '\nstderr: ' + stderr : ''}${stdout ? '\nstdout: ' + stdout : ''}`
       };
     }
   }

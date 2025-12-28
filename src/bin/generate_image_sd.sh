@@ -126,6 +126,10 @@ while [[ $# -gt 0 ]]; do
       SEED="$2"
       shift 2 # past argument and value
       ;;
+    --list-loras)
+      curl -s "$ZDS_AI_IMAGE_ENDPOINT"/loras | jq -r '.[].name'
+      exit 0
+      ;;
     --list-models)
       curl -s "$ZDS_AI_IMAGE_ENDPOINT"/sd-models | jq -r '.[].title' | \
         sed -e 's,\.safetensors.*,,gi'
