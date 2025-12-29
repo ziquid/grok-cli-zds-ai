@@ -6,8 +6,8 @@
 [[ -f ~/.env ]] && source ~/.env
 
 # Find config from ZDS_AI_AGENT_CONFIG_FILE
-[[ ! -s "$ZDS_AI_AGENT_CONFIG_FILE" ]] && echo Failed to find config file >&2 && exit 1
-[[ ! -s "$ZDS_AI_AGENT_LOG_FILE" ]] && echo Failed to find log file >&2 && exit 1
+[[ ! -s "$ZDS_AI_AGENT_CONFIG_FILE" ]] && echo Failed to find config file $ZDS_AI_AGENT_CONFIG_FILE >&2 && exit 1
+[[ ! -s "$ZDS_AI_AGENT_LOG_FILE" ]] && echo Failed to find log file $ZDS_AI_AGENT_LOG_FILE >&2 && exit 1
 [[ -z "$ZDS_AI_AGENT_SESSION" ]] && echo Failed to validate agent session >&2 && exit 1
 LOGFILE=${ZDS_AI_AGENT_LOG_FILE}
 
