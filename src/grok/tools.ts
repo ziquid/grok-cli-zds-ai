@@ -814,6 +814,23 @@ const BASE_LLM_TOOLS: LLMTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "extractTextFromAudio",
+      description: "Extract text from audio files using speech-to-text (STT) transcription",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: {
+            type: "string",
+            description: "Path to the audio file to extract text from",
+          },
+        },
+        required: ["filename"],
+      },
+    },
+  },
 ];
 
 // Morph Fast Apply tool (conditional)

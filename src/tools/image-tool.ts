@@ -66,19 +66,6 @@ export class ImageTool implements ToolDiscovery {
         };
       }
 
-      const imagesDir = `${agentHome}/Images`;
-
-      // Ensure Images directory exists
-      try {
-        await execAsync(`mkdir -p "${imagesDir}"`);
-      } catch (error) {
-        return {
-          success: false,
-          error: `Failed to create Images directory: ${error}`,
-          output: `Failed to create Images directory: ${error}`
-        };
-      }
-
       // Set defaults
       const defaultNegativePrompt = DEFAULT_NEGATIVE_PROMPT;
       const finalModel = model || "cyberrealisticPony_v130";

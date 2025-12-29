@@ -1,4 +1,4 @@
-// export { AudioTool } from "./audio-tool.js";
+export { AudioTool } from "./audio-tool.js";
 export { CharacterTool } from "./character-tool.js";
 export { ClearCacheTool } from "./clear-cache-tool.js";
 export { ConfirmationTool } from "./confirmation-tool.js";

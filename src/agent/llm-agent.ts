@@ -28,7 +28,8 @@ import {
   InternetTool,
   ImageTool,
   FileConversionTool,
-  RestartTool
+  RestartTool,
+  AudioTool
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
@@ -146,6 +147,7 @@ export class LLMAgent extends EventEmitter {
   private imageTool: ImageTool;
   private fileConversionTool: FileConversionTool;
   private restartTool: RestartTool;
+  private audioTool: AudioTool;
   private chatHistory: ChatEntry[] = [];
   private messages: LLMMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -2138,6 +2140,12 @@ export class LLMAgent extends EventEmitter {
 
         case "listImageLoras":
           return await this.imageTool.listImageLoras();
+
+        case "extractTextFromImage":
+          return await this.imageTool.extractTextFromImage(args.filename);
+
+        case "extractTextFromAudio":
+          return await this.audioTool.extractTextFromAudio(args.filename);
 
         case "readXlsx":
           return await this.fileConversionTool.readXlsx(
