@@ -64,7 +64,7 @@ EXT=mp3
 
 _tts_fix_audio() {
   ffmpeg -v error -i "$1" -af deesser,haas=side_gain=0.3,\
-arnndn=/Users/joseph/scm/arnndn-models/cb.rnnn,\
+arnndn=/usr/local/share/models/cb.rnnn,\
 afftdn=nr=10:nf=-80:tn=1,adynamicsmooth=2,anlmdn=m=99,\
 adynamicsmooth=99:999 -y "$2" | tee -a "$LOGFILE"
 }

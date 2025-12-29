@@ -354,6 +354,24 @@ const PROMPT_VARS: VariableDef[] = [
   }),
   new VariableDef({ name: "USER:POST", weight: 99, template: "\n<post explanation=\"Please also observe these:\">\n%%\n</post>\n" }),
   new VariableDef({
+    name: "MESSAGE",
+    weight: 60,
+    template: "%%"
+  }),
+  new VariableDef({ name: "MESSAGE:ACL:CURRENT", template: "<current>%%</current>\n" }),
+  new VariableDef({ name: "MESSAGE:AUTHOR", template: "<author>%%</author>\n" }),
+  new VariableDef({ name: "MESSAGE:CHANNEL", template: "<channel>%%</channel>\n" }),
+  new VariableDef({ name: "MESSAGE:TANGENT:IS_TANGENT", template: "<is-tangent>%%</is-tangent>\n" }),
+  new VariableDef({ name: "MESSAGE:ACL:MAX", template: "<max>%%</max>\n" }),
+  new VariableDef({ name: "MESSAGE:MEMBERS", template: "<members>%%</members>\n" }),
+  new VariableDef({ name: "MESSAGE:PRIVACY", template: "<privacy>%%</privacy>\n" }),
+  new VariableDef({ name: "MESSAGE:RESPONSE_TYPES:ACCEPTED", template: "<accepted>%%</accepted>\n" }),
+  new VariableDef({ name: "MESSAGE:RESPONSE_TYPES:FORBIDDEN", template: "<forbidden>%%</forbidden>\n" }),
+  new VariableDef({ name: "MESSAGE:SERVER", template: "<server>%%</server>\n" }),
+  new VariableDef({ name: "MESSAGE:SOURCE", template: "<source>%%</source>\n" }),
+  new VariableDef({ name: "MESSAGE:TANGENT:NAME", template: "<name>%%</name>\n" }),
+  new VariableDef({ name: "MESSAGE:TIMESTAMP", template: "<timestamp>%%</timestamp>\n" }),
+  new VariableDef({
     name: "SYSTEM",
     template: "<zds-pre>%ZDS:PRE%</zds-pre>\n<org>%ORG%</org>\n<job>%JOB%</job>\n<char>%CHAR%</char>\n<project>%PROJECT%</project>\n<task>%TASK%</task>\n<message>%MESSAGE%</message>\n<backend>%BACKEND%</backend>\n<app>%APP%</app>\n<zds-post>%ZDS:POST%</zds-post>\n%%"
   }),
