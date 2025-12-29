@@ -1,5 +1,4 @@
 import { exec, execSync } from "child_process";
-import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 
@@ -30,7 +29,7 @@ function expandTilde(filePath: string): string {
       // Use shell to expand ~username
       const expandedHome = execSync(`eval echo ~${username}`, { encoding: 'utf-8' }).trim();
       return expandedHome + restOfPath;
-    } catch (error) {
+    } catch (_error) {
       // If expansion fails, return original path
       return filePath;
     }
@@ -416,7 +415,7 @@ export async function executeOperationHook(
     setTimeout(() => {
       try {
         child.kill("SIGTERM");
-      } catch (e) {
+      } catch (_e) {
         // Process may have already exited
       }
     }, timeoutMs);
@@ -518,7 +517,7 @@ export async function executeToolApprovalHook(
     setTimeout(() => {
       try {
         child.kill("SIGTERM");
-      } catch (e) {
+      } catch (_e) {
         // Process may have already exited
       }
     }, timeoutMs);
