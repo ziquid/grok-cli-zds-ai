@@ -21,9 +21,9 @@ export function MarkdownRenderer({ content }: { content: string }) {
       }
     );
 
-    // Create a new renderer with width reduced by 3 columns for each render
+    // Create a new renderer with width reduced by 5 columns for each render
     // to account for bullet points and spacing that would cause wrapping
-    const terminalWidth = (process.stdout.columns || 80) - 3;
+    const terminalWidth = (process.stdout.columns || 80) - 5;
 
     const renderer = new (TerminalRenderer as any)({
       width: terminalWidth,

@@ -316,8 +316,15 @@ const BASE_LLM_TOOLS: LLMTool[] = [
         properties: {
           target: {
             type: "string",
-            description: "What to introspect. Available: 'tools' - list all available tools (internal and MCP), 'env' - show ZDS_AI_AGENT_* environment variables, 'context' - show context/token usage, 'all' - show all introspection data",
-            enum: ["tools", "env", "context", "all"],
+            description: "What to introspect. Available: 'tools': list all available tools (internal and MCP),\n" +
+              "- 'env': show ZDS_AI_AGENT_* environment variables\n- 'context': show context/token usage\n" +
+              "- 'vars': show all set prompt variables\n- 'var:<var>': show details for the specified variable\n" +
+              "- 'render:<var>': show rendered value of a prompt variable\n" +
+              "- 'def:<var>': show variable definition with birth children tree\n" +
+              "- 'defs': show all prompt variable definitions\n" +
+              "- 'all': show all introspection data\n" +
+              "- 'tool:<toolname>': show schema for specific tool\n" +
+              "- 'commands': show available slash commands",
           },
         },
         required: ["target"],
@@ -328,13 +335,13 @@ const BASE_LLM_TOOLS: LLMTool[] = [
     type: "function",
     function: {
       name: "clearCache",
-      description: "Clear the conversation cache/context and reset to initial state. Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code. Second call with the code clears the cache.",
+      description: "Clear the conversation cache/context and reset to initial state.  Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code. Second call with the code clears the cache.",
       parameters: {
         type: "object",
         properties: {
           confirmationCode: {
             type: "string",
-            description: "The confirmation code provided in the first call (6-letter code). Leave empty for initial call.",
+            description: "The confirmation code provided in the first call (6-letter code).  Leave empty for initial call.",
           },
         },
         required: [],

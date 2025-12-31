@@ -460,7 +460,7 @@ function ChatInterfaceWithAgent({
 
       <Box flexDirection="column" marginBottom={1}>
         <Text color="gray">
-          Type your request in natural language. Ctrl+C to clear, 'exit' to
+          Type your request in natural language.  ESC to clear, Ctrl+D to
           quit.
         </Text>
       </Box>

@@ -2,6 +2,7 @@ import { ToolResult } from "../types/index.js";
 import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 import { getAllLLMTools } from "../grok/tools.js";
 import { BUILT_IN_COMMANDS } from "../utils/slash-commands.js";
+import { Variable, VariableDef } from "../agent/prompt-variables.js";
 
 export class IntrospectTool implements ToolDiscovery {
   private agent: any; // Reference to the LLMAgent for accessing tool class info
@@ -26,6 +27,11 @@ Usage:
   /introspect commands          - Show available slash commands
   /introspect env               - Show ZDS_AI_AGENT_* environment variables
   /introspect context           - Show context/token usage
+  /introspect vars              - Show all set prompt variables
+  /introspect var:VAR_NAME      - Show details for specific variable
+  /introspect render:VAR_NAME   - Show rendered value of specific variable
+  /introspect defs              - Show all variable definitions
+  /introspect def:VAR_NAME      - Show variable definition with birth children tree
   /introspect all               - Show tools, environment variables, and context
 
 Examples:
@@ -43,6 +49,21 @@ Examples:
 
   # Check context/token usage
   introspect("context")
+
+  # Show all set prompt variables
+  introspect("vars")
+
+  # Show details for a specific variable
+  introspect("var:CHAR:MOOD")
+
+  # Show rendered value of a specific variable
+  introspect("render:SYSTEM")
+
+  # Show all variable definitions
+  introspect("defs")
+
+  # Show variable definition with birth children tree structure
+  introspect("def:SYSTEM")
 
 Workflow for using unknown MCP tools:
   1. Call introspect("tools") to see all available tools
@@ -107,6 +128,209 @@ Workflow for using unknown MCP tools:
         };
       }
 
+      // Handle var:VARIABLE_NAME format for specific variable details
+      if (target.startsWith("var:")) {
+        const varName = target.substring(4); // Remove "var:" prefix
+        const variable = Variable.get(varName);
+
+        if (!variable) {
+          return {
+            success: false,
+            error: `Variable not found: ${varName}`
+          };
+        }
+
+        // Format the variable details in a readable way
+        let output = `Variable: ${variable.name}\n`;
+
+        if (variable.values.length === 1) {
+          output += `Value: ${variable.values[0]}\n`;
+        } else {
+          output += `Values (${variable.values.length}):\n`;
+          variable.values.forEach((value, index) => {
+            output += `  [${index + 1}] ${value}\n`;
+          });
+        }
+
+        output += `Weight: ${variable.weight}\n`;
+        output += `Persists: ${variable.persists}\n`;
+        output += `Is New: ${variable.isNew}\n`;
+
+        return {
+          success: true,
+          output: output.trim(),
+          displayOutput: `Details for ${varName}`
+        };
+      }
+
+      // Handle render:VARIABLE_NAME format for rendered value
+      if (target.startsWith("render:")) {
+        const varName = target.substring(7); // Remove "render:" prefix
+
+        try {
+          const renderedValue = Variable.renderFull(varName);
+
+          let output = `Rendered ${varName}:\n`;
+          output += renderedValue;
+
+          return {
+            success: true,
+            output: output.trim(),
+            displayOutput: `Rendered ${varName}`
+          };
+        } catch (error: any) {
+          return {
+            success: false,
+            error: `Error rendering ${varName}: ${error.message}`
+          };
+        }
+      }
+
+      // Handle def:VARIABLE_NAME format for variable definition with children tree
+      if (target.startsWith("def:")) {
+        const varName = target.substring(4); // Remove "def:" prefix
+        const definition = VariableDef.getOrCreate(varName);
+
+        // Build tree structure showing variable definition and its birth children
+        const buildVariableTree = (varName: string, depth: number = 0, visited: Set<string> = new Set()): string => {
+          // Prevent infinite recursion
+          if (visited.has(varName)) {
+            return `${varName}: [circular reference]\n`;
+          }
+          visited.add(varName);
+
+          const def = VariableDef.getOrCreate(varName);
+          const variable = Variable.get(varName);
+
+          let output = "";
+
+          // Show current variable with YAML-like formatting
+          const indent = "  ".repeat(depth);
+          output += `${indent}name: "${varName}"\n`;
+          output += `${indent}weight: ${def.weight}\n`;
+          output += `${indent}persists: ${def.persists}\n`;
+          output += `${indent}renderFull: ${def.renderFull}\n`;
+
+          if (def.env_var) {
+            output += `${indent}env_var: "${def.env_var}"\n`;
+          }
+          if (def.getter) {
+            output += `${indent}has_getter: true\n`;
+          }
+
+          // Always show template
+          if (def.template && def.template !== "%%") {
+            const templatePreview = def.template.length > 60 ?
+              def.template.substring(0, 60) + "..." : def.template;
+            output += `${indent}template: "${templatePreview.replace(/\n/g, "\\n")}"\n`;
+          } else if (def.template === "%%") {
+            output += `${indent}template: "%%" # default\n`;
+          }
+
+          // Show birth children (prefix match)
+          const birthChildren = Variable.findBirthChildren(varName);
+
+          // Show adopted children (from template)
+          const adoptedChildren = def.adoptedChildren.filter(child =>
+            !birthChildren.some(birthChild => birthChild.name === child)
+          );
+
+          // Combine all children and sort by weight
+          const allChildren = [
+            ...birthChildren.map(child => ({ name: child.name, weight: child.weight, type: 'birth' })),
+            ...adoptedChildren.map(child => {
+              const childDef = VariableDef.getOrCreate(child);
+              const childVar = Variable.get(child);
+              return {
+                name: child,
+                weight: childVar?.weight || childDef.weight,
+                type: 'adopted'
+              };
+            })
+          ].sort((a, b) => {
+            if (a.weight !== b.weight) return a.weight - b.weight;
+            return a.name.localeCompare(b.name);
+          });
+
+          // Display children recursively
+          if (allChildren.length > 0) {
+            output += `${indent}children:\n`;
+            for (const child of allChildren) {
+              const childTypeLabel = child.type === 'birth' ? 'birth' : 'adopted';
+              output += `${indent}  - # ${childTypeLabel}\n`;
+              const childOutput = buildVariableTree(child.name, depth + 2, new Set(visited));
+              // Indent each line of the child output for YAML list item
+              const indentedChildOutput = childOutput
+                .split('\n')
+                .filter(line => line.trim())
+                .map(line => `${indent}    ${line}`)
+                .join('\n') + '\n';
+              output += indentedChildOutput;
+            }
+          }
+
+          return output;
+        };
+
+        const treeOutput = buildVariableTree(varName);
+
+        // Add definition details
+        let output = "";
+        // Remove the redundant header since all info is now in the YAML tree
+        output += treeOutput;
+
+        return {
+          success: true,
+          output: output.trim(),
+          displayOutput: `Definition tree for ${varName}`
+        };
+      }
+
+      // Handle defs - show all variable definitions
+      if (target === "defs") {
+        const allDefinitions = VariableDef.getAllDefinitions();
+
+        if (allDefinitions.length === 0) {
+          return {
+            success: true,
+            output: "No variable definitions found.",
+            displayOutput: "No variable definitions"
+          };
+        }
+
+        // Sort definitions by name
+        allDefinitions.sort((a, b) => a.name.localeCompare(b.name));
+
+        let output = "Variable Definitions:\n\n";
+        allDefinitions.forEach(def => {
+          output += `${def.name}\n`;
+          output += `  Weight: ${def.weight}\n`;
+          output += `  Persists: ${def.persists}\n`;
+          output += `  Render Full: ${def.renderFull}\n`;
+          if (def.env_var) {
+            output += `  Environment Variable: ${def.env_var}\n`;
+          }
+          if (def.getter) {
+            output += `  Has Getter: true\n`;
+          }
+          if (def.adoptedChildren.length > 0) {
+            output += `  Adopted Children: ${def.adoptedChildren.join(", ")}\n`;
+          }
+          if (def.template && def.template !== "%%") {
+            const templatePreview = def.template.length > 80 ?
+              def.template.substring(0, 80) + "..." : def.template;
+            output += `  Template: ${templatePreview.replace(/\n/g, "\\n")}\n`;
+          }
+          output += "\n";
+        });
+
+        return {
+          success: true,
+          output: output.trim(),
+          displayOutput: `Found ${allDefinitions.length} variable definitions`
+        };
+      }
+
       if (target === "commands") {
         return {
           success: true,
@@ -124,10 +348,12 @@ Workflow for using unknown MCP tools:
         const envResult = await this.introspect("env");
         // Get context
         const contextResult = await this.introspect("context");
+        // Get vars
+        const varsResult = await this.introspect("vars");
 
         return {
           success: true,
-          output: `${toolsResult.output}\n\n=== Slash Commands ===\n${commandsResult.output}\n\n=== Environment Variables ===\n${envResult.output}\n\n=== Context Usage ===\n${contextResult.output}`,
+          output: `${toolsResult.output}\n\n=== Slash Commands ===\n${commandsResult.output}\n\n=== Environment Variables ===\n${envResult.output}\n\n=== Context Usage ===\n${contextResult.output}\n\n=== Prompt Variables ===\n${varsResult.output}`,
           displayOutput: "Showing all introspection data"
         };
       }
@@ -168,6 +394,35 @@ Usage: ${usagePercent}%`;
           success: true,
           output,
           displayOutput: `Context: ${currentTokens}/${maxContext} tokens (${usagePercent}%)`
+        };
+      }
+
+      if (target === "vars") {
+        // Get all set variables from the Variable class
+        const variables = Variable.getAllVariables();
+
+        if (variables.length === 0) {
+          return {
+            success: true,
+            output: "No prompt variables are currently set.",
+            displayOutput: "No prompt variables set"
+          };
+        }
+
+        // Sort variables by name
+        variables.sort((a, b) => a.name.localeCompare(b.name));
+
+        let output = "";
+        variables.forEach(variable => {
+          const value = variable.values.length === 1 ? variable.values[0] : variable.values.join(", ");
+          const trimmedValue = value.length > 100 ? value.substring(0, 100) + "..." : value;
+          output += `${variable.name}=${trimmedValue}\n`;
+        });
+
+        return {
+          success: true,
+          output: output.trim(),
+          displayOutput: `Found ${variables.length} prompt variables`
         };
       }
 
@@ -255,7 +510,7 @@ Usage: ${usagePercent}%`;
 
       return {
         success: false,
-        error: `Unknown introspect target: ${target}. Available targets: tools, commands, env, context, all`
+        error: `Unknown introspect target: ${target}. Available targets: tools, commands, env, context, vars, defs, def:VAR_NAME, all, tool:TOOL_NAME, var:VARIABLE_NAME, render:VARIABLE_NAME`
       };
     } catch (error: any) {
       return {

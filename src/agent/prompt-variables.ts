@@ -61,6 +61,21 @@ export class VariableDef {
     VariableDef.definitions.set(name, def);
     return def;
   }
+
+  /**
+   * Get all variable definitions
+   * @returns Array of all VariableDef instances
+   */
+  static getAllDefinitions(): VariableDef[] {
+    // First, ensure all PROMPT_VARS are loaded into definitions
+    for (const promptVar of PROMPT_VARS) {
+      if (!VariableDef.definitions.has(promptVar.name)) {
+        VariableDef.definitions.set(promptVar.name, promptVar);
+      }
+    }
+
+    return Array.from(VariableDef.definitions.values());
+  }
 }
 
 export class Variable {
@@ -124,6 +139,14 @@ export class Variable {
   }
 
   /**
+   * Get all set variables
+   * @returns Array of all Variable instances
+   */
+  static getAllVariables(): Variable[] {
+    return Array.from(Variable.variables.values());
+  }
+
+  /**
    * Clear all one-shot variables
    */
   static clearOneShot(): void {
@@ -150,9 +173,26 @@ export class Variable {
     const prefix = `${parent}:`;
     const found: Variable[] = [];
 
+    // First check existing variables
     for (const variable of Variable.variables.values()) {
       if (variable.name.startsWith(prefix) && variable.renderFull) {
         found.push(variable);
+      }
+    }
+
+    // If no variables found, check definitions and create them
+    if (found.length === 0) {
+      const allDefs = VariableDef.getAllDefinitions();
+      for (const def of allDefs) {
+        if (def.name.startsWith(prefix) && def.name !== parent && def.renderFull) {
+          // Create the variable if it doesn't exist
+          let variable = Variable.get(def.name);
+          if (!variable) {
+            variable = new Variable(def.name);
+            Variable.variables.set(def.name, variable);
+          }
+          found.push(variable);
+        }
       }
     }
 
@@ -333,7 +373,7 @@ export class Variable {
 }
 
 const PROMPT_VARS: VariableDef[] = [
-  new VariableDef({ name: "ZDS:PRE", weight: 0 }),
+  new VariableDef({ name: "ZDS:PRE", weight: 0, persists: true }),
   new VariableDef({ name: "USER:PRE", weight: 0, template: "<pre explanation=\"Before you do any processing, please remember:\">\n%%\n</pre>\n" }),
   new VariableDef({
     name: "USER:ENV",
@@ -375,7 +415,7 @@ const PROMPT_VARS: VariableDef[] = [
     name: "SYSTEM",
     template: "<zds-pre>%ZDS:PRE%</zds-pre>\n<org>%ORG%</org>\n<job>%JOB%</job>\n<char>%CHAR%</char>\n<project>%PROJECT%</project>\n<task>%TASK%</task>\n<message>%MESSAGE%</message>\n<backend>%BACKEND%</backend>\n<app>%APP%</app>\n<zds-post>%ZDS:POST%</zds-post>\n%%"
   }),
-  new VariableDef({ name: "ZDS:POST", weight: 99 }),
+  new VariableDef({ name: "ZDS:POST", weight: 99, persists: true }),
   new VariableDef({
     name: "APP:TOOLS",
     weight: 70,
