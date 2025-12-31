@@ -45,6 +45,7 @@ if [[ "$1" == --help || "$1" == -h || $# -eq 0 ]]; then
   echo "  --seed <num>             Seed for reproducible generation (default: random)"
   echo "  --name <name>            Name to call the file (default: based on prompt)"
   echo "  --list-models            Show checkpoint models installed"
+   echo "  --get-lora-details <name> Show complete JSON details for specified LoRA"
   echo "  --help                   Show this help message"
   echo
   echo Environment Variables:
@@ -57,6 +58,7 @@ if [[ "$1" == --help || "$1" == -h || $# -eq 0 ]]; then
   echo "  ${PROG_NAME} 'sunset' --move --cfg-scale 7.5"
   echo "  ${PROG_NAME} 'whistler\'s mother' --steps 50 --cfg-scale 8.0 --name 'whistlers mom'"
   echo "  ${PROG_NAME} 'portrait' --seed 12345 --name 'reproducible-portrait'"
+   echo "  ${PROG_NAME} --get-lora-details 'RealisticSkinv2_ponyv6_loraplus'"
   exit 0
 fi
 
@@ -133,6 +135,15 @@ while [[ $# -gt 0 ]]; do
     --list-models)
       curl -s "$ZDS_AI_IMAGE_ENDPOINT"/sd-models | jq -r '.[].title' | \
         sed -e 's,\.safetensors.*,,gi'
+      exit 0
+      ;;
+    --get-lora-details)
+      LORA_NAME="$2"
+      if [[ -z "$LORA_NAME" ]]; then
+        echo "Error: Lora name is required for --get-lora-details" >&2
+        exit 1
+      fi
+      curl -s "$ZDS_AI_IMAGE_ENDPOINT"/loras | jq --arg name "$LORA_NAME" '.[] | select(.name == $name)'
       exit 0
       ;;
     -*|--*)

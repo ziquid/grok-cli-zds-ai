@@ -178,15 +178,15 @@ export class ChatHistoryManager {
    */
   saveContext(systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState): void {
     try {
-      const contextData: any = {
-        systemPrompt,
-        chatHistory: this.serializeChatEntries(chatHistory),
-      };
+      const contextData: any = {};
 
-      // Include session state if provided
+      // Include session state first
       if (sessionState) {
         contextData.sessionState = sessionState;
       }
+
+      contextData.systemPrompt = systemPrompt;
+      contextData.chatHistory = this.serializeChatEntries(chatHistory);
 
       fs.writeFileSync(this.historyFilePath, JSON.stringify(contextData, null, 2));
     } catch (error) {

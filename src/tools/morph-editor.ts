@@ -18,10 +18,18 @@ export class MorphEditorTool implements ToolDiscovery {
   }
 
   /**
-   * Use this tool to make an edit to an existing file.
+   * Use this tool to make fast, efficient edits to existing files using Morph Fast Apply.
    * 
-   * This will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.
-   * When writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.
+   * Morph provides enhanced code editing capabilities with 10,500 tokens/second processing speed,
+   * offering more reliable code edits and faster iteration cycles compared to standard editing tools.
+   * 
+   * Key advantages over str_replace or full file writes:
+   * - Works with partial code snippets—no need for full file content
+   * - Handles multiple distinct edits in a single call
+   * - More reliable and efficient code generation
+   * 
+   * When writing the edit, you should specify each edit in sequence, with the special comment 
+   * // ... existing code ... to represent unchanged code in between edited lines.
    * 
    * For example:
    * 
@@ -33,12 +41,16 @@ export class MorphEditorTool implements ToolDiscovery {
    * THIRD_EDIT
    * // ... existing code ...
    * 
-   * You should still bias towards repeating as few lines of the original file as possible to convey the change.
-   * But, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.
-   * DO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.
-   * If you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \n Block 1 \n Block 2 \n Block 3 \n code```, and you want to remove Block 2, you would output ```// ... existing code ... \n Block 1 \n  Block 3 \n // ... existing code ...```.
-   * Make sure it is clear what the edit should be, and where it should be applied.
-   * Make edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.
+   * Best practices:
+   * - Use for broader code changes rather than single-line edits (use str_replace for those)
+   * - Provide sufficient context around edits to resolve ambiguity
+   * - Bias towards repeating minimal lines of original code
+   * - Make all related edits in a single edit_file call instead of multiple calls
+   * 
+   * Technical notes:
+   * - DO NOT omit spans of pre-existing code without using // ... existing code ... comments
+   * - Provide context before and after when deleting sections
+   * - The apply model can handle many distinct edits at once efficiently
    */
   async editFile(
     targetFile: string,

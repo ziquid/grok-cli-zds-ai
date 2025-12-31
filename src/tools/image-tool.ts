@@ -412,6 +412,70 @@ export class ImageTool implements ToolDiscovery {
       };
     }
   }
+  /**
+   * Get detailed information about a specific LoRA model.
+   * Uses generate_image_sd.sh --get-lora-details.
+   */
+  async getLoraDetails(
+    loraName: string
+  ): Promise<ToolResult> {
+    try {
+      if (!loraName) {
+        return {
+          success: false,
+          error: "LoRA name is required",
+          output: "LoRA name is required"
+        };
+      }
+
+      const command = `generate_image_sd.sh --get-lora-details '${loraName.replace(/'/g, "'\\''")}'`;
+
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: 30000, // 30 second timeout
+          env: process.env
+        });
+
+        if (stderr && !stdout) {
+          return {
+            success: false,
+            error: `Failed to get LoRA details: ${stderr}`,
+            output: stderr
+          };
+        }
+
+        const loraDetails = stdout.trim();
+        if (!loraDetails) {
+          return {
+            success: false,
+            error: "No LoRA details found",
+            output: "No LoRA details found"
+          };
+        }
+
+        return {
+          success: true,
+          output: loraDetails,
+          displayOutput: `LoRA details retrieved for: ${loraName}`
+        };
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error";
+        const stderr = error.stderr || "";
+
+        return {
+          success: false,
+          error: `Failed to get LoRA details: ${errorMessage}${stderr ? '\n' + stderr : ''}`,
+          output: `Failed to get LoRA details: ${errorMessage}${stderr ? '\n' + stderr : ''}`
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error getting LoRA details",
+        output: error instanceof Error ? error.message : "Unknown error getting LoRA details"
+      };
+    }
+  }
 
   /**
    * Extract text from image files using OCR (Optical Character Recognition).

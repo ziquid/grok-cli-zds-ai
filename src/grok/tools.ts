@@ -760,6 +760,23 @@ const BASE_LLM_TOOLS: LLMTool[] = [
   {
     type: "function",
     function: {
+      name: "getLoraDetails",
+      description: "Get detailed information about a specific LoRA model",
+      parameters: {
+        type: "object",
+        properties: {
+          loraName: {
+            type: "string",
+            description: "Name of the LoRA model to get details for",
+          },
+        },
+        required: ["loraName"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "readXlsx",
       description: "Read an Excel/XLSX file and return its contents in various formats (text, JSON, CSV)",
       parameters: {

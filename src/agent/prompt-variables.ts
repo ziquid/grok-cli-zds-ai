@@ -1,3 +1,7 @@
+/**
+ * Variable definition class for prompt template system
+ * Defines structure, behavior, and relationships between variables
+ */
 export class VariableDef {
   /**
    * Map of variable names to their definitions
@@ -5,13 +9,21 @@ export class VariableDef {
    */
   private static definitions: Map<string, VariableDef> = new Map();
 
+  /** Variable name (e.g., "USER:PRE", "SYSTEM") */
   name: string;
+  /** Rendering weight for ordering (lower = earlier) */
   weight: number = 52;
+  /** Environment variable to read value from */
   env_var?: string;
+  /** Whether to render in full template expansion */
   renderFull: boolean = true;
+  /** Whether variable persists across clearOneShot() calls */
   persists: boolean = false;
+  /** Template string with %VAR% placeholders and %% for own content */
   template: string = "%%";
+  /** Variables referenced in template (%VAR% patterns) */
   adoptedChildren: string[] = [];
+  /** Function to dynamically compute variable value */
   getter?: () => string;
 
   constructor(config: {
@@ -41,6 +53,7 @@ export class VariableDef {
   /**
    * Get or create definition by name
    * Looks in definitions map, then PROMPT_VARS, then creates default
+   * 
    * @param name Variable name
    * @returns VariableDef instance
    */
@@ -64,6 +77,8 @@ export class VariableDef {
 
   /**
    * Get all variable definitions
+   * Ensures all PROMPT_VARS are loaded into definitions map
+   * 
    * @returns Array of all VariableDef instances
    */
   static getAllDefinitions(): VariableDef[] {
@@ -78,6 +93,17 @@ export class VariableDef {
   }
 }
 
+/**
+ * Variable instance class for prompt template system
+ * Holds actual values and handles rendering logic
+ * 
+ * Supports:
+ * - Hierarchical variable relationships (parent:child)
+ * - Template expansion with %VAR% placeholders
+ * - Dynamic value computation via getters
+ * - Circular dependency detection
+ * - Weight-based ordering
+ */
 export class Variable {
   /**
    * Map of variable names to their current values
@@ -85,8 +111,11 @@ export class Variable {
    */
   private static variables: Map<string, Variable> = new Map();
 
+  /** Variable definition (structure and behavior) */
   def: VariableDef;
+  /** Array of string values for this variable */
   values: string[] = [];
+  /** Whether variable has new/changed values since last render */
   isNew: boolean = false;
 
   constructor(name: string) {
@@ -116,6 +145,7 @@ export class Variable {
   /**
    * Set variable value
    * Creates variable if it doesn't exist
+   * 
    * @param name Variable name
    * @param value Value to add
    */
@@ -131,6 +161,7 @@ export class Variable {
 
   /**
    * Get variable by name
+   * 
    * @param name Variable name
    * @returns Variable instance or undefined
    */
@@ -140,6 +171,7 @@ export class Variable {
 
   /**
    * Get all set variables
+   * 
    * @returns Array of all Variable instances
    */
   static getAllVariables(): Variable[] {
@@ -148,6 +180,7 @@ export class Variable {
 
   /**
    * Clear all one-shot variables
+   * Removes variables where persists=false
    */
   static clearOneShot(): void {
     for (const [name, variable] of Variable.variables.entries()) {
@@ -158,16 +191,11 @@ export class Variable {
   }
 
   /**
-   * Find birth child variables of given parent.  Return sorted.
+   * Find birth child variables of given parent
+   * Returns variables with prefix "parent:" sorted by weight
    *
-   * Returns birth children (prefix match) of a parent var, sorted by weight,
-   * where renderFull == true.
-   *
-   * @param parent: string
-   *   Parent name (e.g., "USER" or "SYSTEM")
-   *
-   * @returns variables[]
-   *   All variables with prefix "parent:", renderFull=true, sorted by weight
+   * @param parent Parent name (e.g., "USER" or "SYSTEM")
+   * @returns Variables with prefix "parent:", renderFull=true, sorted by weight
    */
   static findBirthChildren(parent: string): Variable[] {
     const prefix = `${parent}:`;
@@ -208,17 +236,11 @@ export class Variable {
   }
 
   /**
-   * Find all full child variables of given parent.  Return sorted.
+   * Find all child variables of given parent
+   * Returns both birth children (prefix match) and adopted children (template refs)
    *
-   * Returns all children of a parent var, sorted by weight,
-   * where renderFull == true.  Includes both birth children
-   * (prefix match "parent:") and adopted children (from template).
-   *
-   * @param parent: string
-   *   Parent name (e.g., "USER")
-   *
-   * @returns variables[]
-   *   All variables with prefix "parent:", renderFull=true, sorted by weight
+   * @param parent Parent name (e.g., "USER")
+   * @returns All child variables with renderFull=true, sorted by weight
    */
   static findFullChildrenVars(parent: string): Variable[] {
     const found: Variable[] = [];
@@ -247,10 +269,9 @@ export class Variable {
   }
 
   /**
-   * Render a variable fully (recursive)
-   * If variable exists, renders its template (which may reference children)
-   * If variable doesn't exist but children do, renders children and joins
-   * If variable doesn't exist but has a getter, auto-creates it
+   * Render a variable fully with recursive template expansion
+   * Handles variable creation, getter execution, and circular dependency detection
+   * 
    * @param name Variable name (e.g., "USER" or "USER:PROMPT")
    * @param renderingStack Set of variables currently being rendered (for cycle detection)
    * @returns Rendered string
@@ -300,11 +321,11 @@ export class Variable {
   }
 
   /**
-   * Render full value string using template.
-   *
+   * Render variable using its template with placeholder substitution
+   * Handles %VAR% substitution and %% replacement with own values + children
+   * 
    * @param renderingStack Set of variables currently being rendered (for cycle detection)
-   * @returns string
-   *   Rendered string
+   * @returns Rendered template string
    */
   renderFullTemplate(renderingStack: Set<string> = new Set()): string {
     let rendered = this.template;
@@ -334,21 +355,12 @@ export class Variable {
   }
 
   /**
-   * Render full values as a string, from values array.
-   *
-   * If this variable has a getter function, computes the current value
-   * and updates values array only if the value changed (sets isNew flag).
-   *
-   * After rendering, clears the isNew flag since the variable has been consumed.
-   *
-   * ASSUMPTION: Getter functions always return a single string value,
-   * never an array. If this assumption changes, this logic needs revision.
-   *
-   * @param separator: string
-   *   The string to use as a separator.  Defaults to "\n\n".
-   *
-   * @returns string
-   *   values joined as a string (double-nl-separated)
+   * Render variable values as string with dynamic getter support
+   * Updates values from getter if present and value changed
+   * Clears isNew flag after rendering
+   * 
+   * @param separator String to join multiple values (default: "\n")
+   * @returns Joined values string
    */
   renderFullValue(separator: string = "\n"): string {
     // If this variable has a getter, update value dynamically
@@ -372,6 +384,7 @@ export class Variable {
   }
 }
 
+/** Predefined variable definitions for the prompt system */
 const PROMPT_VARS: VariableDef[] = [
   new VariableDef({ name: "ZDS:PRE", weight: 0, persists: true }),
   new VariableDef({ name: "USER:PRE", weight: 0, template: "<pre explanation=\"Before you do any processing, please remember:\">\n%%\n</pre>\n" }),

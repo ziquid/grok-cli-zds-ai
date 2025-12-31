@@ -1,0 +1,657 @@
+import { EventEmitter } from "events";
+import { LLMClient } from "../grok/client.js";
+import { TokenCounter } from "../utils/token-counter.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
+import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.js";
+import { getAllLLMTools } from "../grok/tools.js";
+import { logApiError } from "../utils/error-logger.js";
+import { ChatEntry } from "./llm-agent.js";
+
+/**
+ * Dependencies required by HookManager for hook execution and state management
+ */
+export interface HookManagerDependencies {
+  /** LLM client for API calls */
+  llmClient: LLMClient;
+  /** Token counter for model operations */
+  tokenCounter: TokenCounter;
+  /** API key environment variable name */
+  apiKeyEnvVar: string;
+  /** LLM messages array */
+  messages: any[];
+  /** Chat history for display */
+  chatHistory: ChatEntry[];
+  /** Temperature for API calls */
+  temperature: number;
+  /** Get current token count */
+  getCurrentTokenCount(): number;
+  /** Get maximum context size */
+  getMaxContextSize(): number;
+  /** Get current model name */
+  getCurrentModel(): string;
+  /** Emit events */
+  emit(event: string, data: any): void;
+  /** Set API key environment variable */
+  setApiKeyEnvVar(value: string): void;
+  /** Set token counter */
+  setTokenCounter(counter: TokenCounter): void;
+  /** Set LLM client */
+  setLLMClient(client: LLMClient): void;
+}
+
+/**
+ * Manages hook execution for persona, mood, and task operations
+ * 
+ * Handles:
+ * - Persona/mood/task hook execution with approval workflows
+ * - Backend and model switching with validation
+ * - Hook command processing and environment variable management
+ * - API testing for backend/model changes
+ * - System message generation for state changes
+ */
+export class HookManager {
+  constructor(private deps: HookManagerDependencies) {}
+
+  /**
+   * Set agent persona with optional hook execution
+   * Executes persona hook if configured and processes backend/model changes
+   * 
+   * @param persona New persona name
+   * @param color Optional display color
+   * @returns Success status and error message if failed
+   */
+  async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    const settings = getSettingsManager();
+    const hookPath = settings.getPersonaHook();
+    const hookMandatory = settings.isPersonaHookMandatory();
+
+    if (!hookPath && hookMandatory) {
+      return { success: false, error: "Persona hook is mandatory but not configured" };
+    }
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "setPersona",
+        {
+          persona_old: process.env.ZDS_AI_AGENT_PERSONA || "",
+          persona_new: persona,
+          persona_color: color || "white"
+        },
+        30000,
+        hookMandatory,
+        this.deps.getCurrentTokenCount(),
+        this.deps.getMaxContextSize()
+      );
+
+      if (!hookResult.approved) {
+        await this.processHookResult(hookResult);
+        return { success: false, error: hookResult.reason || "Hook rejected persona change" };
+      }
+
+      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_PERSONA');
+      if (!result.success) {
+        return { success: false, error: "Persona change rejected due to failed model/backend test" };
+      }
+
+      if (result.transformedValue) {
+        persona = result.transformedValue;
+      }
+    }
+
+    process.env.ZDS_AI_AGENT_PERSONA = persona;
+    this.deps.emit('personaChange', { persona, color: color || "white" });
+    return { success: true };
+  }
+
+  /**
+   * Set agent mood with optional hook execution
+   * Executes mood hook if configured and adds system message to chat
+   * 
+   * @param mood New mood name
+   * @param color Optional display color
+   * @returns Success status and error message if failed
+   */
+  async setMood(mood: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    const settings = getSettingsManager();
+    const hookPath = settings.getMoodHook();
+    const hookMandatory = settings.isMoodHookMandatory();
+
+    if (!hookPath && hookMandatory) {
+      return { success: false, error: "Mood hook is mandatory but not configured" };
+    }
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "setMood",
+        {
+          mood_old: process.env.ZDS_AI_AGENT_MOOD || "",
+          mood_new: mood,
+          mood_color: color || "white"
+        },
+        30000,
+        hookMandatory,
+        this.deps.getCurrentTokenCount(),
+        this.deps.getMaxContextSize()
+      );
+
+      if (!hookResult.approved) {
+        await this.processHookResult(hookResult);
+        return { success: false, error: hookResult.reason || "Hook rejected mood change" };
+      }
+
+      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_MOOD');
+      if (!result.success) {
+        return { success: false, error: "Mood change rejected due to failed model/backend test" };
+      }
+
+      if (result.transformedValue) {
+        mood = result.transformedValue;
+      }
+    }
+
+    process.env.ZDS_AI_AGENT_MOOD = mood;
+    
+    const oldMood = process.env.ZDS_AI_AGENT_MOOD_OLD || "";
+    const oldColor = process.env.ZDS_AI_AGENT_MOOD_COLOR_OLD || "white";
+    let systemContent: string;
+    if (oldMood) {
+      const oldColorStr = oldColor !== "white" ? ` (${oldColor})` : "";
+      const newColorStr = color && color !== "white" ? ` (${color})` : "";
+      systemContent = `Assistant changed the mood from "${oldMood}"${oldColorStr} to "${mood}"${newColorStr}`;
+    } else {
+      const colorStr = color && color !== "white" ? ` (${color})` : "";
+      systemContent = `Assistant set the mood to "${mood}"${colorStr}`;
+    }
+
+    this.deps.chatHistory.push({
+      type: 'system',
+      content: systemContent,
+      timestamp: new Date()
+    });
+
+    this.deps.emit('moodChange', { mood, color: color || "white" });
+    return { success: true };
+  }
+
+  /**
+   * Start a new active task with approval hook
+   * Prevents starting if another task is already active
+   * 
+   * @param activeTask Task name
+   * @param action Task action/status
+   * @param color Optional display color
+   * @returns Success status and error message if failed
+   */
+  async startActiveTask(activeTask: string, action: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    if (process.env.ZDS_AI_AGENT_ACTIVE_TASK) {
+      return {
+        success: false,
+        error: `Cannot start new task "${activeTask}". Active task "${process.env.ZDS_AI_AGENT_ACTIVE_TASK}" must be stopped first.`
+      };
+    }
+
+    const settings = getSettingsManager();
+    const hookPath = settings.getTaskApprovalHook();
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "startActiveTask",
+        { activetask: activeTask, action, color: color || "white" },
+        30000,
+        false,
+        this.deps.getCurrentTokenCount(),
+        this.deps.getMaxContextSize()
+      );
+
+      await this.processHookResult(hookResult);
+
+      if (!hookResult.approved) {
+        return { success: false, error: hookResult.reason || "Hook rejected task start" };
+      }
+    }
+
+    process.env.ZDS_AI_AGENT_ACTIVE_TASK = activeTask;
+    process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = action;
+
+    const colorStr = color && color !== "white" ? ` (${color})` : "";
+    this.deps.messages.push({
+      role: 'system',
+      content: `Assistant changed task status for "${activeTask}" to ${action}${colorStr}`
+    });
+
+    this.deps.emit('activeTaskChange', { activeTask, action, color: color || "white" });
+    return { success: true };
+  }
+
+  /**
+   * Transition active task status with approval hook
+   * Requires an active task to be running
+   * 
+   * @param action New task action/status
+   * @param color Optional display color
+   * @returns Success status and error message if failed
+   */
+  async transitionActiveTaskStatus(action: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    if (!process.env.ZDS_AI_AGENT_ACTIVE_TASK) {
+      return { success: false, error: "Cannot transition task status. No active task is currently running." };
+    }
+
+    const settings = getSettingsManager();
+    const hookPath = settings.getTaskApprovalHook();
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "transitionActiveTaskStatus",
+        { action, color: color || "white" },
+        30000,
+        false,
+        this.deps.getCurrentTokenCount(),
+        this.deps.getMaxContextSize()
+      );
+
+      await this.processHookResult(hookResult);
+
+      if (!hookResult.approved) {
+        return { success: false, error: hookResult.reason || "Hook rejected task status transition" };
+      }
+    }
+
+    const oldAction = process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION || "";
+    process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = action;
+
+    const colorStr = color && color !== "white" ? ` (${color})` : "";
+    this.deps.messages.push({
+      role: 'system',
+      content: `Assistant changed task status for "${process.env.ZDS_AI_AGENT_ACTIVE_TASK}" from ${oldAction} to ${action}${colorStr}`
+    });
+
+    this.deps.emit('activeTaskChange', {
+      activeTask: process.env.ZDS_AI_AGENT_ACTIVE_TASK,
+      action,
+      color: color || "white"
+    });
+    return { success: true };
+  }
+
+  /**
+   * Stop active task with approval hook and minimum delay
+   * Enforces 3-second minimum delay for task completion
+   * 
+   * @param reason Reason for stopping task
+   * @param documentationFile Documentation file path
+   * @param color Optional display color
+   * @returns Success status and error message if failed
+   */
+  async stopActiveTask(reason: string, documentationFile: string, color?: string): Promise<{ success: boolean; error?: string }> {
+    if (!process.env.ZDS_AI_AGENT_ACTIVE_TASK) {
+      return { success: false, error: "Cannot stop task. No active task is currently running." };
+    }
+
+    const startTime = Date.now();
+    const settings = getSettingsManager();
+    const hookPath = settings.getTaskApprovalHook();
+
+    if (hookPath) {
+      const hookResult = await executeOperationHook(
+        hookPath,
+        "stopActiveTask",
+        { reason, documentation_file: documentationFile, color: color || "white" },
+        30000,
+        false,
+        this.deps.getCurrentTokenCount(),
+        this.deps.getMaxContextSize()
+      );
+
+      await this.processHookResult(hookResult);
+
+      if (!hookResult.approved) {
+        return { success: false, error: hookResult.reason || "Hook rejected task stop" };
+      }
+    }
+
+    const elapsed = Date.now() - startTime;
+    const remainingDelay = Math.max(0, 3000 - elapsed);
+    if (remainingDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingDelay));
+    }
+
+    const stoppedTask = process.env.ZDS_AI_AGENT_ACTIVE_TASK;
+    const stoppedAction = process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION || "";
+
+    delete process.env.ZDS_AI_AGENT_ACTIVE_TASK;
+    delete process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION;
+
+    const colorStr = color && color !== "white" ? ` (${color})` : "";
+    this.deps.messages.push({
+      role: 'system',
+      content: `Assistant stopped task "${stoppedTask}" (was ${stoppedAction}) with reason: ${reason}${colorStr}`
+    });
+
+    this.deps.emit('activeTaskChange', { activeTask: "", action: "", color: "white" });
+    return { success: true };
+  }
+
+  /**
+   * Process hook result commands and apply environment changes
+   * Handles backend/model changes, environment variables, and system messages
+   * 
+   * @param hookResult Hook execution result with commands
+   * @param envKey Optional environment key to extract transformed value
+   * @returns Success status and transformed value if applicable
+   */
+  async processHookResult(
+    hookResult: { commands?: any[] },
+    envKey?: string
+  ): Promise<{ success: boolean; transformedValue?: string }> {
+    if (!hookResult.commands) {
+      return { success: true };
+    }
+
+    const results = applyHookCommands(hookResult.commands);
+    let transformedValue: string | undefined;
+    if (envKey && results.env[envKey]) {
+      transformedValue = results.env[envKey];
+    }
+
+    const success = await this.processHookCommands(results);
+    return { success, transformedValue };
+  }
+
+  /**
+   * Process hook commands with backend/model testing
+   * Tests API connectivity before applying changes
+   * 
+   * @param commands Processed hook commands
+   * @returns Success status of command processing
+   */
+  private async processHookCommands(commands: ReturnType<typeof applyHookCommands>): Promise<boolean> {
+    const { applyEnvVariables } = await import('../utils/hook-executor.js');
+    const hasBackendChange = commands.backend && commands.baseUrl && commands.apiKeyEnvVar;
+    const hasModelChange = commands.model;
+
+    if (hasBackendChange) {
+      const testResult = await this.testBackendModelChange(
+        commands.backend!,
+        commands.baseUrl!,
+        commands.apiKeyEnvVar!,
+        commands.model
+      );
+
+      if (!testResult.success) {
+        const parts = [];
+        if (commands.backend) parts.push(`backend to "${commands.backend}"`);
+        if (commands.model) parts.push(`model to "${commands.model}"`);
+        const errorMsg = `Failed to change ${parts.join(' and ')}: ${testResult.error}`;
+        this.deps.chatHistory.push({
+          type: "system",
+          content: errorMsg,
+          timestamp: new Date(),
+        });
+        return false;
+      }
+
+      applyEnvVariables(commands.env);
+      const parts = [];
+      if (commands.backend) parts.push(`backend to "${commands.backend}"`);
+      if (commands.model) parts.push(`model to "${commands.model}"`);
+      const successMsg = `Changed ${parts.join(' and ')}`;
+      this.deps.chatHistory.push({
+        type: "system",
+        content: successMsg,
+        timestamp: new Date(),
+      });
+
+      if (commands.backend) {
+        this.deps.emit('backendChange', { backend: commands.backend });
+      }
+      if (commands.model) {
+        this.deps.emit('modelChange', { model: commands.model });
+      }
+    } else if (hasModelChange) {
+      const testResult = await this.testModel(commands.model!);
+      if (!testResult.success) {
+        const errorMsg = `Failed to change model to "${commands.model}": ${testResult.error}`;
+        this.deps.chatHistory.push({
+          type: "system",
+          content: errorMsg,
+          timestamp: new Date(),
+        });
+        return false;
+      }
+
+      applyEnvVariables(commands.env);
+      const successMsg = `Model changed to "${commands.model}"`;
+      this.deps.chatHistory.push({
+        type: "system",
+        content: successMsg,
+        timestamp: new Date(),
+      });
+
+      this.deps.emit('modelChange', { model: commands.model });
+    } else {
+      applyEnvVariables(commands.env);
+    }
+
+    if (commands.system) {
+      this.deps.chatHistory.push({
+        type: "system",
+        content: commands.system,
+        timestamp: new Date(),
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * Test model change by making API call
+   * Validates model compatibility before switching
+   * 
+   * @param newModel Model name to test
+   * @returns Success status and error message if failed
+   */
+  private async testModel(newModel: string): Promise<{ success: boolean; error?: string }> {
+    const previousModel = this.deps.getCurrentModel();
+    const previousTokenCounter = this.deps.tokenCounter;
+
+    const testMessages = this.stripInProgressToolCalls(this.deps.messages);
+    const supportsTools = this.deps.llmClient.getSupportsTools();
+    const tools = supportsTools ? await getAllLLMTools() : [];
+    const requestPayload = {
+      model: newModel,
+      messages: testMessages,
+      tools: supportsTools && tools.length > 0 ? tools : undefined,
+      temperature: this.deps.temperature,
+      max_tokens: 10
+    };
+
+    try {
+      this.deps.llmClient.setModel(newModel);
+      const { createTokenCounter } = await import("../utils/token-counter.js");
+      this.deps.tokenCounter = createTokenCounter(newModel);
+
+      const response = await this.deps.llmClient.chat(
+        testMessages,
+        tools,
+        newModel,
+        undefined,
+        this.deps.temperature,
+        undefined,
+        10
+      );
+
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("Invalid response from API");
+      }
+
+      previousTokenCounter.dispose();
+      return { success: true };
+
+    } catch (error: any) {
+      this.deps.llmClient.setModel(previousModel);
+      this.deps.tokenCounter.dispose();
+      this.deps.tokenCounter = previousTokenCounter;
+
+      const { message: logPaths } = await logApiError(
+        requestPayload,
+        error,
+        { errorType: 'model-switch-test-failure', previousModel, newModel },
+        'test-fail'
+      );
+
+      const errorMessage = error.message || "Unknown error during model test";
+      return {
+        success: false,
+        error: `Model test failed: ${errorMessage}\n${logPaths}`
+      };
+    }
+  }
+
+  /**
+   * Test backend and model change by making API call
+   * Validates backend connectivity and model compatibility
+   * 
+   * @param backend Backend name
+   * @param baseUrl API base URL
+   * @param apiKeyEnvVar Environment variable for API key
+   * @param model Optional model name
+   * @returns Success status and error message if failed
+   */
+  private async testBackendModelChange(
+    backend: string,
+    baseUrl: string,
+    apiKeyEnvVar: string,
+    model?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const previousClient = this.deps.llmClient;
+    const previousApiKeyEnvVar = this.deps.apiKeyEnvVar;
+    const previousBackend = this.deps.llmClient.getBackendName();
+    const previousModel = this.deps.getCurrentModel();
+
+    let requestPayload: any;
+    let newModel: string;
+
+    try {
+      const apiKey = process.env[apiKeyEnvVar];
+      if (!apiKey) {
+        throw new Error(`API key not found in environment variable: ${apiKeyEnvVar}`);
+      }
+
+      newModel = model || this.deps.getCurrentModel();
+      const newClient = new LLMClient(apiKey, newModel, baseUrl, backend);
+      this.deps.setLLMClient(newClient);
+      this.deps.setApiKeyEnvVar(apiKeyEnvVar);
+
+      const { loadMCPConfig } = await import("../mcp/config.js");
+      const { initializeMCPServers } = await import("../grok/tools.js");
+      try {
+        const config = loadMCPConfig();
+        if (config.servers.length > 0) {
+          await initializeMCPServers();
+        }
+      } catch (mcpError: any) {
+        console.warn("MCP reinitialization failed:", mcpError);
+      }
+
+      const testMessages = this.stripInProgressToolCalls(this.deps.messages);
+      const supportsTools = this.deps.llmClient.getSupportsTools();
+      const tools = supportsTools ? await getAllLLMTools() : [];
+      requestPayload = {
+        backend,
+        baseUrl,
+        model: newModel,
+        messages: testMessages,
+        tools: supportsTools && tools.length > 0 ? tools : undefined,
+        temperature: this.deps.temperature,
+        max_tokens: 10
+      };
+
+      const response = await this.deps.llmClient.chat(
+        testMessages,
+        tools,
+        newModel,
+        undefined,
+        this.deps.temperature,
+        undefined,
+        10
+      );
+
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("Invalid response from API");
+      }
+
+      return { success: true };
+
+    } catch (error: any) {
+      this.deps.setLLMClient(previousClient);
+      this.deps.setApiKeyEnvVar(previousApiKeyEnvVar);
+
+      let logPaths = '';
+      if (requestPayload) {
+        const result = await logApiError(
+          requestPayload,
+          error,
+          {
+            errorType: 'backend-switch-test-failure',
+            previousBackend,
+            previousModel,
+            newBackend: backend,
+            newModel,
+            baseUrl,
+            apiKeyEnvVar
+          },
+          'test-fail'
+        );
+        logPaths = result.message;
+      }
+
+      const errorMessage = error.message || "Unknown error during backend/model test";
+      return {
+        success: false,
+        error: logPaths ? `${errorMessage}\n${logPaths}` : errorMessage
+      };
+    }
+  }
+
+  /**
+   * Strip in-progress tool calls from messages for API testing
+   * Removes incomplete tool call sequences to avoid API errors
+   * 
+   * @param messages Message array to clean
+   * @returns Cleaned message array without incomplete tool calls
+   */
+  private stripInProgressToolCalls(messages: any[]): any[] {
+    let lastAssistantIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+
+    if (lastAssistantIndex === -1 || !(messages[lastAssistantIndex] as any).tool_calls) {
+      return messages;
+    }
+
+    const cleanedMessages = JSON.parse(JSON.stringify(messages));
+    const toolCallIds = new Set(
+      ((cleanedMessages[lastAssistantIndex] as any).tool_calls || []).map((tc: any) => tc.id)
+    );
+
+    delete (cleanedMessages[lastAssistantIndex] as any).tool_calls;
+
+    return cleanedMessages.filter((msg, idx) => {
+      if (idx <= lastAssistantIndex) {
+        return true;
+      }
+      if (msg.role === 'tool' && toolCallIds.has((msg as any).tool_call_id)) {
+        return false;
+      }
+      return true;
+    });
+  }
+}

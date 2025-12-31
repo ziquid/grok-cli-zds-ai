@@ -15,7 +15,11 @@ export interface UserSettings {
   maxTokens?: number; // Default max tokens for API responses (no upper limit, default: undefined = API default)
   startupHook?: string; // Command to run at startup (new sessions only), output added to system prompt
   instanceHook?: string; // Command to run for every instance (new and resumed sessions), output parsed for commands
-  prePromptHook?: string; // Command to run before each prompt is sent to the LLM
+  postUserInputHook?: string; // Command to run after each user input is received
+  preLLMResponseHook?: string; // Command to run before each prompt is sent to the LLM
+  postLLMResponseHook?: string; // Command to run after each prompt is sent to the LLM
+  preToolUseHook?: string; // Command to run before each approved tool call is executed
+  postToolUseHook?: string; // Command to run after each approved tool call is executed
   taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
@@ -353,10 +357,38 @@ export class SettingsManager {
   }
 
   /**
-   * Get prePrompt hook command from user settings
+   * Get postUserInput hook command from user settings
    */
-  public getPrePromptHook(): string | undefined {
-    return this.getUserSetting("prePromptHook");
+  public getPostUserInputHook(): string | undefined {
+    return this.getUserSetting("postUserInputHook");
+  }
+
+  /**
+   * Get preLLMResponse hook command from user settings
+   */
+  public getPreLLMResponseHook(): string | undefined {
+    return this.getUserSetting("preLLMResponseHook");
+  }
+
+  /**
+   * Get postLLMResponse hook command from user settings
+   */
+  public getPostLLMResponseHook(): string | undefined {
+    return this.getUserSetting("postLLMResponseHook");
+  }
+
+  /**
+   * Get preToolUse hook command from user settings
+   */
+  public getPreToolUseHook(): string | undefined {
+    return this.getUserSetting("preToolUseHook");
+  }
+
+  /**
+   * Get postToolUse hook command from user settings
+   */
+  public getPostToolUseHook(): string | undefined {
+    return this.getUserSetting("postToolUseHook");
   }
 
   /**

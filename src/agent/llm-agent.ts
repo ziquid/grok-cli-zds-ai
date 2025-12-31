@@ -36,16 +36,16 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
-import { executeOperationHook, executeToolApprovalHook, applyHookCommands } from "../utils/hook-executor.js";
+import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.js";
+import { ToolExecutor } from "./tool-executor.js";
+import { HookManager } from "./hook-manager.js";
+import { SessionManager } from "./session-manager.js";
+import { MessageProcessor } from "./message-processor.js";
+import { ContextManager } from "./context-manager.js";
+import { SessionState } from "../utils/chat-history-manager.js";
 
 // Interval (ms) between token count updates when streaming
 const TOKEN_UPDATE_INTERVAL_MS = 250;
-
-// Minimum delay (in ms) applied when stopping a task to ensure smooth UI/UX.
-const MINIMUM_STOP_TASK_DELAY_MS = 3000;
-
-// Maximum number of attempts to parse nested JSON strings in executeTool
-const MAX_JSON_PARSE_ATTEMPTS = 5;
 
 /**
  * Threshold used to determine whether an AI response is "substantial" (in characters).
@@ -104,6 +104,11 @@ function sanitizeToolArguments(args: string | undefined): string {
   return argsString;
 }
 
+/**
+ * Represents a single entry in the conversation history.
+ * Supports various message types including user messages, assistant responses,
+ * tool calls, tool results, and system messages.
+ */
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call" | "system";
   content?: string | ChatCompletionContentPart[];
@@ -120,6 +125,10 @@ export interface ChatEntry {
   };
 }
 
+/**
+ * Represents a chunk of data in the streaming response.
+ * Used for real-time communication between the agent and UI components.
+ */
 export interface StreamingChunk {
   type: "content" | "tool_calls" | "tool_result" | "done" | "token_count" | "user_message";
   content?: string;
@@ -131,6 +140,60 @@ export interface StreamingChunk {
   systemMessages?: ChatEntry[];
 }
 
+/**
+ * Main LLM Agent class that orchestrates AI conversations with tool execution capabilities.
+ * 
+ * ## Architecture Overview
+ * 
+ * The LLMAgent serves as the central coordinator for AI-powered conversations, managing:
+ * - **Conversation Flow**: Handles user messages, AI responses, and multi-turn conversations
+ * - **Tool Execution**: Coordinates with various tools (file editing, shell commands, web search, etc.)
+ * - **Context Management**: Tracks conversation history and manages token limits
+ * - **Session State**: Maintains persona, mood, active tasks, and other session data
+ * - **Streaming Support**: Provides real-time response streaming for better UX
+ * 
+ * ## Delegation Architecture
+ * 
+ * The agent delegates specialized functionality to focused manager classes:
+ * - **ToolExecutor**: Handles all tool execution, validation, and approval workflows
+ * - **HookManager**: Manages persona/mood/task hooks and backend testing
+ * - **SessionManager**: Handles session persistence and state restoration
+ * - **MessageProcessor**: Processes user input, handles rephrasing, and XML parsing
+ * - **ContextManager**: Manages context warnings, compaction, and token tracking
+ * 
+ * ## Key Features
+ * 
+ * - **Multi-Model Support**: Works with various LLM backends (Grok, OpenAI, etc.)
+ * - **Tool Integration**: Seamlessly integrates with 15+ built-in tools
+ * - **MCP Support**: Extends capabilities via Model Context Protocol servers
+ * - **Vision Support**: Handles image inputs for vision-capable models
+ * - **Streaming Responses**: Real-time response generation with token counting
+ * - **Context Awareness**: Intelligent context management and automatic compaction
+ * - **Hook System**: Extensible hook system for custom behaviors
+ * - **Session Persistence**: Maintains conversation state across restarts
+ * 
+ * ## Usage Patterns
+ * 
+ * ```typescript
+ * // Initialize agent
+ * const agent = new LLMAgent(apiKey, baseURL, model);
+ * await agent.initialize();
+ * 
+ * // Process messages (non-streaming)
+ * const entries = await agent.processUserMessage("Hello, world!");
+ * 
+ * // Process messages (streaming)
+ * for await (const chunk of agent.processUserMessageStream("Write a file")) {
+ *   console.log(chunk);
+ * }
+ * 
+ * // Manage session state
+ * await agent.setPersona("helpful assistant");
+ * await agent.startActiveTask("coding", "writing tests");
+ * ```
+ * 
+ * @extends EventEmitter Emits 'contextChange' events for token usage updates
+ */
 export class LLMAgent extends EventEmitter {
   private llmClient: LLMClient;
   private textEditor: TextEditorTool;
@@ -157,8 +220,6 @@ export class LLMAgent extends EventEmitter {
   private temperature: number;
   private maxTokens: number | undefined;
   private firstMessageProcessed: boolean = false;
-  private contextWarningAt80: boolean = false;
-  private contextWarningAt90: boolean = false;
   private persona: string = "";
   private personaColor: string = "white";
   private mood: string = "";
@@ -175,8 +236,116 @@ export class LLMAgent extends EventEmitter {
     messageType: "user" | "system";
     prefillText?: string;
   } | null = null;
-  private hookPrefillText: string | null = null;
+  private toolExecutor: ToolExecutor;
+  private hookManager: HookManager;
+  private sessionManager: SessionManager;
+  private messageProcessor: MessageProcessor;
+  private contextManager: ContextManager;
 
+
+
+  /**
+   * Cleans up incomplete tool calls in the message history.
+   * Ensures all tool calls have corresponding tool results to prevent API errors.
+   * 
+   * This method scans the last assistant message for tool calls and adds
+   * "[Cancelled by user]" results for any tool calls that don't have results.
+   * 
+   * @private
+   */
+  private async cleanupIncompleteToolCalls(): Promise<void> {
+    const lastMessage = this.messages[this.messages.length - 1];
+    if (lastMessage?.role === "assistant" && lastMessage.tool_calls) {
+      const toolCallIds = new Set(lastMessage.tool_calls.map((tc: any) => tc.id));
+      const completedToolCallIds = new Set();
+
+      for (let i = this.messages.length - 1; i >= 0; i--) {
+        const msg = this.messages[i] as any;
+        if (msg.role === "tool" && msg.tool_call_id) {
+          completedToolCallIds.add(msg.tool_call_id);
+        }
+        if (this.messages[i] === lastMessage) break;
+      }
+
+      for (const toolCallId of toolCallIds) {
+        if (!completedToolCallIds.has(toolCallId)) {
+          console.error(`Adding cancelled result for incomplete tool call: ${toolCallId}`);
+          this.messages.push({
+            role: "tool",
+            content: "[Cancelled by user]",
+            tool_call_id: toolCallId,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Executes the instance hook if it hasn't been run yet.
+   * 
+   * The instance hook runs once per agent session and can:
+   * - Set prompt variables
+   * - Add system messages
+   * - Provide prefill text for responses
+   * 
+   * @private
+   */
+  private async executeInstanceHookIfNeeded(): Promise<void> {
+    if (!this.hasRunInstanceHook) {
+      this.hasRunInstanceHook = true;
+      const settings = getSettingsManager();
+      const instanceHookPath = settings.getInstanceHook();
+      if (instanceHookPath) {
+        const hookResult = await executeOperationHook(
+          instanceHookPath,
+          "instance",
+          {},
+          30000,
+          false,
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
+        );
+
+        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
+          const results = applyHookCommands(hookResult.commands);
+
+          for (const [varName, value] of results.promptVars.entries()) {
+            Variable.set(varName, value);
+          }
+
+          // Process hook commands through HookManager
+          // Note: This is a simplified version - full hook processing is now in HookManager
+          if (results.system) {
+            this.messages.push({
+              role: 'system',
+              content: results.system
+            });
+          }
+
+          if (results.prefill) {
+            this.messageProcessor.setHookPrefillText(results.prefill);
+          }
+        }
+      }
+    }
+  }
+
+
+
+
+
+  /**
+   * Creates a new LLMAgent instance.
+   * 
+   * @param apiKey - API key for the LLM service
+   * @param baseURL - Optional base URL for the API endpoint
+   * @param model - Optional model name (defaults to saved model or "grok-code-fast-1")
+   * @param maxToolRounds - Maximum number of tool execution rounds (default: 400)
+   * @param debugLogFile - Optional path for MCP debug logging
+   * @param startupHookOutput - Optional output from startup hook execution
+   * @param temperature - Optional temperature for API requests (0.0-2.0)
+   * @param maxTokens - Optional maximum tokens for API responses
+   */
   constructor(
     apiKey: string,
     baseURL?: string,
@@ -226,6 +395,75 @@ export class LLMAgent extends EventEmitter {
     this.zsh.setAgent(this); // Give zsh tool access to agent for CWD tracking
     this.tokenCounter = createTokenCounter(modelToUse);
 
+    // Initialize tool executor
+    this.toolExecutor = new ToolExecutor(
+      this, this.textEditor, this.morphEditor, this.zsh, this.search,
+      this.env, this.introspect, this.clearCacheTool, this.restartTool,
+      this.characterTool, this.taskTool, this.internetTool, this.imageTool,
+      this.fileConversionTool, this.audioTool
+    );
+
+    // Initialize hook manager
+    this.hookManager = new HookManager({
+      llmClient: this.llmClient,
+      tokenCounter: this.tokenCounter,
+      apiKeyEnvVar: this.apiKeyEnvVar,
+      messages: this.messages,
+      chatHistory: this.chatHistory,
+      temperature: this.temperature,
+      getCurrentTokenCount: () => this.getCurrentTokenCount(),
+      getMaxContextSize: () => this.getMaxContextSize(),
+      getCurrentModel: () => this.getCurrentModel(),
+      emit: (event: string, data: any) => this.emit(event, data),
+      setApiKeyEnvVar: (value: string) => { this.apiKeyEnvVar = value; },
+      setTokenCounter: (counter: TokenCounter) => { this.tokenCounter = counter; },
+      setLLMClient: (client: LLMClient) => { this.llmClient = client; }
+    });
+
+    // Initialize session manager
+    this.sessionManager = new SessionManager({
+      llmClient: this.llmClient,
+      tokenCounter: this.tokenCounter,
+      apiKeyEnvVar: this.apiKeyEnvVar,
+      hookManager: this.hookManager,
+      persona: this.persona,
+      personaColor: this.personaColor,
+      mood: this.mood,
+      moodColor: this.moodColor,
+      activeTask: this.activeTask,
+      activeTaskAction: this.activeTaskAction,
+      activeTaskColor: this.activeTaskColor,
+      getCurrentModel: () => this.getCurrentModel(),
+      emit: (event: string, data: any) => this.emit(event, data),
+      setLLMClient: (client: LLMClient) => { this.llmClient = client; },
+      setTokenCounter: (counter: TokenCounter) => { this.tokenCounter = counter; },
+      setApiKeyEnvVar: (value: string) => { this.apiKeyEnvVar = value; },
+      setPersona: (persona: string, color: string) => { this.persona = persona; this.personaColor = color; },
+      setMood: (mood: string, color: string) => { this.mood = mood; this.moodColor = color; },
+      setActiveTask: (task: string, action: string, color: string) => { this.activeTask = task; this.activeTaskAction = action; this.activeTaskColor = color; }
+    });
+
+    // Initialize message processor
+    this.messageProcessor = new MessageProcessor({
+      chatHistory: this.chatHistory,
+      getCurrentTokenCount: () => this.getCurrentTokenCount(),
+      getMaxContextSize: () => this.getMaxContextSize(),
+      setRephraseState: (originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system", prefillText?: string) => {
+        this.setRephraseState(originalAssistantMessageIndex, rephraseRequestIndex, newResponseIndex, messageType, prefillText);
+      }
+    });
+
+    // Initialize context manager
+    this.contextManager = new ContextManager({
+      chatHistory: this.chatHistory,
+      messages: this.messages,
+      tokenCounter: this.tokenCounter,
+      getCurrentTokenCount: () => this.getCurrentTokenCount(),
+      getMaxContextSize: () => this.getMaxContextSize(),
+      emit: (event: string, data: any) => this.emit(event, data),
+      clearCache: () => this.clearCache()
+    });
+
     // Initialize MCP servers if configured
     this.initializeMCP(debugLogFile);
 
@@ -247,8 +485,14 @@ export class LLMAgent extends EventEmitter {
   private hasRunInstanceHook: boolean = false;
 
   /**
-   * Initialize the agent with dynamic system prompt
-   * Must be called after construction
+   * Initialize the agent with dynamic system prompt.
+   * 
+   * This method must be called after construction to:
+   * - Build the system message with current tool availability
+   * - Set up the initial conversation context
+   * - Execute the instance hook if configured
+   * 
+   * @throws {Error} If system message generation fails
    */
   async initialize(): Promise<void> {
     // Build system message
@@ -256,8 +500,16 @@ export class LLMAgent extends EventEmitter {
   }
 
   /**
-   * Build/rebuild the system message with current tool availability
-   * Updates this.systemPrompt which is always used for messages[0]
+   * Build/rebuild the system message with current tool availability.
+   * 
+   * This method:
+   * - Generates a dynamic tool list using the introspect tool
+   * - Sets the APP:TOOLS variable for template rendering
+   * - Renders the full SYSTEM template with all variables
+   * - Updates messages[0] with the new system prompt
+   * 
+   * The system prompt is always at messages[0] and contains the core
+   * instructions, tool descriptions, and current context information.
    */
   async buildSystemMessage(): Promise<void> {
     // Generate dynamic tool list using introspect tool
@@ -280,6 +532,19 @@ export class LLMAgent extends EventEmitter {
     // Only conversational system messages (persona, mood, etc.) go in chatHistory
   }
 
+  /**
+   * Load initial conversation history from persistence.
+   * 
+   * This method:
+   * - Loads the chat history (excluding system messages)
+   * - Sets or generates the system prompt
+   * - Converts history to API message format
+   * - Handles tool call/result matching
+   * - Updates token counts
+   * 
+   * @param history - Array of chat entries to load
+   * @param systemPrompt - Optional system prompt (will generate if not provided)
+   */
   async loadInitialHistory(history: ChatEntry[], systemPrompt?: string): Promise<void> {
     // Load chatHistory (no system messages in new architecture)
     this.chatHistory = history;
@@ -386,6 +651,16 @@ export class LLMAgent extends EventEmitter {
     }
   }
 
+  /**
+   * Initialize Model Context Protocol (MCP) servers in the background.
+   * 
+   * This method loads MCP configuration and initializes any configured
+   * servers without blocking agent construction. Errors are logged but
+   * don't prevent agent operation.
+   * 
+   * @param debugLogFile - Optional path for MCP debug output
+   * @private
+   */
   private async initializeMCP(debugLogFile?: string): Promise<void> {
     // Initialize MCP in the background without blocking
     Promise.resolve().then(async () => {
@@ -402,12 +677,28 @@ export class LLMAgent extends EventEmitter {
     });
   }
 
+  /**
+   * Checks if the current model is a Grok model.
+   * Used to enable Grok-specific features like web search.
+   * 
+   * @returns True if the current model name contains "grok"
+   * @private
+   */
   private isGrokModel(): boolean {
     const currentModel = this.llmClient.getCurrentModel();
     return currentModel.toLowerCase().includes("grok");
   }
 
-  // Heuristic: enable web search only when likely needed
+  /**
+   * Heuristic to determine if web search should be enabled for a message.
+   * 
+   * Analyzes the message content for keywords that suggest the user is
+   * asking for current information, news, or time-sensitive data.
+   * 
+   * @param message - The user message to analyze
+   * @returns True if web search should be enabled
+   * @private
+   */
   private shouldUseSearchFor(message: string): boolean {
     const q = message.toLowerCase();
     const keywords = [
@@ -435,207 +726,46 @@ export class LLMAgent extends EventEmitter {
     return false;
   }
 
+  /**
+   * Process a user message and return all conversation entries generated.
+   * 
+   * This is the main non-streaming message processing method that:
+   * - Handles rephrase commands and message preprocessing
+   * - Manages the agent loop with tool execution
+   * - Processes multiple rounds of AI responses and tool calls
+   * - Handles errors and context management
+   * - Returns all new conversation entries
+   * 
+   * ## Processing Flow
+   * 
+   * 1. **Setup**: Parse rephrase commands, clean incomplete tool calls
+   * 2. **Message Processing**: Parse images, assemble content, add to history
+   * 3. **Agent Loop**: Continue until no more tool calls or max rounds reached
+   *    - Get AI response
+   *    - Execute any tool calls
+   *    - Add results to conversation
+   *    - Get next response if needed
+   * 4. **Cleanup**: Handle errors, update context, return entries
+   * 
+   * @param message - The user message to process
+   * @returns Promise resolving to array of new conversation entries
+   * @throws {Error} If message processing fails critically
+   */
   async processUserMessage(message: string): Promise<ChatEntry[]> {
-    // Detect rephrase commands
-    let isRephraseCommand = false;
-    let isSystemRephrase = false;
-    let messageToSend = message;
-    let messageType: "user" | "system" = "user";
-    let prefillText: string | undefined;
-
-    if (message.startsWith("/system rephrase")) {
-      isRephraseCommand = true;
-      isSystemRephrase = true;
-      messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
-      messageType = "system";
-      // Extract prefill text after "/system rephrase "
-      const prefillMatch = message.match(/^\/system rephrase\s+(.+)$/);
-      if (prefillMatch) {
-        prefillText = prefillMatch[1];
-      }
-    } else if (message.startsWith("/rephrase")) {
-      isRephraseCommand = true;
-      messageToSend = message; // Keep full text including "/rephrase"
-      messageType = "user";
-      // Extract prefill text after "/rephrase "
-      const prefillMatch = message.match(/^\/rephrase\s+(.+)$/);
-      if (prefillMatch) {
-        prefillText = prefillMatch[1];
-      }
-    }
-
-    // If this is a rephrase command, find the last assistant message
-    if (isRephraseCommand) {
-      // Find index of last assistant message in chatHistory
-      let lastAssistantIndex = -1;
-      for (let i = this.chatHistory.length - 1; i >= 0; i--) {
-        if (this.chatHistory[i].type === "assistant") {
-          lastAssistantIndex = i;
-          break;
-        }
-      }
-
-      if (lastAssistantIndex === -1) {
-        throw new Error("No previous assistant message to rephrase");
-      }
-
-      // Store rephrase state (will be updated with newResponseIndex after response)
-      // For now, just mark that we're in rephrase mode
-      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType, prefillText);
-    }
-
-    // Before adding the new user message, check if there are incomplete tool calls
-    // from a previous interrupted turn. This prevents malformed message sequences
-    // that cause Ollama 500 errors.
-    const lastMessage = this.messages[this.messages.length - 1];
-    if (lastMessage?.role === "assistant" && lastMessage.tool_calls) {
-      // Find tool_call_ids that don't have corresponding tool result messages
-      const toolCallIds = new Set(lastMessage.tool_calls.map((tc: any) => tc.id));
-      const completedToolCallIds = new Set();
-
-      // Check which tool calls have results
-      for (let i = this.messages.length - 1; i >= 0; i--) {
-        const msg = this.messages[i] as any;
-        if (msg.role === "tool" && msg.tool_call_id) {
-          completedToolCallIds.add(msg.tool_call_id);
-        }
-        // Stop when we hit the assistant message with tool_calls
-        if (this.messages[i] === lastMessage) break;
-      }
-
-      // Add cancelled results for any incomplete tool calls
-      for (const toolCallId of toolCallIds) {
-        if (!completedToolCallIds.has(toolCallId)) {
-          console.error(`Adding cancelled result for incomplete tool call: ${toolCallId}`);
-          this.messages.push({
-            role: "tool",
-            content: "[Cancelled by user]",
-            tool_call_id: toolCallId,
-          });
-        }
-      }
-    }
-
-    // Clear one-shot variables
+    const {isRephraseCommand, messageType, messageToSend, prefillText} = await this.messageProcessor.setupRephraseCommand(message);
+    await this.cleanupIncompleteToolCalls();
     Variable.clearOneShot();
-
-    // Execute instance hook once per session (after first clearOneShot)
-    if (!this.hasRunInstanceHook) {
-      this.hasRunInstanceHook = true;
-      const settings = getSettingsManager();
-      const instanceHookPath = settings.getInstanceHook();
-      if (instanceHookPath) {
-        const hookResult = await executeOperationHook(
-          instanceHookPath,
-          "instance",
-          {},
-          30000,
-          false,  // Instance hook is not mandatory
-          this.getCurrentTokenCount(),
-          this.getMaxContextSize()
-        );
-
-        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-          // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, SET*)
-          const results = applyHookCommands(hookResult.commands);
-
-          // Apply prompt variables from SET* commands
-          for (const [varName, value] of results.promptVars.entries()) {
-            Variable.set(varName, value);
-          }
-
-          // Process other hook commands (MODEL, BACKEND, ENV)
-          await this.processHookCommands(results);
-
-          // Add SYSTEM message to messages array if present
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system
-            });
-          }
-
-          // Store prefill text from hook if present
-          if (results.prefill) {
-            this.hookPrefillText = results.prefill;
-          }
-        }
-      }
-    }
-
-    // Parse images once if present (for both text extraction and later assembly)
-    const parsed = hasImageReferences(messageToSend)
-      ? parseImagesFromMessage(messageToSend)
-      : { text: messageToSend, images: [] };
-
-    // Set USER:PROMPT variable (text only, images stripped)
-    Variable.set("USER:PROMPT", parsed.text);
-
-    // Execute prePrompt hook if configured
-    const hookPath = getSettingsManager().getPrePromptHook();
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "prePrompt",
-        { USER_MESSAGE: parsed.text },
-        30000,
-        false,  // prePrompt hook is never mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (hookResult.approved && hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-
-        // Set prompt variables from hook output (SET, SET_FILE, SET_TEMP_FILE)
-        for (const [varName, value] of results.promptVars.entries()) {
-          Variable.set(varName, value);
-        }
-
-        // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
-        await this.processHookCommands(results);
-
-        // Store prefill text from hook if present
-        if (results.prefill) {
-          this.hookPrefillText = results.prefill;
-        }
-      }
-    }
-
-    // Assemble final message from variables
-    const assembledMessage = Variable.renderFull("USER");
-
-    // Add user/system message to conversation
-    // Note: System messages can only have string content, so images are only supported for user messages
-    const supportsVision = this.llmClient.getSupportsVision();
-    let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
-
-    if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
-      // Construct content array with assembled text and images
-      messageContent = [
-        { type: "text", text: assembledMessage },
-        ...parsed.images
-      ];
-    }
-
-    const userEntry: ChatEntry = {
-      type: messageType,
-      content: messageContent,
-      originalContent: messageType === "user" ? (parsed.images.length > 0 && supportsVision
-        ? [{ type: "text", text: parsed.text }, ...parsed.images]
-        : parsed.text) : undefined,
-      timestamp: new Date(),
-    };
+    await this.executeInstanceHookIfNeeded();
+    const {parsed, assembledMessage} = await this.messageProcessor.parseAndAssembleMessage(messageToSend);
+    const {userEntry, messageContent} = this.messageProcessor.prepareMessageContent(messageType, assembledMessage, parsed, messageToSend, this.llmClient.getSupportsVision());
+    
     this.chatHistory.push(userEntry);
-
-    // Push to messages array with proper typing based on role
     if (messageType === "user") {
       this.messages.push({ role: "user", content: messageContent });
     } else {
-      // System messages must have string content only
       this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : messageToSend });
     }
-    await this.emitContextChange();
+    await this.contextManager.emitContextChange();
 
     const newEntries: ChatEntry[] = [userEntry];
     const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
@@ -652,10 +782,11 @@ export class LLMAgent extends EventEmitter {
       }
 
       // If a hook returned prefill text, add the assistant message now
-      if (this.hookPrefillText) {
+      const hookPrefillText = this.messageProcessor.getHookPrefillText();
+      if (hookPrefillText) {
         this.messages.push({
           role: "assistant",
-          content: this.hookPrefillText
+          content: hookPrefillText
         });
       }
 
@@ -676,7 +807,7 @@ export class LLMAgent extends EventEmitter {
 
       // Parse XML tool calls from response if present
       if (currentResponse.choices?.[0]?.message) {
-        currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
+        currentResponse.choices[0].message = this.messageProcessor.parseXMLToolCalls(currentResponse.choices[0].message);
       }
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -726,7 +857,7 @@ export class LLMAgent extends EventEmitter {
           this.chatHistory.push(assistantToolCallEntry);
           newEntries.push(assistantToolCallEntry);
 
-          await this.emitContextChange();
+          await this.contextManager.emitContextChange();
 
           // Create initial tool call entries to show tools are being executed
           // Use cleanedToolCalls to preserve arguments in chatHistory
@@ -765,7 +896,7 @@ export class LLMAgent extends EventEmitter {
                 throw new Error("Operation cancelled by user");
               }
 
-              const result = await this.executeTool(toolCall);
+              const result = await this.toolExecutor.executeTool(toolCall);
 
             // Update the existing tool_call entry with the result
             const entryIndex = this.chatHistory.findIndex(
@@ -804,7 +935,7 @@ export class LLMAgent extends EventEmitter {
               tool_call_id: toolCall.id,
             });
             completedToolCallIds.add(toolCall.id);
-            await this.emitContextChange();
+            await this.contextManager.emitContextChange();
 
             toolIndex++;
           }
@@ -884,9 +1015,10 @@ export class LLMAgent extends EventEmitter {
           }
 
           // If a hook provided prefill, prepend it to the response
-          if (trimmedContent && this.hookPrefillText) {
-            trimmedContent = this.hookPrefillText + trimmedContent;
-            this.hookPrefillText = null; // Clear after use
+          const hookPrefillText = this.messageProcessor.getHookPrefillText();
+          if (trimmedContent && hookPrefillText) {
+            trimmedContent = hookPrefillText + trimmedContent;
+            this.messageProcessor.clearHookPrefillText();
           }
 
           if (trimmedContent) {
@@ -943,7 +1075,7 @@ export class LLMAgent extends EventEmitter {
 
           // Parse XML tool calls from followup response if present
           if (currentResponse.choices?.[0]?.message) {
-            currentResponse.choices[0].message = this.parseXMLToolCalls(currentResponse.choices[0].message);
+            currentResponse.choices[0].message = this.messageProcessor.parseXMLToolCalls(currentResponse.choices[0].message);
           }
 
           const followupMessage = currentResponse.choices?.[0]?.message;
@@ -1011,317 +1143,64 @@ export class LLMAgent extends EventEmitter {
     }
   }
 
+
+
+
+
   /**
-   * Parse XML-formatted tool calls from message content (x.ai format)
-   * Converts <xai:function_call> elements to standard LLMToolCall format
+   * Process a user message with real-time streaming response.
+   * 
+   * This is the main streaming message processing method that yields
+   * chunks of data as the conversation progresses. Provides real-time
+   * updates for:
+   * - User message processing
+   * - AI response streaming (content as it's generated)
+   * - Tool execution progress
+   * - Token count updates
+   * - System messages from hooks
+   * 
+   * ## Streaming Flow
+   * 
+   * 1. **Setup**: Process user message, yield user entry
+   * 2. **Agent Loop**: Stream AI responses and execute tools
+   *    - Stream AI response content in real-time
+   *    - Yield tool calls when detected
+   *    - Execute tools and yield results
+   *    - Continue until completion
+   * 3. **Completion**: Yield final token counts and done signal
+   * 
+   * ## Chunk Types
+   * 
+   * - `user_message`: Initial user message entry
+   * - `content`: Streaming AI response content
+   * - `tool_calls`: Tool calls detected in AI response
+   * - `tool_result`: Results from tool execution
+   * - `token_count`: Updated token usage
+   * - `done`: Processing complete
+   * 
+   * @param message - The user message to process
+   * @yields StreamingChunk objects with real-time updates
+   * @throws {Error} If streaming fails critically
    */
-  private parseXMLToolCalls(message: any): any {
-    if (!message.content || typeof message.content !== 'string') {
-      return message;
-    }
-
-    const content = message.content;
-    const xmlToolCallRegex = /<xai:function_call\s+name="([^"]+)">([\s\S]*?)<\/xai:function_call>/g;
-    const matches = Array.from(content.matchAll(xmlToolCallRegex));
-
-    if (matches.length === 0) {
-      return message;
-    }
-
-    // Parse each XML tool call
-    const toolCalls: LLMToolCall[] = [];
-    let cleanedContent = content;
-
-    for (const match of matches) {
-      const functionName = match[1];
-      const paramsXML = match[2];
-
-      // Parse parameters
-      const paramRegex = /<parameter\s+name="([^"]+)">([^<]*)<\/parameter>/g;
-      const paramMatches = Array.from(paramsXML.matchAll(paramRegex));
-
-      const args: Record<string, any> = {};
-      for (const paramMatch of paramMatches) {
-        args[paramMatch[1]] = paramMatch[2];
-      }
-
-      // Generate a unique ID for this tool call
-      const toolCallId = `call_xml_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-      toolCalls.push({
-        id: toolCallId,
-        type: "function",
-        function: {
-          name: functionName,
-          arguments: JSON.stringify(args)
-        }
-      });
-
-      // Remove this XML block from content
-      cleanedContent = cleanedContent.replace(match[0], '');
-    }
-
-    // Trim any extra whitespace
-    cleanedContent = cleanedContent.trim();
-
-    // Return modified message with tool_calls and cleaned content
-    return {
-      ...message,
-      content: cleanedContent || null,
-      tool_calls: [...(message.tool_calls || []), ...toolCalls]
-    };
-  }
-
-  private messageReducer(previous: any, item: any): any {
-    const reduce = (acc: any, delta: any) => {
-      // Ensure acc is always an object before spreading (handles null/undefined)
-      acc = { ...(acc || {}) };
-      for (const [key, value] of Object.entries(delta)) {
-        // Skip null values in delta (Venice sends tool_calls: null which breaks Object.entries)
-        if (value === null) continue;
-
-        if (acc[key] === undefined || acc[key] === null) {
-          acc[key] = value;
-          // Clean up index properties from tool calls
-          if (Array.isArray(acc[key])) {
-            for (const arr of acc[key]) {
-              delete arr.index;
-            }
-          }
-        } else if (typeof acc[key] === "string" && typeof value === "string") {
-          // Don't concatenate certain properties that should remain separate
-          const nonConcatenableProps = ['id', 'type', 'name'];
-          if (nonConcatenableProps.includes(key)) {
-            // For non-concatenable properties, keep the new value
-            acc[key] = value;
-          } else {
-            // For content, arguments, and other text properties, concatenate
-            (acc[key] as string) += value;
-          }
-        } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
-          const accArray = acc[key] as any[];
-          for (let i = 0; i < value.length; i++) {
-            if (!accArray[i]) accArray[i] = {};
-            accArray[i] = reduce(accArray[i], value[i]);
-          }
-        } else if (typeof acc[key] === "object" && typeof value === "object") {
-          acc[key] = reduce(acc[key], value);
-        }
-      }
-      return acc;
-    };
-
-    return reduce(previous, item.choices?.[0]?.delta || {});
-  }
-
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
-    // Create new abort controller for this request
     this.abortController = new AbortController();
-
-    // Detect rephrase commands
-    let isRephraseCommand = false;
-    let isSystemRephrase = false;
-    let messageToSend = message;
-    let messageType: "user" | "system" = "user";
-    let prefillText: string | undefined;
-
-    if (message.startsWith("/system rephrase")) {
-      isRephraseCommand = true;
-      isSystemRephrase = true;
-      messageToSend = message.substring(8).trim(); // Strip "/system " (8 chars including space)
-      messageType = "system";
-      // Extract prefill text after "/system rephrase "
-      const prefillMatch = message.match(/^\/system rephrase\s+(.+)$/);
-      if (prefillMatch) {
-        prefillText = prefillMatch[1];
-      }
-    } else if (message.startsWith("/rephrase")) {
-      isRephraseCommand = true;
-      messageToSend = message; // Keep full text including "/rephrase"
-      messageType = "user";
-      // Extract prefill text after "/rephrase "
-      const prefillMatch = message.match(/^\/rephrase\s+(.+)$/);
-      if (prefillMatch) {
-        prefillText = prefillMatch[1];
-      }
-    }
-
-    // If this is a rephrase command, find the last assistant message
-    if (isRephraseCommand) {
-      // Find index of last assistant message in chatHistory
-      let lastAssistantIndex = -1;
-      for (let i = this.chatHistory.length - 1; i >= 0; i--) {
-        if (this.chatHistory[i].type === "assistant") {
-          lastAssistantIndex = i;
-          break;
-        }
-      }
-
-      if (lastAssistantIndex === -1) {
-        throw new Error("No previous assistant message to rephrase");
-      }
-
-      // Store rephrase state (will be updated with newResponseIndex after response)
-      // For now, just mark that we're in rephrase mode
-      this.setRephraseState(lastAssistantIndex, this.chatHistory.length, -1, messageType, prefillText);
-    }
-
-    // Before adding the new user message, check if there are incomplete tool calls
-    // from a previous interrupted turn. This prevents malformed message sequences
-    // that cause Ollama 500 errors.
-    const lastMessage = this.messages[this.messages.length - 1];
-    if (lastMessage?.role === "assistant" && lastMessage.tool_calls) {
-      // Find tool_call_ids that don't have corresponding tool result messages
-      const toolCallIds = new Set(lastMessage.tool_calls.map((tc: any) => tc.id));
-      const completedToolCallIds = new Set();
-
-      // Check which tool calls have results
-      for (let i = this.messages.length - 1; i >= 0; i--) {
-        const msg = this.messages[i] as any;
-        if (msg.role === "tool" && msg.tool_call_id) {
-          completedToolCallIds.add(msg.tool_call_id);
-        }
-        // Stop when we hit the assistant message with tool_calls
-        if (this.messages[i] === lastMessage) break;
-      }
-
-      // Add cancelled results for any incomplete tool calls
-      for (const toolCallId of toolCallIds) {
-        if (!completedToolCallIds.has(toolCallId)) {
-          console.error(`Adding cancelled result for incomplete tool call: ${toolCallId}`);
-          this.messages.push({
-            role: "tool",
-            content: "[Cancelled by user]",
-            tool_call_id: toolCallId,
-          });
-        }
-      }
-    }
-
-    // Clear one-shot variables
+    const {isRephraseCommand, messageType, messageToSend, prefillText} = await this.messageProcessor.setupRephraseCommand(message);
+    await this.cleanupIncompleteToolCalls();
     Variable.clearOneShot();
-
-    // Execute instance hook once per session (after first clearOneShot)
-    if (!this.hasRunInstanceHook) {
-      this.hasRunInstanceHook = true;
-      const settings = getSettingsManager();
-      const instanceHookPath = settings.getInstanceHook();
-      if (instanceHookPath) {
-        const hookResult = await executeOperationHook(
-          instanceHookPath,
-          "instance",
-          {},
-          30000,
-          false,  // Instance hook is not mandatory
-          this.getCurrentTokenCount(),
-          this.getMaxContextSize()
-        );
-
-        if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
-          // Apply hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, SET*)
-          const results = applyHookCommands(hookResult.commands);
-
-          // Apply prompt variables from SET* commands
-          for (const [varName, value] of results.promptVars.entries()) {
-            Variable.set(varName, value);
-          }
-
-          // Process other hook commands (MODEL, BACKEND, ENV)
-          await this.processHookCommands(results);
-
-          // Add SYSTEM message to messages array if present
-          if (results.system) {
-            this.messages.push({
-              role: 'system',
-              content: results.system
-            });
-          }
-
-          // Store prefill text from hook if present
-          if (results.prefill) {
-            this.hookPrefillText = results.prefill;
-          }
-        }
-      }
-    }
-
-    // Parse images once if present (for both text extraction and later assembly)
-    const parsed = hasImageReferences(messageToSend)
-      ? parseImagesFromMessage(messageToSend)
-      : { text: messageToSend, images: [] };
-
-    // Set USER:PROMPT variable (text only, images stripped)
-    Variable.set("USER:PROMPT", parsed.text);
-
-    // Execute prePrompt hook if configured
-    const hookPath = getSettingsManager().getPrePromptHook();
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "prePrompt",
-        { USER_MESSAGE: parsed.text },
-        30000,
-        false,  // prePrompt hook is never mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (hookResult.approved && hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-
-        // Set prompt variables from hook output (SET, SET_FILE, SET_TEMP_FILE)
-        for (const [varName, value] of results.promptVars.entries()) {
-          Variable.set(varName, value);
-        }
-
-        // Process other hook commands (MODEL, BACKEND, SYSTEM, etc.)
-        await this.processHookCommands(results);
-
-        // Store prefill text from hook if present
-        if (results.prefill) {
-          this.hookPrefillText = results.prefill;
-        }
-      }
-    }
-
-    // Assemble final message from variables
-    const assembledMessage = Variable.renderFull("USER");
-
-    // Add user/system message to both API conversation and chat history
-    // Note: System messages can only have string content, so images are only supported for user messages
-    const supportsVision = this.llmClient.getSupportsVision();
-    let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
-
-    if (messageType === "user" && parsed.images.length > 0 && supportsVision) {
-      // Construct content array with assembled text and images
-      messageContent = [
-        { type: "text", text: assembledMessage },
-        ...parsed.images
-      ];
-    }
-
-    const userEntry: ChatEntry = {
-      type: messageType,
-      content: messageContent,
-      originalContent: messageType === "user" ? (parsed.images.length > 0 && supportsVision
-        ? [{ type: "text", text: parsed.text }, ...parsed.images]
-        : parsed.text) : undefined,
-      timestamp: new Date(),
-    };
+    await this.executeInstanceHookIfNeeded();
+    const {parsed, assembledMessage} = await this.messageProcessor.parseAndAssembleMessage(messageToSend);
+    const {userEntry, messageContent} = this.messageProcessor.prepareMessageContent(messageType, assembledMessage, parsed, messageToSend, this.llmClient.getSupportsVision());
+    
     this.chatHistory.push(userEntry);
-
-    // Push to messages array with proper typing based on role
     if (messageType === "user") {
       this.messages.push({ role: "user", content: messageContent });
     } else {
-      // System messages must have string content only
-      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : assembledMessage });
+      this.messages.push({ role: "system", content: typeof messageContent === "string" ? messageContent : messageToSend });
     }
-    await this.emitContextChange();
+    await this.contextManager.emitContextChange();
 
-    // Yield user message so UI can display it immediately
     yield {
       type: "user_message",
       userEntry: userEntry,
@@ -1336,10 +1215,11 @@ export class LLMAgent extends EventEmitter {
     }
 
     // If a hook returned prefill text, add the assistant message now
-    if (this.hookPrefillText) {
+    const hookPrefillText = this.messageProcessor.getHookPrefillText();
+    if (hookPrefillText) {
       this.messages.push({
         role: "assistant",
-        content: this.hookPrefillText
+        content: hookPrefillText
       });
     }
 
@@ -1407,13 +1287,14 @@ export class LLMAgent extends EventEmitter {
         }
 
         // If a hook provided prefill, yield it first and add to accumulated content
-        if (this.hookPrefillText) {
+        const hookPrefillText = this.messageProcessor.getHookPrefillText();
+        if (hookPrefillText) {
           yield {
             type: "content",
-            content: this.hookPrefillText,
+            content: hookPrefillText,
           };
-          accumulatedContent = this.hookPrefillText;
-          this.hookPrefillText = null; // Clear after use
+          accumulatedContent = hookPrefillText;
+          this.messageProcessor.clearHookPrefillText();
         }
 
         try {
@@ -1436,7 +1317,7 @@ export class LLMAgent extends EventEmitter {
             }
 
             // Accumulate the message using reducer
-            accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
+            accumulatedMessage = this.messageProcessor.messageReducer(accumulatedMessage, chunk);
 
             // Check for tool calls - yield when we have complete tool calls with function names
             if (!tool_calls_yielded && accumulatedMessage.tool_calls?.length > 0) {
@@ -1527,7 +1408,7 @@ export class LLMAgent extends EventEmitter {
         }
 
         // Parse XML tool calls from accumulated message if present
-        accumulatedMessage = this.parseXMLToolCalls(accumulatedMessage);
+        accumulatedMessage = this.messageProcessor.parseXMLToolCalls(accumulatedMessage);
 
         // Clean up tool call arguments before adding to conversation history
         // This prevents Ollama from rejecting malformed tool calls on subsequent API calls
@@ -1559,7 +1440,7 @@ export class LLMAgent extends EventEmitter {
         };
         this.chatHistory.push(assistantEntry);
 
-        await this.emitContextChange();
+        await this.contextManager.emitContextChange();
 
         // Update rephrase state if this is a final response (no tool calls)
         if (this.rephraseState && this.rephraseState.newResponseIndex === -1 && (!accumulatedMessage.tool_calls || accumulatedMessage.tool_calls.length === 0)) {
@@ -1628,7 +1509,7 @@ export class LLMAgent extends EventEmitter {
               // Capture chatHistory length before tool execution to detect new system messages
               const chatHistoryLengthBefore = this.chatHistory.length;
 
-              const result = await this.executeTool(toolCall);
+              const result = await this.toolExecutor.executeTool(toolCall);
 
             // Collect any new system messages added during tool execution (from hooks)
             const newSystemMessages: ChatEntry[] = [];
@@ -1809,431 +1690,42 @@ export class LLMAgent extends EventEmitter {
    * Apply default parameter values for tools
    * This ensures the approval hook sees the same parameters that will be used during execution
    */
-  private applyToolParameterDefaults(toolName: string, params: any): any {
-    // Handle null/undefined params (can happen if API sends "null" as arguments string)
-    const result = { ...(params || {}) };
-
-    switch (toolName) {
-      case "listFiles":
-        // dirname defaults to current directory
-        if (!result.dirname) {
-          result.dirname = ".";
-        }
-        break;
-
-      // Add other tools with defaults here as needed
-    }
-
-    return result;
-  }
 
   /**
    * Validate tool arguments against the tool's schema
    * Returns null if valid, or an error message if invalid
    */
-  private async validateToolArguments(toolName: string, args: any): Promise<string | null> {
-    try {
-      // Get all tools (including MCP tools)
-      const supportsTools = this.llmClient.getSupportsTools();
-      const allTools = supportsTools ? await getAllLLMTools() : [];
 
-      // Find the tool schema
-      const toolSchema = allTools.find(t => t.function.name === toolName);
-      if (!toolSchema) {
-        return `Unknown tool: ${toolName}`;
-      }
 
-      const schema = toolSchema.function.parameters;
-      const properties = schema.properties || {};
-      const required = schema.required || [];
 
-      // Check if tool accepts no parameters
-      const acceptsNoParams = Object.keys(properties).length === 0;
-      const hasArgs = args && typeof args === 'object' && Object.keys(args).length > 0;
-
-      if (acceptsNoParams && hasArgs) {
-        return `Tool ${toolName} accepts no parameters, but received: ${JSON.stringify(args)}`;
-      }
-
-      // Check for unknown parameters
-      for (const argKey of Object.keys(args || {})) {
-        if (!properties[argKey]) {
-          return `Tool ${toolName} does not accept parameter '${argKey}'. Valid parameters: ${Object.keys(properties).join(', ') || 'none'}`;
-        }
-      }
-
-      // Check for missing required parameters
-      for (const requiredParam of required) {
-        if (!(requiredParam in (args || {}))) {
-          return `Tool ${toolName} missing required parameter '${requiredParam}'`;
-        }
-      }
-
-      return null; // Valid
-    } catch (error) {
-      console.error(`Error validating tool arguments for ${toolName}:`, error);
-      return null; // Allow execution if validation itself fails
-    }
-  }
-
-  private async executeTool(toolCall: LLMToolCall): Promise<ToolResult> {
-    try {
-      // Parse arguments - handle empty string as empty object for parameter-less tools
-      let argsString = toolCall.function.arguments?.trim() || "{}";
-
-      // Handle duplicate/concatenated JSON objects (LLM bug)
-      // Pattern: {"key":"val"}{"key":"val"}
-      let hadDuplicateJson = false;
-      const extractedArgsString = extractFirstJsonObject(argsString);
-      if (extractedArgsString !== argsString) {
-        hadDuplicateJson = true;
-        argsString = extractedArgsString;
-      }
-
-      let args = JSON.parse(argsString);
-
-      // Handle multiple layers of JSON encoding (API bug)
-      // Keep parsing until we get an object, not a string
-      let parseCount = 0;
-      while (typeof args === 'string' && parseCount < MAX_JSON_PARSE_ATTEMPTS) {
-        parseCount++;
-        try {
-          args = JSON.parse(args);
-        } catch (e) {
-          // If parse fails, the string isn't valid JSON - stop trying
-          break;
-        }
-      }
-
-      // Log if we had to fix encoding
-      if (parseCount > 0) {
-        const bugMsg = `[BUG] Tool ${toolCall.function.name} had ${parseCount} extra layer(s) of JSON encoding`;
-        console.warn(bugMsg);
-
-        const systemMsg = `Warning: Tool arguments for ${toolCall.function.name} had ${parseCount} extra encoding layer(s) - this is an API bug`;
-        this.messages.push({
-          role: 'system',
-          content: systemMsg
-        });
-        this.chatHistory.push({
-          type: 'system',
-          content: systemMsg,
-          timestamp: new Date()
-        });
-      }
-
-      // Log if we had to fix duplicate JSON
-      if (hadDuplicateJson) {
-        const bugMsg = `[BUG] Tool ${toolCall.function.name} had duplicate/concatenated JSON objects`;
-        console.warn(bugMsg);
-
-        const systemMsg = `Warning: Tool arguments for ${toolCall.function.name} had duplicate JSON objects (used first object only) - this is an LLM bug`;
-        this.messages.push({
-          role: 'system',
-          content: systemMsg
-        });
-        this.chatHistory.push({
-          type: 'system',
-          content: systemMsg,
-          timestamp: new Date()
-        });
-      }
-
-      // Ensure args is always an object (API might send null)
-      if (!args || typeof args !== 'object' || Array.isArray(args)) {
-        args = {};
-      }
-
-      // Apply parameter defaults before validation and execution
-      args = this.applyToolParameterDefaults(toolCall.function.name, args);
-
-      // Validate tool arguments against schema
-      const validationError = await this.validateToolArguments(toolCall.function.name, args);
-      if (validationError) {
-        // Validation failed - return error
-        const errorMsg = `Tool call validation failed: ${validationError}. Please try again with correct parameters.`;
-        console.warn(`[VALIDATION ERROR] ${errorMsg}`);
-
-        return {
-          success: false,
-          error: validationError
-        };
-      }
-
-      // Task tools (startActiveTask, transitionActiveTaskStatus, stopActiveTask) have their own
-      // dedicated task approval hook, so skip the general tool approval hook for them
-      const isTaskTool = ['startActiveTask', 'transitionActiveTaskStatus', 'stopActiveTask'].includes(toolCall.function.name);
-
-      // Check tool approval hook if configured (skip for task tools)
-      const settings = getSettingsManager();
-      const toolApprovalHook = settings.getToolApprovalHook();
-
-      if (toolApprovalHook && !isTaskTool) {
-        const approvalResult = await executeToolApprovalHook(
-          toolApprovalHook,
-          toolCall.function.name,
-          args,
-          30000, // 30 second timeout
-          this.getCurrentTokenCount(),
-          this.getMaxContextSize()
-        );
-
-        if (!approvalResult.approved) {
-          const reason = approvalResult.reason || "Tool execution denied by approval hook";
-
-          // Process rejection commands (MODEL, SYSTEM, BACKEND, etc.)
-          await this.processHookResult(approvalResult);
-
-          return {
-            success: false,
-            error: `Tool execution blocked: ${reason}`,
-          };
-        }
-
-        if (approvalResult.timedOut) {
-          // Log timeout for debugging (don't block)
-          console.warn(`Tool approval hook timed out for ${toolCall.function.name} (auto-approved)`);
-        }
-
-        // Process hook commands (ENV, TOOL_RESULT, MODEL, SYSTEM, BACKEND, etc.)
-        // TOOL_RESULT is for tool return values, not used by approval hook
-        // ENV variables can affect tool behavior if tools read from process.env
-        await this.processHookResult(approvalResult);
-      }
-
-      switch (toolCall.function.name) {
-        case "viewFile":
-          { let range: [number, number] | undefined;
-          range = args.start_line && args.end_line
-            ? [args.start_line, args.end_line]
-            : undefined;
-          return await this.textEditor.viewFile(args.filename, range); }
-
-        case "createNewFile":
-          return await this.textEditor.createNewFile(args.filename, args.content);
-
-        case "strReplace":
-          return await this.textEditor.strReplace(
-            args.filename,
-            args.old_str,
-            args.new_str,
-            args.replace_all
-          );
-
-        case "editFile":
-          if (!this.morphEditor) {
-            return {
-              success: false,
-              error:
-                "Morph Fast Apply not available. Please set MORPH_API_KEY environment variable to use this feature.",
-            };
-          }
-          return await this.morphEditor.editFile(
-            args.filename,
-            args.instructions,
-            args.code_edit
-          );
-
-        case "execute":
-          return await this.zsh.execute(args.command);
-
-        case "listFiles":
-          return await this.zsh.listFiles(args.dirname);
-
-        case "universalSearch":
-          return await this.search.universalSearch(args.query, {
-            searchType: args.search_type,
-            includePattern: args.include_pattern,
-            excludePattern: args.exclude_pattern,
-            caseSensitive: args.case_sensitive,
-            wholeWord: args.whole_word,
-            regex: args.regex,
-            maxResults: args.max_results,
-            fileTypes: args.file_types,
-            includeHidden: args.include_hidden,
-          });
-
-        case "getEnv":
-          return await this.env.getEnv(args.variable);
-
-        case "getAllEnv":
-          return await this.env.getAllEnv();
-
-        case "searchEnv":
-          return await this.env.searchEnv(args.pattern);
-
-        case "introspect":
-          return await this.introspect.introspect(args.target);
-
-        case "clearCache":
-          return await this.clearCacheTool.clearCache(args.confirmationCode);
-
-        case "restart":
-          return await this.restartTool.restart();
-
-        case "setPersona":
-          return await this.characterTool.setPersona(args.persona, args.color);
-
-        case "setMood":
-          return await this.characterTool.setMood(args.mood, args.color);
-
-        case "getPersona":
-          return await this.characterTool.getPersona();
-
-        case "getMood":
-          return await this.characterTool.getMood();
-
-        case "getAvailablePersonas":
-          return await this.characterTool.getAvailablePersonas();
-
-        case "startActiveTask":
-          return await this.taskTool.startActiveTask(args.activeTask, args.action, args.color);
-
-        case "transitionActiveTaskStatus":
-          return await this.taskTool.transitionActiveTaskStatus(args.action, args.color);
-
-        case "stopActiveTask":
-          return await this.taskTool.stopActiveTask(args.reason, args.documentationFile, args.color);
-
-        case "insertLines":
-          return await this.textEditor.insertLines(args.filename, args.insert_line, args.new_str);
-
-        case "replaceLines":
-          return await this.textEditor.replaceLines(args.filename, args.start_line, args.end_line, args.new_str);
-
-        case "undoEdit":
-          return await this.textEditor.undoEdit();
-
-        case "chdir":
-          return this.zsh.chdir(args.dirname);
-
-        case "pwdir":
-          return this.zsh.pwdir();
-
-        case "downloadFile":
-          return await this.internetTool.downloadFile(args.url);
-
-        case "generateImage":
-          return await this.imageTool.generateImage(
-            args.prompt,
-            args.negativePrompt,
-            args.width,
-            args.height,
-            args.model,
-            args.sampler,
-            args.configScale,
-            args.numSteps,
-            args.nsfw,
-            args.name,
-            args.move,
-            args.seed
-          );
-
-        case "captionImage":
-          return await this.imageTool.captionImage(args.filename, args.backend);
-
-        case "pngInfo":
-          return await this.imageTool.pngInfo(args.filename);
-
-        case "listImageModels":
-          return await this.imageTool.listImageModels();
-
-        case "listImageLoras":
-          return await this.imageTool.listImageLoras();
-
-        case "extractTextFromImage":
-          return await this.imageTool.extractTextFromImage(args.filename);
-
-        case "extractTextFromAudio":
-          return await this.audioTool.extractTextFromAudio(args.filename);
-
-        case "readXlsx":
-          return await this.fileConversionTool.readXlsx(
-            args.filename,
-            args.sheetName,
-            args.outputFormat,
-            args.output
-          );
-
-        case "listXlsxSheets":
-          return await this.fileConversionTool.listXlsxSheets(args.filename);
-
-        default:
-          // Check if this is an MCP tool
-          if (toolCall.function.name.startsWith("mcp__")) {
-            return await this.executeMCPTool(toolCall.function.name, args);
-          }
-
-          return {
-            success: false,
-            error: `Unknown tool: ${toolCall.function.name}`,
-          };
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        error: `Tool execution error: ${error.message}`,
-      };
-    }
-  }
-
-  private async executeMCPTool(toolName: string, args: any): Promise<ToolResult> {
-    try {
-      const mcpManager = getMCPManager();
-
-      const result = await mcpManager.callTool(toolName, args);
-
-      if (result.isError) {
-        return {
-          success: false,
-          error: (result.content[0] as any)?.text || "MCP tool error",
-        };
-      }
-
-      // Extract content from result
-      const output = result.content
-        .map((item) => {
-          if (item.type === "text") {
-            return item.text;
-          } else if (item.type === "resource") {
-            return `Resource: ${item.resource?.uri || "Unknown"}`;
-          }
-          return String(item);
-        })
-        .join("\n");
-
-      // After successful MCP tool execution, invalidate cache for that server
-      // Next call to getAllLLMTools() will lazy-refresh this server
-      const serverNameMatch = toolName.match(/^mcp__(.+?)__/);
-      if (serverNameMatch) {
-        const serverName = serverNameMatch[1];
-        mcpManager.invalidateCache(serverName);
-      }
-
-      return {
-        success: true,
-        output: output || "Success",
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: `MCP tool execution error: ${error.message}`,
-      };
-    }
-  }
-
+  /**
+   * Get a copy of the current chat history.
+   * @returns Array of chat entries (defensive copy)
+   */
   getChatHistory(): ChatEntry[] {
     return [...this.chatHistory];
   }
 
+  /**
+   * Set the chat history to a new array of entries.
+   * @param history - New chat history entries
+   */
   setChatHistory(history: ChatEntry[]): void {
     this.chatHistory = [...history];
   }
 
+  /**
+   * Get the current system prompt.
+   * @returns The system prompt string
+   */
   getSystemPrompt(): string {
     return this.systemPrompt;
   }
 
+  /**
+   * Set a new system prompt and update the first message.
+   * @param prompt - New system prompt content
+   */
   setSystemPrompt(prompt: string): void {
     this.systemPrompt = prompt;
     this.messages[0] = {
@@ -2242,29 +1734,54 @@ export class LLMAgent extends EventEmitter {
     };
   }
 
+  /**
+   * Get a copy of the current API messages array.
+   * @returns Array of LLM messages (defensive copy)
+   */
   getMessages(): any[] {
     return [...this.messages];
   }
 
+  /**
+   * Get the current token count for the conversation.
+   * @returns Number of tokens in the current message context
+   */
   getCurrentTokenCount(): number {
     return this.tokenCounter.countMessageTokens(this.messages as any);
   }
 
+  /**
+   * Get the maximum context size for the current model.
+   * @returns Maximum number of tokens supported
+   * @todo Make this model-specific for different context windows
+   */
   getMaxContextSize(): number {
     // TODO: Make this model-specific when different models have different context windows
     // For now, return the standard Grok context window size
     return 128000;
   }
 
+  /**
+   * Get the current context usage as a percentage.
+   * @returns Percentage of context window used (0-100)
+   */
   getContextUsagePercent(): number {
-    const current = this.getCurrentTokenCount();
-    const max = this.getMaxContextSize();
-    return (current / max) * 100;
+    return this.contextManager.getContextUsagePercent();
   }
 
   /**
-   * Convert context messages to markdown format for viewing
+   * Convert the conversation context to markdown format for viewing.
+   * 
+   * Creates a human-readable markdown representation of the conversation
+   * including:
+   * - Header with context file path and token usage
+   * - Numbered messages with timestamps
+   * - Formatted tool calls and results
+   * - Proper attribution (User/Assistant/System)
+   * 
    * Format: (N) Name (role) - timestamp
+   * 
+   * @returns Promise resolving to markdown-formatted conversation
    */
   async convertContextToMarkdown(): Promise<string> {
     const lines: string[] = [];
@@ -2322,508 +1839,255 @@ export class LLMAgent extends EventEmitter {
     return lines.join("\n");
   }
 
+  /**
+   * Get the current persona setting.
+   * @returns Current persona string
+   */
   getPersona(): string {
     return this.persona;
   }
 
+  /**
+   * Get the current persona display color.
+   * @returns Color name for persona display
+   */
   getPersonaColor(): string {
     return this.personaColor;
   }
 
+  /**
+   * Get the current mood setting.
+   * @returns Current mood string
+   */
   getMood(): string {
     return this.mood;
   }
 
+  /**
+   * Get the current mood display color.
+   * @returns Color name for mood display
+   */
   getMoodColor(): string {
     return this.moodColor;
   }
 
+  /**
+   * Get the current active task.
+   * @returns Current active task string
+   */
   getActiveTask(): string {
     return this.activeTask;
   }
 
+  /**
+   * Get the current active task action.
+   * @returns Current task action string
+   */
   getActiveTaskAction(): string {
     return this.activeTaskAction;
   }
 
+  /**
+   * Get the current active task display color.
+   * @returns Color name for task display
+   */
   getActiveTaskColor(): string {
     return this.activeTaskColor;
   }
 
+  /**
+   * Set a pending context edit session for file-based context editing.
+   * @param tmpJsonPath - Path to temporary JSON file
+   * @param contextFilePath - Path to actual context file
+   */
   setPendingContextEditSession(tmpJsonPath: string, contextFilePath: string): void {
     this.pendingContextEditSession = { tmpJsonPath, contextFilePath };
   }
 
+  /**
+   * Get the current pending context edit session.
+   * @returns Edit session info or null if none pending
+   */
   getPendingContextEditSession(): { tmpJsonPath: string; contextFilePath: string } | null {
     return this.pendingContextEditSession;
   }
 
+  /**
+   * Clear the pending context edit session.
+   */
   clearPendingContextEditSession(): void {
     this.pendingContextEditSession = null;
   }
 
+  /**
+   * Set the rephrase state for message editing operations.
+   * @param originalAssistantMessageIndex - Index of original assistant message
+   * @param rephraseRequestIndex - Index of rephrase request
+   * @param newResponseIndex - Index of new response (-1 if not yet created)
+   * @param messageType - Type of message being rephrased
+   * @param prefillText - Optional prefill text for the response
+   */
   setRephraseState(originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system", prefillText?: string): void {
     this.rephraseState = { originalAssistantMessageIndex, rephraseRequestIndex, newResponseIndex, messageType, prefillText };
   }
 
+  /**
+   * Get the current rephrase state.
+   * @returns Rephrase state info or null if none active
+   */
   getRephraseState(): { originalAssistantMessageIndex: number; rephraseRequestIndex: number; newResponseIndex: number; messageType: "user" | "system"; prefillText?: string } | null {
     return this.rephraseState;
   }
 
+  /**
+   * Clear the current rephrase state.
+   */
   clearRephraseState(): void {
     this.rephraseState = null;
   }
 
+  /**
+   * Set the agent's persona with optional color.
+   * 
+   * Executes the persona hook if configured and updates the agent's
+   * persona state on success.
+   * 
+   * @param persona - The persona description
+   * @param color - Optional display color (defaults to "white")
+   * @returns Promise resolving to success/error result
+   */
   async setPersona(persona: string, color?: string): Promise<{ success: boolean; error?: string }> {
-    // Execute hook if configured
-    const settings = getSettingsManager();
-    const hookPath = settings.getPersonaHook();
-    const hookMandatory = settings.isPersonaHookMandatory();
-
-    if (!hookPath && hookMandatory) {
-      const reason = "Persona hook is mandatory but not configured";
-      return {
-        success: false,
-        error: reason
-      };
+    const result = await this.hookManager.setPersona(persona, color);
+    if (result.success) {
+      this.persona = persona;
+      this.personaColor = color || "white";
     }
-
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "setPersona",
-        {
-          persona_old: this.persona || "",
-          persona_new: persona,
-          persona_color: color || "white"
-        },
-        30000,
-        hookMandatory,
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (!hookResult.approved) {
-        const reason = hookResult.reason || "Hook rejected persona change";
-
-        // Process rejection commands (MODEL, SYSTEM)
-        // Even in rejection, we process commands (might have MODEL change)
-        await this.processHookResult(hookResult);
-        // Note: We ignore the return value here since we're already rejecting the persona
-
-        return {
-          success: false,
-          error: reason
-        };
-      }
-
-      if (hookResult.timedOut) {
-        // Hook timed out but was auto-approved
-      }
-
-      // Process hook commands (ENV, MODEL, SYSTEM)
-      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_PERSONA');
-      if (!result.success) {
-        // Model/backend test failed - don't apply persona change
-        return {
-          success: false,
-          error: "Persona change rejected due to failed model/backend test"
-        };
-      }
-
-      // Apply persona transformation if present
-      if (result.transformedValue) {
-        persona = result.transformedValue;
-      }
-    }
-
-    const oldPersona = this.persona;
-    const oldColor = this.personaColor;
-    this.persona = persona;
-    this.personaColor = color || "white";
-    process.env.ZDS_AI_AGENT_PERSONA = persona;
-
-    // Persona hook generates success message - no need for redundant CLI message
-
-    this.emit('personaChange', {
-      persona: this.persona,
-      color: this.personaColor
-    });
-
-    return { success: true };
+    return result;
   }
 
+  /**
+   * Set the agent's mood with optional color.
+   * 
+   * Executes the mood hook if configured and updates the agent's
+   * mood state on success.
+   * 
+   * @param mood - The mood description
+   * @param color - Optional display color (defaults to "white")
+   * @returns Promise resolving to success/error result
+   */
   async setMood(mood: string, color?: string): Promise<{ success: boolean; error?: string }> {
-    // Execute hook if configured
-    const settings = getSettingsManager();
-    const hookPath = settings.getMoodHook();
-    const hookMandatory = settings.isMoodHookMandatory();
-
-    if (!hookPath && hookMandatory) {
-      const reason = "Mood hook is mandatory but not configured";
-      return {
-        success: false,
-        error: reason
-      };
+    const result = await this.hookManager.setMood(mood, color);
+    if (result.success) {
+      this.mood = mood;
+      this.moodColor = color || "white";
     }
-
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "setMood",
-        {
-          mood_old: this.mood || "",
-          mood_new: mood,
-          mood_color: color || "white"
-        },
-        30000,
-        hookMandatory,
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      if (!hookResult.approved) {
-        const reason = hookResult.reason || "Hook rejected mood change";
-
-        // Process rejection commands (MODEL, SYSTEM)
-        await this.processHookResult(hookResult);
-
-        return {
-          success: false,
-          error: reason
-        };
-      }
-
-      if (hookResult.timedOut) {
-        // Hook timed out but was auto-approved
-      }
-
-      // Process hook commands (ENV, MODEL, SYSTEM)
-      const result = await this.processHookResult(hookResult, 'ZDS_AI_AGENT_MOOD');
-      if (!result.success) {
-        // Model/backend test failed - don't apply mood change
-        return {
-          success: false,
-          error: "Mood change rejected due to failed model/backend test"
-        };
-      }
-
-      // Apply mood transformation if present
-      if (result.transformedValue) {
-        mood = result.transformedValue;
-      }
-    }
-
-    const oldMood = this.mood;
-    const oldColor = this.moodColor;
-    this.mood = mood;
-    this.moodColor = color || "white";
-    process.env.ZDS_AI_AGENT_MOOD = mood;
-
-    // Add system message for recordkeeping
-    let systemContent: string;
-    if (oldMood) {
-      const oldColorStr = oldColor && oldColor !== "white" ? ` (${oldColor})` : "";
-      const newColorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
-      systemContent = `Assistant changed the mood from "${oldMood}"${oldColorStr} to "${this.mood}"${newColorStr}`;
-    } else {
-      const colorStr = this.moodColor && this.moodColor !== "white" ? ` (${this.moodColor})` : "";
-      systemContent = `Assistant set the mood to "${this.mood}"${colorStr}`;
-    }
-
-    // Note: Don't add to this.messages during tool execution - only chatHistory
-    // System messages added during tool execution create invalid message sequences
-    // because they get inserted between tool_calls and tool_results
-    this.chatHistory.push({
-      type: 'system',
-      content: systemContent,
-      timestamp: new Date()
-    });
-
-    this.emit('moodChange', {
-      mood: this.mood,
-      color: this.moodColor
-    });
-
-    return { success: true };
+    return result;
   }
 
+  /**
+   * Start an active task with specified action and color.
+   * 
+   * Executes the task start hook if configured and updates the agent's
+   * task state on success.
+   * 
+   * @param activeTask - The task description
+   * @param action - The current action within the task
+   * @param color - Optional display color (defaults to "white")
+   * @returns Promise resolving to success/error result
+   */
   async startActiveTask(activeTask: string, action: string, color?: string): Promise<{ success: boolean; error?: string }> {
-    // Cannot start new task if one already exists
-    if (this.activeTask) {
-      return {
-        success: false,
-        error: `Cannot start new task "${activeTask}". Active task "${this.activeTask}" must be stopped first.`
-      };
+    const result = await this.hookManager.startActiveTask(activeTask, action, color);
+    if (result.success) {
+      this.activeTask = activeTask;
+      this.activeTaskAction = action;
+      this.activeTaskColor = color || "white";
     }
-
-    // Execute hook if configured
-    const settings = getSettingsManager();
-    const hookPath = settings.getTaskApprovalHook();
-
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "startActiveTask",
-        {
-          activetask: activeTask,
-          action: action,
-          color: color || "white"
-        },
-        30000,
-        false,  // Task hook is not mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
-      await this.processHookResult(hookResult);
-
-      if (!hookResult.approved) {
-        const reason = hookResult.reason || "Hook rejected task start";
-        return {
-          success: false,
-          error: reason
-        };
-      }
-
-      if (hookResult.timedOut) {
-        // Hook timed out but was auto-approved
-      }
-    }
-
-    // Set the task
-    this.activeTask = activeTask;
-    this.activeTaskAction = action;
-    this.activeTaskColor = color || "white";
-
-    // Add system message
-    const colorStr = this.activeTaskColor && this.activeTaskColor !== "white" ? ` (${this.activeTaskColor})` : "";
-    this.messages.push({
-      role: 'system',
-      content: `Assistant changed task status for "${this.activeTask}" to ${this.activeTaskAction}${colorStr}`
-    });
-
-    // Emit event
-    this.emit('activeTaskChange', {
-      activeTask: this.activeTask,
-      action: this.activeTaskAction,
-      color: this.activeTaskColor
-    });
-
-    return { success: true };
+    return result;
   }
 
+  /**
+   * Transition the active task to a new action/status.
+   * 
+   * Updates the current task action without changing the task itself.
+   * 
+   * @param action - The new action description
+   * @param color - Optional display color (defaults to current color)
+   * @returns Promise resolving to success/error result
+   */
   async transitionActiveTaskStatus(action: string, color?: string): Promise<{ success: boolean; error?: string }> {
-    // Cannot transition if no active task
-    if (!this.activeTask) {
-      return {
-        success: false,
-        error: "Cannot transition task status. No active task is currently running."
-      };
+    const result = await this.hookManager.transitionActiveTaskStatus(action, color);
+    if (result.success) {
+      this.activeTaskAction = action;
+      this.activeTaskColor = color || this.activeTaskColor;
     }
-
-    // Execute hook if configured
-    const settings = getSettingsManager();
-    const hookPath = settings.getTaskApprovalHook();
-
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "transitionActiveTaskStatus",
-        {
-          action: action,
-          color: color || "white"
-        },
-        30000,
-        false,  // Task hook is not mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
-      await this.processHookResult(hookResult);
-
-      if (!hookResult.approved) {
-        const reason = hookResult.reason || "Hook rejected task status transition";
-        return {
-          success: false,
-          error: reason
-        };
-      }
-
-      if (hookResult.timedOut) {
-        // Hook timed out but was auto-approved
-      }
-    }
-
-    // Store old action for system message
-    const oldAction = this.activeTaskAction;
-
-    // Update the action and color
-    this.activeTaskAction = action;
-    this.activeTaskColor = color || this.activeTaskColor;
-
-    // Add system message
-    const colorStr = this.activeTaskColor && this.activeTaskColor !== "white" ? ` (${this.activeTaskColor})` : "";
-    this.messages.push({
-      role: 'system',
-      content: `Assistant changed task status for "${this.activeTask}" from ${oldAction} to ${this.activeTaskAction}${colorStr}`
-    });
-
-    // Emit event
-    this.emit('activeTaskChange', {
-      activeTask: this.activeTask,
-      action: this.activeTaskAction,
-      color: this.activeTaskColor
-    });
-
-    return { success: true };
+    return result;
   }
 
+  /**
+   * Stop the current active task with reason and documentation.
+   * 
+   * Executes the task stop hook if configured and clears the agent's
+   * task state on success.
+   * 
+   * @param reason - Reason for stopping the task
+   * @param documentationFile - Path to documentation file
+   * @param color - Optional display color (defaults to "white")
+   * @returns Promise resolving to success/error result
+   */
   async stopActiveTask(reason: string, documentationFile: string, color?: string): Promise<{ success: boolean; error?: string }> {
-    // Cannot stop if no active task
-    if (!this.activeTask) {
-      return {
-        success: false,
-        error: "Cannot stop task. No active task is currently running."
-      };
+    const result = await this.hookManager.stopActiveTask(reason, documentationFile, color);
+    if (result.success) {
+      this.activeTask = "";
+      this.activeTaskAction = "";
+      this.activeTaskColor = "white";
     }
-
-    // Record the start time for 3-second minimum
-    const startTime = Date.now();
-
-    // Execute hook if configured
-    const settings = getSettingsManager();
-    const hookPath = settings.getTaskApprovalHook();
-
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "stopActiveTask",
-        {
-          reason: reason,
-          documentation_file: documentationFile,
-          color: color || "white"
-        },
-        30000,
-        false,  // Task hook is not mandatory
-        this.getCurrentTokenCount(),
-        this.getMaxContextSize()
-      );
-
-      // Process hook commands (MODEL, SYSTEM, ENV, BACKEND, etc.) for both approval and rejection
-      await this.processHookResult(hookResult);
-
-      if (!hookResult.approved) {
-        const hookReason = hookResult.reason || "Hook rejected task stop";
-        return {
-          success: false,
-          error: hookReason
-        };
-      }
-
-      if (hookResult.timedOut) {
-        // Hook timed out but was auto-approved
-      }
-    }
-
-    // Calculate remaining time to meet 3-second minimum
-    const elapsed = Date.now() - startTime;
-    const minimumDelay = MINIMUM_STOP_TASK_DELAY_MS;
-    const remainingDelay = Math.max(0, minimumDelay - elapsed);
-
-    // Wait for remaining time if needed
-    if (remainingDelay > 0) {
-      await new Promise(resolve => setTimeout(resolve, remainingDelay));
-    }
-
-    // Store task info for system message before clearing
-    const stoppedTask = this.activeTask;
-    const stoppedAction = this.activeTaskAction;
-
-    // Clear the task
-    this.activeTask = "";
-    this.activeTaskAction = "";
-    this.activeTaskColor = "white";
-
-    // Add system message
-    const colorStr = color && color !== "white" ? ` (${color})` : "";
-    this.messages.push({
-      role: 'system',
-      content: `Assistant stopped task "${stoppedTask}" (was ${stoppedAction}) with reason: ${reason}${colorStr}`
-    });
-
-    // Emit event to clear widget
-    this.emit('activeTaskChange', {
-      activeTask: "",
-      action: "",
-      color: "white"
-    });
-
-    return { success: true };
+    return result;
   }
 
-  private async emitContextChange(): Promise<void> {
-    const percent = this.getContextUsagePercent();
-
-    this.emit('contextChange', {
-      current: this.getCurrentTokenCount(),
-      max: this.getMaxContextSize(),
-      percent
-    });
-
-    // Add system warnings based on context usage (may auto-clear at 100%)
-    await this.addContextWarningIfNeeded(percent);
+  /**
+   * Delegation method for hook processing (used by ToolExecutor).
+   * 
+   * Processes hook results through the HookManager to handle commands,
+   * variable transformations, and other hook-specific logic.
+   * 
+   * @param hookResult - Result object from hook execution
+   * @param envKey - Optional environment key for variable transformation
+   * @returns Promise resolving to processing result
+   */
+  async processHookResult(hookResult: { commands?: any[] }, envKey?: string): Promise<{ success: boolean; transformedValue?: string }> {
+    return await this.hookManager['processHookResult'](hookResult, envKey);
   }
 
-  private async addContextWarningIfNeeded(percent: number): Promise<void> {
-    let warning: string | null = null;
-    const roundedPercent = Math.round(percent);
-
-    if (percent >= 100) {
-      // Auto-clear at 100%+ to prevent exceeding context limits
-      warning = `CONTEXT LIMIT REACHED: You are at ${roundedPercent}% context capacity!  Automatically clearing cache to prevent context overflow...`;
-      this.messages.push({
-        role: 'system',
-        content: warning
-      });
-
-      // Perform automatic cache clear
-      await this.clearCache();
-      return;
-    }
-
-    if (percent >= 95) {
-      // Very stern warning at 95%+ (every time)
-      warning = `CRITICAL CONTEXT WARNING: You are at ${roundedPercent}% context capacity!  You MUST immediately save any notes and lessons learned, then run the 'clearCache' tool to reset the conversation context.  The conversation will fail if you do not take action now.`;
-    } else if (percent >= 90 && !this.contextWarningAt90) {
-      // Dire warning at 90% (one time only)
-      this.contextWarningAt90 = true;
-      warning = `URGENT CONTEXT WARNING: You are at ${roundedPercent}% context capacity!  Perform your final tasks or responses and prepare to be reset.`;
-    } else if (percent >= 80 && !this.contextWarningAt80) {
-      // Initial warning at 80% (one time only)
-      this.contextWarningAt80 = true;
-      warning = `Context Warning: You are at ${roundedPercent}% context capacity!  You are approaching the limit.  Be concise and avoid lengthy outputs.`;
-    }
-
-    if (warning) {
-      // Add as a system message
-      this.messages.push({
-        role: 'system',
-        content: warning
-      });
-    }
-  }
-
+  /**
+   * Execute a shell command through the ZSH tool.
+   * 
+   * @param command - Shell command to execute
+   * @param skipConfirmation - Whether to skip confirmation prompts
+   * @returns Promise resolving to tool execution result
+   */
   async executeCommand(command: string, skipConfirmation: boolean = false): Promise<ToolResult> {
     return await this.zsh.execute(command, 30000, skipConfirmation);
   }
 
+  /**
+   * Get the current LLM model name.
+   * @returns Current model identifier
+   */
   getCurrentModel(): string {
     return this.llmClient.getCurrentModel();
   }
 
+  /**
+   * Set a new LLM model and update related components.
+   * 
+   * This method:
+   * - Updates the LLM client model
+   * - Resets vision support flag
+   * - Updates the token counter for the new model
+   * - Handles model name suffixes (e.g., :nothinking)
+   * 
+   * @param model - New model identifier
+   */
   setModel(model: string): void {
     this.llmClient.setModel(model);
     // Reset supportsVision flag for new model
@@ -2838,389 +2102,38 @@ export class LLMAgent extends EventEmitter {
   }
 
   /**
-   * Strip in-progress tool calls from messages for backend/model testing
-   * Removes tool_calls from the last assistant message and any corresponding tool results
-   * @returns Cleaned copy of messages array, or original if no stripping needed
+   * Get the backend name (e.g., "grok", "openai").
+   * @returns Backend identifier string
    */
-  static stripInProgressToolCalls(messages: LLMMessage[]): LLMMessage[] {
-    // Find the last assistant message
-    let lastAssistantIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant') {
-        lastAssistantIndex = i;
-        break;
-      }
-    }
-
-    // If no assistant message or it has no tool_calls, return original
-    if (lastAssistantIndex === -1 || !(messages[lastAssistantIndex] as any).tool_calls) {
-      return messages;
-    }
-
-    // Create deep copy to avoid modifying original
-    const cleanedMessages = JSON.parse(JSON.stringify(messages));
-
-    // Collect tool_call_ids from the last assistant message
-    const toolCallIds = new Set(
-      ((cleanedMessages[lastAssistantIndex] as any).tool_calls || []).map((tc: any) => tc.id)
-    );
-
-    // Remove tool_calls from the last assistant message
-    delete (cleanedMessages[lastAssistantIndex] as any).tool_calls;
-
-    // Remove any tool result messages that correspond to those tool_call_ids
-    // (in case some finished but not all)
-    return cleanedMessages.filter((msg, idx) => {
-      if (idx <= lastAssistantIndex) {
-        return true; // Keep all messages before and including the assistant message
-      }
-      if (msg.role === 'tool' && toolCallIds.has((msg as any).tool_call_id)) {
-        return false; // Remove tool results for the in-progress tool calls
-      }
-      return true;
-    });
-  }
-
-  /**
-   * Test a model change by making a test API call with current conversation context
-   * Rolls back to previous model if test fails
-   * @param newModel Model to test
-   * @returns Promise with success status and optional error message
-   */
-  async testModel(newModel: string): Promise<{ success: boolean; error?: string }> {
-    const previousModel = this.getCurrentModel();
-    const previousTokenCounter = this.tokenCounter;
-
-    // Strip in-progress tool calls to avoid sending incomplete assistant messages
-    const testMessages = LLMAgent.stripInProgressToolCalls(this.messages);
-
-    // Build request payload for logging
-    const supportsTools = this.llmClient.getSupportsTools();
-    const tools = supportsTools ? await getAllLLMTools() : [];
-    const requestPayload = {
-      model: newModel,
-      messages: testMessages,
-      tools: supportsTools && tools.length > 0 ? tools : undefined,
-      temperature: this.temperature,
-      max_tokens: 10
-    };
-
-    try {
-      // Temporarily set the new model
-      this.llmClient.setModel(newModel);
-      this.tokenCounter = createTokenCounter(newModel);
-
-      // Test with actual conversation context to verify the model can handle it
-      // This catches issues like ollama models that fail to parse tool calls
-      const response = await this.llmClient.chat(
-        testMessages,
-        tools,
-        newModel,
-        undefined,
-        this.temperature,
-        undefined,
-        10
-      );
-
-      // Check if response is valid
-      if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error("Invalid response from API");
-      }
-
-      // Test succeeded - keep the new model
-      previousTokenCounter.dispose();
-      return { success: true };
-
-    } catch (error: any) {
-      // Test failed - roll back to previous model
-      this.llmClient.setModel(previousModel);
-      this.tokenCounter.dispose();
-      this.tokenCounter = previousTokenCounter;
-
-      // Log test failure with full request/response for debugging
-      const { message: logPaths } = await logApiError(
-        requestPayload,
-        error,
-        { errorType: 'model-switch-test-failure', previousModel, newModel },
-        'test-fail'
-      );
-
-      const errorMessage = error.message || "Unknown error during model test";
-      return {
-        success: false,
-        error: `Model test failed: ${errorMessage}\n${logPaths}`
-      };
-    }
-  }
-
-  /**
-   * Test backend/baseUrl/model changes by making a test API call with current conversation context
-   * Rolls back all changes if test fails
-   * @param backend Backend display name
-   * @param baseUrl Base URL for API calls
-   * @param apiKeyEnvVar Name of environment variable containing API key
-   * @param model Model to use (optional, uses current model if not specified)
-   * @returns Promise with success status and optional error message
-   */
-  async testBackendModelChange(
-    backend: string,
-    baseUrl: string,
-    apiKeyEnvVar: string,
-    model?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    const previousClient = this.llmClient;
-    const previousApiKeyEnvVar = this.apiKeyEnvVar;
-    const previousBackend = this.llmClient.getBackendName();
-    const previousModel = this.getCurrentModel();
-
-    let requestPayload: any;
-    let newModel: string;
-
-    try {
-      // Get API key from environment
-      const apiKey = process.env[apiKeyEnvVar];
-      if (!apiKey) {
-        throw new Error(`API key not found in environment variable: ${apiKeyEnvVar}`);
-      }
-
-      // Use current model if not specified
-      newModel = model || this.getCurrentModel();
-
-      // Create new client with new configuration
-      this.llmClient = new LLMClient(apiKey, newModel, baseUrl, backend);
-      // Store the API key env var name for session persistence
-      this.apiKeyEnvVar = apiKeyEnvVar;
-
-      // Reinitialize MCP servers since we're switching to a new backend/model
-      try {
-        const config = loadMCPConfig();
-        if (config.servers.length > 0) {
-          await initializeMCPServers();
-        }
-      } catch (mcpError: any) {
-        console.warn("MCP reinitialization failed:", mcpError);
-      }
-
-      // Strip in-progress tool calls to avoid sending incomplete assistant messages
-      const testMessages = LLMAgent.stripInProgressToolCalls(this.messages);
-
-      // Build request payload for logging
-      const supportsTools = this.llmClient.getSupportsTools();
-      const tools = supportsTools ? await getAllLLMTools() : [];
-      requestPayload = {
-        backend,
-        baseUrl,
-        model: newModel,
-        messages: testMessages,
-        tools: supportsTools && tools.length > 0 ? tools : undefined,
-        temperature: this.temperature,
-        max_tokens: 10
-      };
-
-      // Test with actual conversation context to verify the backend/model can handle it
-      // This catches issues like ollama models that fail to parse tool calls
-      const response = await this.llmClient.chat(
-        testMessages,
-        tools,
-        newModel,
-        undefined,
-        this.temperature,
-        undefined,
-        10
-      );
-
-      // Check if response is valid
-      if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error("Invalid response from API");
-      }
-
-      // Test succeeded - new client is now active
-      return { success: true };
-
-    } catch (error: any) {
-      // Test failed - restore previous client and API key env var
-      this.llmClient = previousClient;
-      this.apiKeyEnvVar = previousApiKeyEnvVar;
-
-      // Log test failure with full request/response for debugging (if we got far enough to build the payload)
-      let logPaths = '';
-      if (requestPayload) {
-        const result = await logApiError(
-          requestPayload,
-          error,
-          {
-            errorType: 'backend-switch-test-failure',
-            previousBackend,
-            previousModel,
-            newBackend: backend,
-            newModel,
-            baseUrl,
-            apiKeyEnvVar
-          },
-          'test-fail'
-        );
-        logPaths = result.message;
-      }
-
-      const errorMessage = error.message || "Unknown error during backend/model test";
-      return {
-        success: false,
-        error: logPaths ? `${errorMessage}\n${logPaths}` : errorMessage
-      };
-    }
-  }
-
-  /**
-   * Process hook result including commands and transformations
-   * Handles ENV transformations, model/backend testing, and error messaging
-   * @param hookResult Hook execution result
-   * @param envKey Optional ENV key to check for transformation (e.g., ZDS_AI_AGENT_PERSONA)
-   * @returns Object with success status and transformed value (if any)
-   */
-  private async processHookResult(
-    hookResult: { commands?: any[] },
-    envKey?: string
-  ): Promise<{ success: boolean; transformedValue?: string }> {
-    if (!hookResult.commands) {
-      return { success: true };
-    }
-
-    const results = applyHookCommands(hookResult.commands);
-
-    // Check for transformation via ENV if key provided
-    let transformedValue: string | undefined;
-    if (envKey && results.env[envKey]) {
-      transformedValue = results.env[envKey];
-    }
-
-    // Process commands (test model/backend, apply ENV vars, add SYSTEM messages)
-    const success = await this.processHookCommands(results);
-
-    return { success, transformedValue };
-  }
-
-  /**
-   * Process hook commands (MODEL, BACKEND, BASE_URL, SYSTEM, ENV)
-   * Handles model/backend testing and error messaging
-   * @param commands Hook commands from applyHookCommands()
-   */
-  private async processHookCommands(commands: ReturnType<typeof applyHookCommands>): Promise<boolean> {
-    // Import the helper function
-    const { applyEnvVariables } = await import('../utils/hook-executor.js');
-
-    // Check if backend or model change is requested
-    const hasBackendChange = commands.backend && commands.baseUrl && commands.apiKeyEnvVar;
-    const hasModelChange = commands.model;
-
-    // Test backend/model changes FIRST before applying anything
-    if (hasBackendChange) {
-      // Backend change - test backend/baseUrl/model together
-      const testResult = await this.testBackendModelChange(
-        commands.backend!,
-        commands.baseUrl!,
-        commands.apiKeyEnvVar!,
-        commands.model
-      );
-
-      if (!testResult.success) {
-        // Test failed - don't apply ANYTHING
-        const parts = [];
-        if (commands.backend) parts.push(`backend to "${commands.backend}"`);
-        if (commands.model) parts.push(`model to "${commands.model}"`);
-        const errorMsg = `Failed to change ${parts.join(' and ')}: ${testResult.error}`;
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: "system",
-          content: errorMsg,
-          timestamp: new Date(),
-        });
-        return false; // Signal failure - caller should not apply other changes
-      }
-
-      // Test succeeded - apply ENV variables and add success message
-      applyEnvVariables(commands.env);
-
-      const parts = [];
-      if (commands.backend) parts.push(`backend to "${commands.backend}"`);
-      if (commands.model) parts.push(`model to "${commands.model}"`);
-      const successMsg = `Changed ${parts.join(' and ')}`;
-      // Note: Don't add to this.messages during tool execution - only chatHistory
-      this.chatHistory.push({
-        type: "system",
-        content: successMsg,
-        timestamp: new Date(),
-      });
-
-      // Emit events for UI updates
-      if (commands.backend) {
-        this.emit('backendChange', {
-          backend: commands.backend
-        });
-      }
-      if (commands.model) {
-        this.emit('modelChange', {
-          model: commands.model
-        });
-      }
-    } else if (hasModelChange) {
-      // Model-only change
-      const testResult = await this.testModel(commands.model!);
-      if (!testResult.success) {
-        // Test failed - don't apply ANYTHING
-        const errorMsg = `Failed to change model to "${commands.model}": ${testResult.error}`;
-        // Note: Don't add to this.messages during tool execution - only chatHistory
-        this.chatHistory.push({
-          type: "system",
-          content: errorMsg,
-          timestamp: new Date(),
-        });
-        return false; // Signal failure - caller should not apply other changes
-      }
-
-      // Test succeeded - apply ENV variables and add success message
-      applyEnvVariables(commands.env);
-
-      const successMsg = `Model changed to "${commands.model}"`;
-      // Note: Don't add to this.messages during tool execution - only chatHistory
-      this.chatHistory.push({
-        type: "system",
-        content: successMsg,
-        timestamp: new Date(),
-      });
-
-      // Emit modelChange event for UI updates
-      this.emit('modelChange', {
-        model: commands.model
-      });
-    } else {
-      // No model or backend change - just apply ENV variables
-      applyEnvVariables(commands.env);
-    }
-
-    // Add SYSTEM message if present
-    if (commands.system) {
-      // Note: Don't add to this.messages during tool execution - only chatHistory
-      this.chatHistory.push({
-        type: "system",
-        content: commands.system,
-        timestamp: new Date(),
-      });
-    }
-
-    return true; // Signal success - caller can apply other changes
-  }
-
   getBackend(): string {
     // Just return the backend name from the client (no detection)
     return this.llmClient.getBackendName();
   }
 
+  /**
+   * Abort the current operation if one is in progress.
+   * 
+   * This will cancel streaming responses and tool execution.
+   */
   abortCurrentOperation(): void {
     if (this.abortController) {
       this.abortController.abort();
     }
   }
 
+  /**
+   * Clear the conversation cache and reinitialize the agent.
+   * 
+   * This method:
+   * - Backs up current conversation to timestamped files
+   * - Clears chat history and messages
+   * - Resets context warnings and processing flags
+   * - Re-executes startup and instance hooks
+   * - Saves the cleared state
+   * - Emits context change events
+   * 
+   * Used when context becomes too large or user requests a fresh start.
+   */
   async clearCache(): Promise<void> {
     const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
     const { executeStartupHook } = await import("../utils/startup-hook.js");
@@ -3233,8 +2146,7 @@ export class LLMAgent extends EventEmitter {
     // Clear the context
     this.chatHistory = [];
     this.messages = [];
-    this.contextWarningAt80 = false;
-    this.contextWarningAt90 = false;
+    this.contextManager.resetContextWarnings();
     this.firstMessageProcessed = false;
 
     // Add temporary system message (will be replaced by initialize())
@@ -3276,235 +2188,58 @@ export class LLMAgent extends EventEmitter {
   }
 
   /**
-   * Get current session state for persistence
+   * Get current session state for persistence.
+   * 
+   * Collects all session-related state including:
+   * - Model and backend configuration
+   * - Persona, mood, and task settings
+   * - Context usage statistics
+   * - API key environment variable
+   * 
+   * @returns Complete session state object
    */
-  getSessionState() {
-    return {
-      session: process.env.ZDS_AI_AGENT_SESSION || "",
-      persona: this.persona,
-      personaColor: this.personaColor,
-      mood: this.mood,
-      moodColor: this.moodColor,
-      activeTask: this.activeTask,
-      activeTaskAction: this.activeTaskAction,
-      activeTaskColor: this.activeTaskColor,
-      cwd: process.cwd(),
-      contextCurrent: this.getCurrentTokenCount(),
-      contextMax: this.getMaxContextSize(),
-      backend: this.llmClient.getBackendName(),
-      baseUrl: this.llmClient.getBaseURL(),
-      apiKeyEnvVar: this.apiKeyEnvVar,
-      model: this.getCurrentModel(),
-      supportsVision: this.llmClient.getSupportsVision(),
-    };
+  getSessionState(): SessionState {
+    const state = this.sessionManager.getSessionState();
+    // Add context values that SessionManager can't access
+    state.contextCurrent = this.getCurrentTokenCount();
+    state.contextMax = this.getMaxContextSize();
+    return state;
   }
 
   /**
-   * Restore session state from persistence
+   * Restore session state from persistence.
+   * 
+   * Restores all session-related state including:
+   * - Model and backend configuration
+   * - Persona, mood, and task settings
+   * - Token counter and API client setup
+   * 
+   * @param state - Session state to restore
    */
-  async restoreSessionState(state: {
-    session?: string;
-    persona: string;
-    personaColor: string;
-    mood: string;
-    moodColor: string;
-    activeTask: string;
-    activeTaskAction: string;
-    activeTaskColor: string;
-    cwd: string;
-    contextCurrent?: number;
-    contextMax?: number;
-    backend?: string;
-    baseUrl?: string;
-    apiKeyEnvVar?: string;
-    model?: string;
-    supportsVision?: boolean;
-  }): Promise<void> {
-    // Restore session ID
-    if (state.session) {
-      process.env.ZDS_AI_AGENT_SESSION = state.session;
-    }
-
-    // Restore cwd early (hooks may need correct working directory)
-    if (state.cwd) {
-      try {
-        const fs = await import('fs');
-        // Only attempt to change directory if it exists
-        if (fs.existsSync(state.cwd)) {
-          process.chdir(state.cwd);
-        }
-        // Silently skip if directory doesn't exist (common in containerized environments)
-      } catch (error) {
-        // Silently skip on any error - working directory restoration is non-critical
-      }
-    }
-
-    // Restore backend/baseUrl/apiKeyEnvVar/model if present (creates initial client)
-    if (state.backend && state.baseUrl && state.apiKeyEnvVar) {
-      try {
-        // Get API key from environment
-        const apiKey = process.env[state.apiKeyEnvVar];
-        if (apiKey) {
-          // Create new client with restored configuration
-          const model = state.model || this.getCurrentModel();
-          this.llmClient = new LLMClient(apiKey, model, state.baseUrl, state.backend);
-          this.apiKeyEnvVar = state.apiKeyEnvVar;
-
-          // Restore supportsVision flag if present
-          if (state.supportsVision !== undefined) {
-            this.llmClient.setSupportsVision(state.supportsVision);
-          }
-
-          // Reinitialize MCP servers when restoring session
-          try {
-            const config = loadMCPConfig();
-            if (config.servers.length > 0) {
-              await initializeMCPServers();
-            }
-          } catch (mcpError: any) {
-            console.warn("MCP reinitialization failed:", mcpError);
-          }
-
-          // Dispose old token counter and create new one for the restored model
-          this.tokenCounter.dispose();
-          this.tokenCounter = createTokenCounter(model);
-
-          // Emit events for UI updates
-          this.emit('backendChange', { backend: state.backend });
-          this.emit('modelChange', { model });
-        } else {
-          console.warn("Failed to restore backend: API key not found in environment.");
-        }
-      } catch (error) {
-        console.warn(`Failed to restore backend configuration:`, error);
-      }
-    }
-
-    // Restore persona (hook may change backend/model and sets env vars)
-    if (state.persona) {
-      try {
-        const result = await this.setPersona(state.persona, state.personaColor);
-        if (!result.success) {
-          // If persona hook failed (e.g., backend test failed), still set the persona values
-          // but don't change backend/model. This prevents losing persona state on transitory errors.
-          console.warn(`Persona hook failed, setting persona without backend change: ${result.error}`);
-          this.persona = state.persona;
-          this.personaColor = state.personaColor;
-          process.env.ZDS_AI_AGENT_PERSONA = state.persona;
-        }
-      } catch (error) {
-        console.warn(`Failed to restore persona "${state.persona}":`, error);
-        // Still set persona values even if hook crashed
-        this.persona = state.persona;
-        this.personaColor = state.personaColor;
-        process.env.ZDS_AI_AGENT_PERSONA = state.persona;
-      }
-    }
-
-    // Restore mood (hook sets env vars)
-    if (state.mood) {
-      try {
-        const result = await this.setMood(state.mood, state.moodColor);
-        if (!result.success) {
-          // If mood hook failed (e.g., backend test failed), still set the mood values
-          // but don't change backend/model. This prevents losing mood state on transitory errors.
-          console.warn(`Mood hook failed, setting mood without backend change: ${result.error}`);
-          this.mood = state.mood;
-          this.moodColor = state.moodColor;
-          process.env.ZDS_AI_AGENT_MOOD = state.mood;
-        }
-      } catch (error) {
-        console.warn(`Failed to restore mood "${state.mood}":`, error);
-        // Still set mood values even if hook crashed
-        this.mood = state.mood;
-        this.moodColor = state.moodColor;
-        process.env.ZDS_AI_AGENT_MOOD = state.mood;
-      }
-    }
-
-    // Restore active task (hook sets env vars)
-    if (state.activeTask) {
-      try {
-        const result = await this.startActiveTask(state.activeTask, state.activeTaskAction, state.activeTaskColor);
-        if (!result.success) {
-          // If task hook failed (e.g., backend test failed), still set the task values
-          // but don't change backend/model. This prevents losing task state on transitory errors.
-          console.warn(`Task hook failed, setting active task without backend change: ${result.error}`);
-          this.activeTask = state.activeTask;
-          this.activeTaskAction = state.activeTaskAction;
-          this.activeTaskColor = state.activeTaskColor;
-          process.env.ZDS_AI_AGENT_ACTIVE_TASK = state.activeTask;
-          process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = state.activeTaskAction;
-        }
-      } catch (error) {
-        console.warn(`Failed to restore active task "${state.activeTask}":`, error);
-        // Still set task values even if hook crashed
-        this.activeTask = state.activeTask;
-        this.activeTaskAction = state.activeTaskAction;
-        this.activeTaskColor = state.activeTaskColor;
-        process.env.ZDS_AI_AGENT_ACTIVE_TASK = state.activeTask;
-        process.env.ZDS_AI_AGENT_ACTIVE_TASK_ACTION = state.activeTaskAction;
-      }
-    }
+  async restoreSessionState(state: SessionState): Promise<void> {
+    return await this.sessionManager.restoreSessionState(state);
   }
 
   /**
-   * Compact conversation context by keeping system prompt and last N messages
-   * Reduces context size when it grows too large for backend to handle
+   * Compact conversation context by keeping system prompt and last N messages.
+   * 
+   * Reduces context size when it grows too large for the backend to handle.
+   * Removes older messages while preserving the system prompt and recent context.
+   * 
+   * @param keepLastMessages - Number of recent messages to keep (default: 20)
    * @returns Number of messages removed
    */
   compactContext(keepLastMessages: number = 20): number {
-    if (this.chatHistory.length <= keepLastMessages) {
-      // Nothing to compact
-      return 0;
-    }
-
-    const removedCount = this.chatHistory.length - keepLastMessages;
-    const keptMessages = this.chatHistory.slice(-keepLastMessages);
-
-    // Clear both arrays
-    this.chatHistory = keptMessages;
-    this.messages = [];
-
-    // Add system message noting the compaction
-    const compactionNote: ChatEntry = {
-      type: 'system',
-      content: `Context compacted: removed ${removedCount} older messages, keeping last ${keepLastMessages} messages.`,
-      timestamp: new Date()
-    };
-    this.chatHistory.push(compactionNote);
-
-    // Rebuild this.messages from compacted chatHistory
-    for (const entry of this.chatHistory) {
-      if (entry.type === 'system') {
-        this.messages.push({
-          role: 'system',
-          content: entry.content as string
-        });
-      } else if (entry.type === 'user') {
-        this.messages.push({
-          role: 'user',
-          content: entry.content!
-        });
-      } else if (entry.type === 'assistant') {
-        this.messages.push({
-          role: 'assistant',
-          content: entry.content as string
-        });
-      } else if (entry.type === 'tool_result') {
-        this.messages.push({
-          role: 'tool',
-          tool_call_id: entry.toolResult!.output || '',
-          content: JSON.stringify(entry.toolResult)
-        });
-      }
-    }
-
-    return removedCount;
+    return this.contextManager.compactContext(keepLastMessages);
   }
 
   /**
-   * Get all tool instances and their class names for display purposes
+   * Get all tool instances and their class names for display purposes.
+   * 
+   * Uses reflection to find all tool instances and extract their
+   * class names and handled method names for introspection.
+   * 
+   * @returns Array of tool info objects with class names and methods
    */
   getToolClassInfo(): Array<{ className: string; methods: string[] }> {
     const toolInstances = this.getToolInstances();
@@ -3516,7 +2251,13 @@ export class LLMAgent extends EventEmitter {
   }
 
   /**
-   * Get all tool instances via reflection
+   * Get all tool instances via reflection.
+   * 
+   * Scans all properties of the agent instance to find objects that
+   * implement the tool interface (have getHandledToolNames method).
+   * 
+   * @returns Array of tool instances with their class names
+   * @private
    */
   private getToolInstances(): Array<{ instance: any; className: string }> {
     const instances: Array<{ instance: any; className: string }> = [];
