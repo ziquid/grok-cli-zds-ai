@@ -2,30 +2,56 @@ import type { ChatCompletionContentPart } from "openai/resources/chat/completion
 import { LLMToolCall } from "../grok/client.js";
 import { parseImagesFromMessage, hasImageReferences } from "../utils/image-encoder.js";
 import { Variable } from "./prompt-variables.js";
-import { getSettingsManager } from "../utils/settings-manager.js";
-import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.js";
 import { ChatEntry } from "./llm-agent.js";
 
+/**
+ * State information for message rephrasing operations
+ */
 export interface RephraseState {
+  /** Index of the original assistant message being rephrased */
   originalAssistantMessageIndex: number;
+  /** Index of the rephrase request message */
   rephraseRequestIndex: number;
+  /** Index where the new response will be inserted */
   newResponseIndex: number;
+  /** Type of message being sent for the rephrase */
   messageType: "user" | "system";
+  /** Optional prefill text to start the rephrased response */
   prefillText?: string;
 }
 
+/**
+ * Dependencies required by MessageProcessor
+ */
 export interface MessageProcessorDependencies {
+  /** Chat history array */
   chatHistory: ChatEntry[];
+  /** Function to get current token count */
   getCurrentTokenCount(): number;
+  /** Function to get maximum context size */
   getMaxContextSize(): number;
+  /** Function to set rephrase state */
   setRephraseState(originalAssistantMessageIndex: number, rephraseRequestIndex: number, newResponseIndex: number, messageType: "user" | "system", prefillText?: string): void;
 }
 
+/**
+ * Handles message processing, parsing, and transformation for the LLM agent
+ */
 export class MessageProcessor {
+  /** Stores prefill text from hooks */
   private hookPrefillText: string | null = null;
 
+  /**
+   * Creates a new MessageProcessor instance
+   * @param deps - Dependencies required for message processing
+   */
   constructor(private deps: MessageProcessorDependencies) {}
 
+  /**
+   * Processes rephrase commands and sets up rephrase state
+   * @param message - The input message to check for rephrase commands
+   * @returns Object containing rephrase information and processed message
+   */
   async setupRephraseCommand(message: string): Promise<{isRephraseCommand: boolean, messageType: "user"|"system", messageToSend: string, prefillText?: string}> {
     let isRephraseCommand = false;
     let isSystemRephrase = false;
@@ -71,6 +97,11 @@ export class MessageProcessor {
     return {isRephraseCommand, messageType, messageToSend, prefillText};
   }
 
+  /**
+   * Parses message content and assembles it with variables
+   * @param messageToSend - The message to parse and assemble
+   * @returns Object containing parsed content and assembled message
+   */
   async parseAndAssembleMessage(messageToSend: string): Promise<{parsed: any, assembledMessage: string}> {
     const parsed = hasImageReferences(messageToSend)
       ? parseImagesFromMessage(messageToSend)
@@ -78,35 +109,19 @@ export class MessageProcessor {
 
     Variable.set("USER:PROMPT", parsed.text);
 
-    const hookPath = getSettingsManager().getPreLLMResponseHook();
-    if (hookPath) {
-      const hookResult = await executeOperationHook(
-        hookPath,
-        "preLLMResponse",
-        { USER_MESSAGE: parsed.text },
-        30000,
-        false,
-        this.deps.getCurrentTokenCount(),
-        this.deps.getMaxContextSize()
-      );
-
-      if (hookResult.approved && hookResult.commands) {
-        const results = applyHookCommands(hookResult.commands);
-
-        for (const [varName, value] of results.promptVars.entries()) {
-          Variable.set(varName, value);
-        }
-
-        if (results.prefill) {
-          this.hookPrefillText = results.prefill;
-        }
-      }
-    }
-
     const assembledMessage = Variable.renderFull("USER");
     return {parsed, assembledMessage};
   }
 
+  /**
+   * Prepares message content for LLM consumption, handling images and content types
+   * @param messageType - Type of message ("user" or "system")
+   * @param assembledMessage - The assembled message text
+   * @param parsed - Parsed message content including images
+   * @param messageToSend - Original message to send
+   * @param supportsVision - Whether the LLM supports vision/images
+   * @returns Object containing user entry and formatted message content
+   */
   prepareMessageContent(messageType: "user"|"system", assembledMessage: string, parsed: any, messageToSend: string, supportsVision: boolean): {userEntry: ChatEntry, messageContent: any} {
     let messageContent: string | ChatCompletionContentPart[] = assembledMessage;
 
@@ -132,6 +147,8 @@ export class MessageProcessor {
   /**
    * Parse XML-formatted tool calls from message content (x.ai format)
    * Converts <xai:function_call> elements to standard LLMToolCall format
+   * @param message - Message object that may contain XML tool calls
+   * @returns Modified message with parsed tool calls
    */
   parseXMLToolCalls(message: any): any {
     if (!message.content || typeof message.content !== 'string') {
@@ -190,6 +207,12 @@ export class MessageProcessor {
     };
   }
 
+  /**
+   * Reduces streaming message chunks into a complete message object
+   * @param previous - Previously accumulated message data
+   * @param item - Current streaming chunk to process
+   * @returns Updated accumulated message object
+   */
   messageReducer(previous: any, item: any): any {
     const reduce = (acc: any, delta: any) => {
       // Ensure acc is always an object before spreading (handles null/undefined)
@@ -232,14 +255,25 @@ export class MessageProcessor {
     return reduce(previous, item.choices?.[0]?.delta || {});
   }
 
+  /**
+   * Gets the current hook prefill text
+   * @returns The prefill text or null if none is set
+   */
   getHookPrefillText(): string | null {
     return this.hookPrefillText;
   }
 
+  /**
+   * Clears the hook prefill text
+   */
   clearHookPrefillText(): void {
     this.hookPrefillText = null;
   }
 
+  /**
+   * Sets the hook prefill text
+   * @param text - The prefill text to set
+   */
   setHookPrefillText(text: string): void {
     this.hookPrefillText = text;
   }

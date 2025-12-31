@@ -142,27 +142,27 @@ export interface StreamingChunk {
 
 /**
  * Main LLM Agent class that orchestrates AI conversations with tool execution capabilities.
- * 
+ *
  * ## Architecture Overview
- * 
+ *
  * The LLMAgent serves as the central coordinator for AI-powered conversations, managing:
  * - **Conversation Flow**: Handles user messages, AI responses, and multi-turn conversations
  * - **Tool Execution**: Coordinates with various tools (file editing, shell commands, web search, etc.)
  * - **Context Management**: Tracks conversation history and manages token limits
  * - **Session State**: Maintains persona, mood, active tasks, and other session data
  * - **Streaming Support**: Provides real-time response streaming for better UX
- * 
+ *
  * ## Delegation Architecture
- * 
+ *
  * The agent delegates specialized functionality to focused manager classes:
  * - **ToolExecutor**: Handles all tool execution, validation, and approval workflows
  * - **HookManager**: Manages persona/mood/task hooks and backend testing
  * - **SessionManager**: Handles session persistence and state restoration
  * - **MessageProcessor**: Processes user input, handles rephrasing, and XML parsing
  * - **ContextManager**: Manages context warnings, compaction, and token tracking
- * 
+ *
  * ## Key Features
- * 
+ *
  * - **Multi-Model Support**: Works with various LLM backends (Grok, OpenAI, etc.)
  * - **Tool Integration**: Seamlessly integrates with 15+ built-in tools
  * - **MCP Support**: Extends capabilities via Model Context Protocol servers
@@ -171,27 +171,27 @@ export interface StreamingChunk {
  * - **Context Awareness**: Intelligent context management and automatic compaction
  * - **Hook System**: Extensible hook system for custom behaviors
  * - **Session Persistence**: Maintains conversation state across restarts
- * 
+ *
  * ## Usage Patterns
- * 
+ *
  * ```typescript
  * // Initialize agent
  * const agent = new LLMAgent(apiKey, baseURL, model);
  * await agent.initialize();
- * 
+ *
  * // Process messages (non-streaming)
  * const entries = await agent.processUserMessage("Hello, world!");
- * 
+ *
  * // Process messages (streaming)
  * for await (const chunk of agent.processUserMessageStream("Write a file")) {
  *   console.log(chunk);
  * }
- * 
+ *
  * // Manage session state
  * await agent.setPersona("helpful assistant");
  * await agent.startActiveTask("coding", "writing tests");
  * ```
- * 
+ *
  * @extends EventEmitter Emits 'contextChange' events for token usage updates
  */
 export class LLMAgent extends EventEmitter {
@@ -247,10 +247,10 @@ export class LLMAgent extends EventEmitter {
   /**
    * Cleans up incomplete tool calls in the message history.
    * Ensures all tool calls have corresponding tool results to prevent API errors.
-   * 
+   *
    * This method scans the last assistant message for tool calls and adds
    * "[Cancelled by user]" results for any tool calls that don't have results.
-   * 
+   *
    * @private
    */
   private async cleanupIncompleteToolCalls(): Promise<void> {
@@ -282,12 +282,12 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Executes the instance hook if it hasn't been run yet.
-   * 
+   *
    * The instance hook runs once per agent session and can:
    * - Set prompt variables
    * - Add system messages
    * - Provide prefill text for responses
-   * 
+   *
    * @private
    */
   private async executeInstanceHookIfNeeded(): Promise<void> {
@@ -330,13 +330,9 @@ export class LLMAgent extends EventEmitter {
     }
   }
 
-
-
-
-
   /**
    * Creates a new LLMAgent instance.
-   * 
+   *
    * @param apiKey - API key for the LLM service
    * @param baseURL - Optional base URL for the API endpoint
    * @param model - Optional model name (defaults to saved model or "grok-code-fast-1")
@@ -486,28 +482,31 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Initialize the agent with dynamic system prompt.
-   * 
+   *
    * This method must be called after construction to:
    * - Build the system message with current tool availability
    * - Set up the initial conversation context
    * - Execute the instance hook if configured
-   * 
+   *
    * @throws {Error} If system message generation fails
    */
   async initialize(): Promise<void> {
     // Build system message
     await this.buildSystemMessage();
+
+    // Run instance hook after initialization is complete
+    await this.executeInstanceHookIfNeeded();
   }
 
   /**
    * Build/rebuild the system message with current tool availability.
-   * 
+   *
    * This method:
    * - Generates a dynamic tool list using the introspect tool
    * - Sets the APP:TOOLS variable for template rendering
    * - Renders the full SYSTEM template with all variables
    * - Updates messages[0] with the new system prompt
-   * 
+   *
    * The system prompt is always at messages[0] and contains the core
    * instructions, tool descriptions, and current context information.
    */
@@ -534,14 +533,14 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Load initial conversation history from persistence.
-   * 
+   *
    * This method:
    * - Loads the chat history (excluding system messages)
    * - Sets or generates the system prompt
    * - Converts history to API message format
    * - Handles tool call/result matching
    * - Updates token counts
-   * 
+   *
    * @param history - Array of chat entries to load
    * @param systemPrompt - Optional system prompt (will generate if not provided)
    */
@@ -653,11 +652,11 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Initialize Model Context Protocol (MCP) servers in the background.
-   * 
+   *
    * This method loads MCP configuration and initializes any configured
    * servers without blocking agent construction. Errors are logged but
    * don't prevent agent operation.
-   * 
+   *
    * @param debugLogFile - Optional path for MCP debug output
    * @private
    */
@@ -680,7 +679,7 @@ export class LLMAgent extends EventEmitter {
   /**
    * Checks if the current model is a Grok model.
    * Used to enable Grok-specific features like web search.
-   * 
+   *
    * @returns True if the current model name contains "grok"
    * @private
    */
@@ -691,10 +690,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Heuristic to determine if web search should be enabled for a message.
-   * 
+   *
    * Analyzes the message content for keywords that suggest the user is
    * asking for current information, news, or time-sensitive data.
-   * 
+   *
    * @param message - The user message to analyze
    * @returns True if web search should be enabled
    * @private
@@ -728,16 +727,16 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Process a user message and return all conversation entries generated.
-   * 
+   *
    * This is the main non-streaming message processing method that:
    * - Handles rephrase commands and message preprocessing
    * - Manages the agent loop with tool execution
    * - Processes multiple rounds of AI responses and tool calls
    * - Handles errors and context management
    * - Returns all new conversation entries
-   * 
+   *
    * ## Processing Flow
-   * 
+   *
    * 1. **Setup**: Parse rephrase commands, clean incomplete tool calls
    * 2. **Message Processing**: Parse images, assemble content, add to history
    * 3. **Agent Loop**: Continue until no more tool calls or max rounds reached
@@ -746,7 +745,7 @@ export class LLMAgent extends EventEmitter {
    *    - Add results to conversation
    *    - Get next response if needed
    * 4. **Cleanup**: Handle errors, update context, return entries
-   * 
+   *
    * @param message - The user message to process
    * @returns Promise resolving to array of new conversation entries
    * @throws {Error} If message processing fails critically
@@ -755,10 +754,33 @@ export class LLMAgent extends EventEmitter {
     const {isRephraseCommand, messageType, messageToSend, prefillText} = await this.messageProcessor.setupRephraseCommand(message);
     await this.cleanupIncompleteToolCalls();
     Variable.clearOneShot();
-    await this.executeInstanceHookIfNeeded();
+
+    // Execute postUserInput hook
+    const postUserInputHookPath = getSettingsManager().getPostUserInputHook();
+    if (postUserInputHookPath) {
+      const hookResult = await executeOperationHook(
+        postUserInputHookPath,
+        "postUserInput",
+        { USER_MESSAGE: message },
+        30000,
+        false,
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
+      );
+
+      if (hookResult.approved && hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+        for (const [varName, value] of results.promptVars.entries()) {
+          Variable.set(varName, value);
+        }
+        if (results.prefill) {
+          this.messageProcessor.setHookPrefillText(results.prefill);
+        }
+      }
+    }
     const {parsed, assembledMessage} = await this.messageProcessor.parseAndAssembleMessage(messageToSend);
     const {userEntry, messageContent} = this.messageProcessor.prepareMessageContent(messageType, assembledMessage, parsed, messageToSend, this.llmClient.getSupportsVision());
-    
+
     this.chatHistory.push(userEntry);
     if (messageType === "user") {
       this.messages.push({ role: "user", content: messageContent });
@@ -773,26 +795,46 @@ export class LLMAgent extends EventEmitter {
     let consecutiveNonToolResponses = 0;
 
     try {
-      // If this is a rephrase with prefill text, add the assistant message now
-      if (this.rephraseState?.prefillText) {
-        this.messages.push({
-          role: "assistant",
-          content: this.rephraseState.prefillText
-        });
+      // Execute preLLMResponse hook just before LLM call
+      const hookPath = getSettingsManager().getPreLLMResponseHook();
+      if (hookPath) {
+        const hookResult = await executeOperationHook(
+          hookPath,
+          "preLLMResponse",
+          { USER_MESSAGE: message },
+          30000,
+          false,
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
+        );
+
+        if (hookResult.approved && hookResult.commands) {
+          const results = applyHookCommands(hookResult.commands);
+          for (const [varName, value] of results.promptVars.entries()) {
+            Variable.set(varName, value);
+          }
+          if (results.prefill) {
+            this.messageProcessor.setHookPrefillText(results.prefill);
+          }
+        }
       }
 
-      // If a hook returned prefill text, add the assistant message now
+      // If rephrase or hook returned prefill text, add the assistant message now
+      const rephraseText = this.rephraseState?.prefillText;
       const hookPrefillText = this.messageProcessor.getHookPrefillText();
-      if (hookPrefillText) {
+      if (rephraseText) {
+        this.messages.push({
+          role: "assistant",
+          content: rephraseText
+        });
+      } else if (hookPrefillText) {
         this.messages.push({
           role: "assistant",
           content: hookPrefillText
         });
       }
 
-      // Always fetch tools fresh - getAllLLMTools() handles lazy refresh internally
       const supportsTools = this.llmClient.getSupportsTools();
-
       let currentResponse = await this.llmClient.chat(
         this.messages,
         supportsTools ? await getAllLLMTools() : [],
@@ -1149,7 +1191,7 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Process a user message with real-time streaming response.
-   * 
+   *
    * This is the main streaming message processing method that yields
    * chunks of data as the conversation progresses. Provides real-time
    * updates for:
@@ -1158,9 +1200,9 @@ export class LLMAgent extends EventEmitter {
    * - Tool execution progress
    * - Token count updates
    * - System messages from hooks
-   * 
+   *
    * ## Streaming Flow
-   * 
+   *
    * 1. **Setup**: Process user message, yield user entry
    * 2. **Agent Loop**: Stream AI responses and execute tools
    *    - Stream AI response content in real-time
@@ -1168,16 +1210,16 @@ export class LLMAgent extends EventEmitter {
    *    - Execute tools and yield results
    *    - Continue until completion
    * 3. **Completion**: Yield final token counts and done signal
-   * 
+   *
    * ## Chunk Types
-   * 
+   *
    * - `user_message`: Initial user message entry
    * - `content`: Streaming AI response content
    * - `tool_calls`: Tool calls detected in AI response
    * - `tool_result`: Results from tool execution
    * - `token_count`: Updated token usage
    * - `done`: Processing complete
-   * 
+   *
    * @param message - The user message to process
    * @yields StreamingChunk objects with real-time updates
    * @throws {Error} If streaming fails critically
@@ -1189,10 +1231,33 @@ export class LLMAgent extends EventEmitter {
     const {isRephraseCommand, messageType, messageToSend, prefillText} = await this.messageProcessor.setupRephraseCommand(message);
     await this.cleanupIncompleteToolCalls();
     Variable.clearOneShot();
-    await this.executeInstanceHookIfNeeded();
+
+    // Execute postUserInput hook
+    const postUserInputHookPath = getSettingsManager().getPostUserInputHook();
+    if (postUserInputHookPath) {
+      const hookResult = await executeOperationHook(
+        postUserInputHookPath,
+        "postUserInput",
+        { USER_MESSAGE: message },
+        30000,
+        false,
+        this.getCurrentTokenCount(),
+        this.getMaxContextSize()
+      );
+
+      if (hookResult.approved && hookResult.commands) {
+        const results = applyHookCommands(hookResult.commands);
+        for (const [varName, value] of results.promptVars.entries()) {
+          Variable.set(varName, value);
+        }
+        if (results.prefill) {
+          this.messageProcessor.setHookPrefillText(results.prefill);
+        }
+      }
+    }
     const {parsed, assembledMessage} = await this.messageProcessor.parseAndAssembleMessage(messageToSend);
     const {userEntry, messageContent} = this.messageProcessor.prepareMessageContent(messageType, assembledMessage, parsed, messageToSend, this.llmClient.getSupportsVision());
-    
+
     this.chatHistory.push(userEntry);
     if (messageType === "user") {
       this.messages.push({ role: "user", content: messageContent });
@@ -1205,23 +1270,6 @@ export class LLMAgent extends EventEmitter {
       type: "user_message",
       userEntry: userEntry,
     };
-
-    // If this is a rephrase with prefill text, add the assistant message now
-    if (this.rephraseState?.prefillText) {
-      this.messages.push({
-        role: "assistant",
-        content: this.rephraseState.prefillText
-      });
-    }
-
-    // If a hook returned prefill text, add the assistant message now
-    const hookPrefillText = this.messageProcessor.getHookPrefillText();
-    if (hookPrefillText) {
-      this.messages.push({
-        role: "assistant",
-        content: hookPrefillText
-      });
-    }
 
     // Calculate input tokens
     let inputTokens = this.tokenCounter.countMessageTokens(
@@ -1260,6 +1308,46 @@ export class LLMAgent extends EventEmitter {
         }
 
         // Stream response and accumulate
+
+        // Execute preLLMResponse hook just before LLM call
+        const hookPath = getSettingsManager().getPreLLMResponseHook();
+        if (hookPath) {
+          const hookResult = await executeOperationHook(
+            hookPath,
+            "preLLMResponse",
+            { USER_MESSAGE: message },
+            30000,
+            false,
+            this.getCurrentTokenCount(),
+            this.getMaxContextSize()
+          );
+
+          if (hookResult.approved && hookResult.commands) {
+            const results = applyHookCommands(hookResult.commands);
+            for (const [varName, value] of results.promptVars.entries()) {
+              Variable.set(varName, value);
+            }
+            if (results.prefill) {
+              this.messageProcessor.setHookPrefillText(results.prefill);
+            }
+          }
+        }
+
+        // If rephrase or hook returned prefill text, add the assistant message now
+        const rephraseText = this.rephraseState?.prefillText;
+        const hookPrefillText = this.messageProcessor.getHookPrefillText();
+        if (rephraseText) {
+          this.messages.push({
+            role: "assistant",
+            content: rephraseText
+          });
+        } else if (hookPrefillText) {
+          this.messages.push({
+            role: "assistant",
+            content: hookPrefillText
+          });
+        }
+
         const stream = this.llmClient.chatStream(
           this.messages,
           supportsTools ? await getAllLLMTools() : [],
@@ -1284,17 +1372,6 @@ export class LLMAgent extends EventEmitter {
             content: this.rephraseState.prefillText,
           };
           accumulatedContent = this.rephraseState.prefillText;
-        }
-
-        // If a hook provided prefill, yield it first and add to accumulated content
-        const hookPrefillText = this.messageProcessor.getHookPrefillText();
-        if (hookPrefillText) {
-          yield {
-            type: "content",
-            content: hookPrefillText,
-          };
-          accumulatedContent = hookPrefillText;
-          this.messageProcessor.clearHookPrefillText();
         }
 
         try {
@@ -1771,16 +1848,16 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Convert the conversation context to markdown format for viewing.
-   * 
+   *
    * Creates a human-readable markdown representation of the conversation
    * including:
    * - Header with context file path and token usage
    * - Numbered messages with timestamps
    * - Formatted tool calls and results
    * - Proper attribution (User/Assistant/System)
-   * 
+   *
    * Format: (N) Name (role) - timestamp
-   * 
+   *
    * @returns Promise resolving to markdown-formatted conversation
    */
   async convertContextToMarkdown(): Promise<string> {
@@ -1948,10 +2025,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Set the agent's persona with optional color.
-   * 
+   *
    * Executes the persona hook if configured and updates the agent's
    * persona state on success.
-   * 
+   *
    * @param persona - The persona description
    * @param color - Optional display color (defaults to "white")
    * @returns Promise resolving to success/error result
@@ -1967,10 +2044,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Set the agent's mood with optional color.
-   * 
+   *
    * Executes the mood hook if configured and updates the agent's
    * mood state on success.
-   * 
+   *
    * @param mood - The mood description
    * @param color - Optional display color (defaults to "white")
    * @returns Promise resolving to success/error result
@@ -1986,10 +2063,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Start an active task with specified action and color.
-   * 
+   *
    * Executes the task start hook if configured and updates the agent's
    * task state on success.
-   * 
+   *
    * @param activeTask - The task description
    * @param action - The current action within the task
    * @param color - Optional display color (defaults to "white")
@@ -2007,9 +2084,9 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Transition the active task to a new action/status.
-   * 
+   *
    * Updates the current task action without changing the task itself.
-   * 
+   *
    * @param action - The new action description
    * @param color - Optional display color (defaults to current color)
    * @returns Promise resolving to success/error result
@@ -2025,10 +2102,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Stop the current active task with reason and documentation.
-   * 
+   *
    * Executes the task stop hook if configured and clears the agent's
    * task state on success.
-   * 
+   *
    * @param reason - Reason for stopping the task
    * @param documentationFile - Path to documentation file
    * @param color - Optional display color (defaults to "white")
@@ -2046,10 +2123,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Delegation method for hook processing (used by ToolExecutor).
-   * 
+   *
    * Processes hook results through the HookManager to handle commands,
    * variable transformations, and other hook-specific logic.
-   * 
+   *
    * @param hookResult - Result object from hook execution
    * @param envKey - Optional environment key for variable transformation
    * @returns Promise resolving to processing result
@@ -2060,7 +2137,7 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Execute a shell command through the ZSH tool.
-   * 
+   *
    * @param command - Shell command to execute
    * @param skipConfirmation - Whether to skip confirmation prompts
    * @returns Promise resolving to tool execution result
@@ -2079,13 +2156,13 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Set a new LLM model and update related components.
-   * 
+   *
    * This method:
    * - Updates the LLM client model
    * - Resets vision support flag
    * - Updates the token counter for the new model
    * - Handles model name suffixes (e.g., :nothinking)
-   * 
+   *
    * @param model - New model identifier
    */
   setModel(model: string): void {
@@ -2112,7 +2189,7 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Abort the current operation if one is in progress.
-   * 
+   *
    * This will cancel streaming responses and tool execution.
    */
   abortCurrentOperation(): void {
@@ -2123,7 +2200,7 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Clear the conversation cache and reinitialize the agent.
-   * 
+   *
    * This method:
    * - Backs up current conversation to timestamped files
    * - Clears chat history and messages
@@ -2131,7 +2208,7 @@ export class LLMAgent extends EventEmitter {
    * - Re-executes startup and instance hooks
    * - Saves the cleared state
    * - Emits context change events
-   * 
+   *
    * Used when context becomes too large or user requests a fresh start.
    */
   async clearCache(): Promise<void> {
@@ -2189,13 +2266,13 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Get current session state for persistence.
-   * 
+   *
    * Collects all session-related state including:
    * - Model and backend configuration
    * - Persona, mood, and task settings
    * - Context usage statistics
    * - API key environment variable
-   * 
+   *
    * @returns Complete session state object
    */
   getSessionState(): SessionState {
@@ -2208,12 +2285,12 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Restore session state from persistence.
-   * 
+   *
    * Restores all session-related state including:
    * - Model and backend configuration
    * - Persona, mood, and task settings
    * - Token counter and API client setup
-   * 
+   *
    * @param state - Session state to restore
    */
   async restoreSessionState(state: SessionState): Promise<void> {
@@ -2222,10 +2299,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Compact conversation context by keeping system prompt and last N messages.
-   * 
+   *
    * Reduces context size when it grows too large for the backend to handle.
    * Removes older messages while preserving the system prompt and recent context.
-   * 
+   *
    * @param keepLastMessages - Number of recent messages to keep (default: 20)
    * @returns Number of messages removed
    */
@@ -2235,10 +2312,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Get all tool instances and their class names for display purposes.
-   * 
+   *
    * Uses reflection to find all tool instances and extract their
    * class names and handled method names for introspection.
-   * 
+   *
    * @returns Array of tool info objects with class names and methods
    */
   getToolClassInfo(): Array<{ className: string; methods: string[] }> {
@@ -2252,10 +2329,10 @@ export class LLMAgent extends EventEmitter {
 
   /**
    * Get all tool instances via reflection.
-   * 
+   *
    * Scans all properties of the agent instance to find objects that
    * implement the tool interface (have getHandledToolNames method).
-   * 
+   *
    * @returns Array of tool instances with their class names
    * @private
    */
