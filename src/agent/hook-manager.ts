@@ -6,15 +6,16 @@ import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.
 import { getAllLLMTools } from "../grok/tools.js";
 import { logApiError } from "../utils/error-logger.js";
 import { ChatEntry } from "./llm-agent.js";
+import { Variable } from "./prompt-variables.js";
 
 /**
  * Dependencies required by HookManager for hook execution and state management
  */
 export interface HookManagerDependencies {
-  /** LLM client for API calls */
-  llmClient: LLMClient;
-  /** Token counter for model operations */
-  tokenCounter: TokenCounter;
+  /** Get LLM client for API calls */
+  getLLMClient(): LLMClient;
+  /** Get token counter for model operations */
+  getTokenCounter(): TokenCounter;
   /** API key environment variable name */
   apiKeyEnvVar: string;
   /** LLM messages array */
@@ -395,6 +396,12 @@ export class HookManager {
       }
 
       applyEnvVariables(commands.env);
+
+      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
+      for (const [varName, value] of commands.promptVars.entries()) {
+        Variable.set(varName, value);
+      }
+
       const parts = [];
       if (commands.backend) parts.push(`backend to "${commands.backend}"`);
       if (commands.model) parts.push(`model to "${commands.model}"`);
@@ -424,6 +431,12 @@ export class HookManager {
       }
 
       applyEnvVariables(commands.env);
+
+      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
+      for (const [varName, value] of commands.promptVars.entries()) {
+        Variable.set(varName, value);
+      }
+
       const successMsg = `Model changed to "${commands.model}"`;
       this.deps.chatHistory.push({
         type: "system",
@@ -434,6 +447,11 @@ export class HookManager {
       this.deps.emit('modelChange', { model: commands.model });
     } else {
       applyEnvVariables(commands.env);
+
+      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
+      for (const [varName, value] of commands.promptVars.entries()) {
+        Variable.set(varName, value);
+      }
     }
 
     if (commands.system) {
@@ -456,10 +474,10 @@ export class HookManager {
    */
   private async testModel(newModel: string): Promise<{ success: boolean; error?: string }> {
     const previousModel = this.deps.getCurrentModel();
-    const previousTokenCounter = this.deps.tokenCounter;
+    const previousTokenCounter = this.deps.getTokenCounter();
 
     const testMessages = this.stripInProgressToolCalls(this.deps.messages);
-    const supportsTools = this.deps.llmClient.getSupportsTools();
+    const supportsTools = this.deps.getLLMClient().getSupportsTools();
     const tools = supportsTools ? await getAllLLMTools() : [];
     const requestPayload = {
       model: newModel,
@@ -470,11 +488,11 @@ export class HookManager {
     };
 
     try {
-      this.deps.llmClient.setModel(newModel);
+      this.deps.getLLMClient().setModel(newModel);
       const { createTokenCounter } = await import("../utils/token-counter.js");
-      this.deps.tokenCounter = createTokenCounter(newModel);
+      this.deps.setTokenCounter(createTokenCounter(newModel));
 
-      const response = await this.deps.llmClient.chat(
+      const response = await this.deps.getLLMClient().chat(
         testMessages,
         tools,
         newModel,
@@ -492,9 +510,9 @@ export class HookManager {
       return { success: true };
 
     } catch (error: any) {
-      this.deps.llmClient.setModel(previousModel);
-      this.deps.tokenCounter.dispose();
-      this.deps.tokenCounter = previousTokenCounter;
+      this.deps.getLLMClient().setModel(previousModel);
+      this.deps.getTokenCounter().dispose();
+      this.deps.setTokenCounter(previousTokenCounter);
 
       const { message: logPaths } = await logApiError(
         requestPayload,
@@ -527,13 +545,15 @@ export class HookManager {
     apiKeyEnvVar: string,
     model?: string
   ): Promise<{ success: boolean; error?: string }> {
-    const previousClient = this.deps.llmClient;
+    const previousClient = this.deps.getLLMClient();
+    const previousTokenCounter = this.deps.getTokenCounter();
     const previousApiKeyEnvVar = this.deps.apiKeyEnvVar;
-    const previousBackend = this.deps.llmClient.getBackendName();
+    const previousBackend = this.deps.getLLMClient().getBackendName();
     const previousModel = this.deps.getCurrentModel();
 
     let requestPayload: any;
     let newModel: string;
+    let modelChanged = false;
 
     try {
       const apiKey = process.env[apiKeyEnvVar];
@@ -542,9 +562,16 @@ export class HookManager {
       }
 
       newModel = model || this.deps.getCurrentModel();
+      modelChanged = newModel !== previousModel;
       const newClient = new LLMClient(apiKey, newModel, baseUrl, backend);
       this.deps.setLLMClient(newClient);
       this.deps.setApiKeyEnvVar(apiKeyEnvVar);
+
+      // Update token counter only if model changed
+      if (modelChanged) {
+        const { createTokenCounter } = await import("../utils/token-counter.js");
+        this.deps.setTokenCounter(createTokenCounter(newModel));
+      }
 
       const { loadMCPConfig } = await import("../mcp/config.js");
       const { initializeMCPServers } = await import("../grok/tools.js");
@@ -558,7 +585,7 @@ export class HookManager {
       }
 
       const testMessages = this.stripInProgressToolCalls(this.deps.messages);
-      const supportsTools = this.deps.llmClient.getSupportsTools();
+      const supportsTools = this.deps.getLLMClient().getSupportsTools();
       const tools = supportsTools ? await getAllLLMTools() : [];
       requestPayload = {
         backend,
@@ -570,7 +597,7 @@ export class HookManager {
         max_tokens: 10
       };
 
-      const response = await this.deps.llmClient.chat(
+      const response = await this.deps.getLLMClient().chat(
         testMessages,
         tools,
         newModel,
@@ -584,11 +611,22 @@ export class HookManager {
         throw new Error("Invalid response from API");
       }
 
+      // Dispose old token counter if model changed
+      if (modelChanged) {
+        previousTokenCounter.dispose();
+      }
+
       return { success: true };
 
     } catch (error: any) {
       this.deps.setLLMClient(previousClient);
       this.deps.setApiKeyEnvVar(previousApiKeyEnvVar);
+
+      // Restore token counter if we changed it
+      if (modelChanged) {
+        this.deps.getTokenCounter().dispose();
+        this.deps.setTokenCounter(previousTokenCounter);
+      }
 
       let logPaths = '';
       if (requestPayload) {

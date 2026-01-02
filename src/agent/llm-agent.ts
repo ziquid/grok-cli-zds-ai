@@ -36,7 +36,7 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
-import { executeOperationHook, applyHookCommands } from "../utils/hook-executor.js";
+import { executeOperationHook, applyHookCommands, applyEnvVariables } from "../utils/hook-executor.js";
 import { ToolExecutor } from "./tool-executor.js";
 import { HookManager } from "./hook-manager.js";
 import { SessionManager } from "./session-manager.js";
@@ -309,6 +309,8 @@ export class LLMAgent extends EventEmitter {
         if (hookResult.approved && hookResult.commands && hookResult.commands.length > 0) {
           const results = applyHookCommands(hookResult.commands);
 
+          applyEnvVariables(results.env);
+
           for (const [varName, value] of results.promptVars.entries()) {
             Variable.set(varName, value);
           }
@@ -401,8 +403,8 @@ export class LLMAgent extends EventEmitter {
 
     // Initialize hook manager
     this.hookManager = new HookManager({
-      llmClient: this.llmClient,
-      tokenCounter: this.tokenCounter,
+      getLLMClient: () => this.llmClient,
+      getTokenCounter: () => this.tokenCounter,
       apiKeyEnvVar: this.apiKeyEnvVar,
       messages: this.messages,
       chatHistory: this.chatHistory,
@@ -418,17 +420,17 @@ export class LLMAgent extends EventEmitter {
 
     // Initialize session manager
     this.sessionManager = new SessionManager({
-      llmClient: this.llmClient,
-      tokenCounter: this.tokenCounter,
-      apiKeyEnvVar: this.apiKeyEnvVar,
+      getLLMClient: () => this.llmClient,
+      getTokenCounter: () => this.tokenCounter,
+      getApiKeyEnvVar: () => this.apiKeyEnvVar,
       hookManager: this.hookManager,
-      persona: this.persona,
-      personaColor: this.personaColor,
-      mood: this.mood,
-      moodColor: this.moodColor,
-      activeTask: this.activeTask,
-      activeTaskAction: this.activeTaskAction,
-      activeTaskColor: this.activeTaskColor,
+      getPersona: () => this.persona,
+      getPersonaColor: () => this.personaColor,
+      getMood: () => this.mood,
+      getMoodColor: () => this.moodColor,
+      getActiveTask: () => this.activeTask,
+      getActiveTaskAction: () => this.activeTaskAction,
+      getActiveTaskColor: () => this.activeTaskColor,
       getCurrentModel: () => this.getCurrentModel(),
       emit: (event: string, data: any) => this.emit(event, data),
       setLLMClient: (client: LLMClient) => { this.llmClient = client; },
@@ -770,6 +772,7 @@ export class LLMAgent extends EventEmitter {
 
       if (hookResult.approved && hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
+        applyEnvVariables(results.env);
         for (const [varName, value] of results.promptVars.entries()) {
           Variable.set(varName, value);
         }
@@ -810,6 +813,7 @@ export class LLMAgent extends EventEmitter {
 
         if (hookResult.approved && hookResult.commands) {
           const results = applyHookCommands(hookResult.commands);
+          applyEnvVariables(results.env);
           for (const [varName, value] of results.promptVars.entries()) {
             Variable.set(varName, value);
           }
@@ -1268,6 +1272,7 @@ export class LLMAgent extends EventEmitter {
 
       if (hookResult.approved && hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
+        applyEnvVariables(results.env);
         for (const [varName, value] of results.promptVars.entries()) {
           Variable.set(varName, value);
         }

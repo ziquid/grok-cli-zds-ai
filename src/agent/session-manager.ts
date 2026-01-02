@@ -9,28 +9,28 @@ import { SessionState } from "../utils/chat-history-manager.js";
  * Dependencies required by SessionManager for managing session state
  */
 export interface SessionManagerDependencies {
-  /** LLM client instance */
-  llmClient: LLMClient;
-  /** Token counter instance */
-  tokenCounter: TokenCounter;
-  /** API key environment variable name */
-  apiKeyEnvVar: string;
+  /** Get LLM client instance */
+  getLLMClient(): LLMClient;
+  /** Get token counter instance */
+  getTokenCounter(): TokenCounter;
+  /** Get API key environment variable name */
+  getApiKeyEnvVar(): string;
   /** Hook manager for persona/mood/task hooks */
   hookManager: HookManager;
-  /** Current persona */
-  persona: string;
-  /** Persona display color */
-  personaColor: string;
-  /** Current mood */
-  mood: string;
-  /** Mood display color */
-  moodColor: string;
-  /** Active task name */
-  activeTask: string;
-  /** Active task action */
-  activeTaskAction: string;
-  /** Active task display color */
-  activeTaskColor: string;
+  /** Get current persona */
+  getPersona(): string;
+  /** Get persona display color */
+  getPersonaColor(): string;
+  /** Get current mood */
+  getMood(): string;
+  /** Get mood display color */
+  getMoodColor(): string;
+  /** Get active task name */
+  getActiveTask(): string;
+  /** Get active task action */
+  getActiveTaskAction(): string;
+  /** Get active task display color */
+  getActiveTaskColor(): string;
   /** Get current model name */
   getCurrentModel(): string;
   /** Emit events */
@@ -71,21 +71,21 @@ export class SessionManager {
   getSessionState(): SessionState {
     return {
       session: process.env.ZDS_AI_AGENT_SESSION || "",
-      persona: this.deps.persona,
-      personaColor: this.deps.personaColor,
-      mood: this.deps.mood,
-      moodColor: this.deps.moodColor,
-      activeTask: this.deps.activeTask,
-      activeTaskAction: this.deps.activeTaskAction,
-      activeTaskColor: this.deps.activeTaskColor,
+      persona: this.deps.getPersona(),
+      personaColor: this.deps.getPersonaColor(),
+      mood: this.deps.getMood(),
+      moodColor: this.deps.getMoodColor(),
+      activeTask: this.deps.getActiveTask(),
+      activeTaskAction: this.deps.getActiveTaskAction(),
+      activeTaskColor: this.deps.getActiveTaskColor(),
       cwd: process.cwd(),
       contextCurrent: 0, // Will be set by caller
       contextMax: 0, // Will be set by caller
-      backend: this.deps.llmClient.getBackendName(),
-      baseUrl: this.deps.llmClient.getBaseURL(),
-      apiKeyEnvVar: this.deps.apiKeyEnvVar,
+      backend: this.deps.getLLMClient().getBackendName(),
+      baseUrl: this.deps.getLLMClient().getBaseURL(),
+      apiKeyEnvVar: this.deps.getApiKeyEnvVar(),
       model: this.deps.getCurrentModel(),
-      supportsVision: this.deps.llmClient.getSupportsVision(),
+      supportsVision: this.deps.getLLMClient().getSupportsVision(),
     };
   }
 
@@ -129,7 +129,7 @@ export class SessionManager {
 
           // Restore supportsVision flag if present
           if (state.supportsVision !== undefined) {
-            this.deps.llmClient.setSupportsVision(state.supportsVision);
+            this.deps.getLLMClient().setSupportsVision(state.supportsVision);
           }
 
           // Reinitialize MCP servers when restoring session
@@ -143,7 +143,7 @@ export class SessionManager {
           }
 
           // Dispose old token counter and create new one for the restored model
-          this.deps.tokenCounter.dispose();
+          this.deps.getTokenCounter().dispose();
           const newTokenCounter = createTokenCounter(model);
           this.deps.setTokenCounter(newTokenCounter);
 
