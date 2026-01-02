@@ -1,4 +1,4 @@
-import { LLMAgent, ChatEntry } from "../agent/llm-agent";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent.js";
 import { ConfirmationService } from "./confirmation-service.js";
 
 /**

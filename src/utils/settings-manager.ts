@@ -49,13 +49,7 @@ export interface ProjectSettings {
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
   baseURL: "https://api.x.ai/v1", // Grok default
   defaultModel: "grok-code-fast-1",
-  models: [
-    "grok-code-fast-1",
-    "grok-4-latest",
-    "grok-3-latest",
-    "grok-3-fast",
-    "grok-3-mini-fast",
-  ],
+  models: ["grok-code-fast-1", "grok-4-1-latest", "grok-3-latest", "grok-3-fast", "grok-3-mini-fast",],
 };
 
 /**
@@ -72,22 +66,22 @@ export class SettingsManager {
   private static instance: SettingsManager;
 
   private userSettingsPath: string;
+  private userMcpServersPath: string;
   private projectSettingsPath: string;
+  private projectMcpServersPath: string;
 
   private constructor() {
-    // User settings path: ~/.grok/user-settings.json
-    this.userSettingsPath = path.join(
-      os.homedir(),
-      ".grok",
-      "user-settings.json"
-    );
+    // User settings path: ~/.zds-ai/cli-settings.json
+    this.userSettingsPath = path.join(os.homedir(), ".zds-ai", "cli-settings.json");
 
-    // Project settings path: .grok/settings.json (in current working directory)
-    this.projectSettingsPath = path.join(
-      process.cwd(),
-      ".grok",
-      "settings.json"
-    );
+    // User mcp servers path: ~/.zds-ai/mcp.json
+    this.userMcpServersPath = path.join(os.homedir(), ".zds-ai", "mcp.json");
+
+    // Project settings path: .zds-ai/project-settings.json (in current working directory)
+    this.projectSettingsPath = path.join(process.cwd(), ".zds-ai", "project-settings.json");
+
+    // Project mcp servers path: .zds-ai/project-mcp.json (in current working directory)
+    this.projectMcpServersPath = path.join(process.cwd(), ".zds-ai", "project-mcp.json");
   }
 
   /**
@@ -101,72 +95,97 @@ export class SettingsManager {
   }
 
   /**
-   * Ensure directory exists for a given file path
-   */
-  private ensureDirectoryExists(filePath: string): void {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    }
-  }
-
-  /**
-   * Load user settings from ~/.grok/user-settings.json
+   * Load user settings from appropriate files
    */
   public loadUserSettings(): UserSettings {
     try {
       if (!fs.existsSync(this.userSettingsPath)) {
         // Create default user settings if file doesn't exist
         this.saveUserSettings(DEFAULT_USER_SETTINGS);
-        return { ...DEFAULT_USER_SETTINGS };
+        return {...DEFAULT_USER_SETTINGS};
       }
 
       const content = fs.readFileSync(this.userSettingsPath, "utf-8");
       const settings = JSON.parse(content);
 
+      // Load and merge mcpServers from separate files
+      let userMcpServers: Record<string, any> = {};
+      let projectMcpServers: Record<string, any> = {};
+
+      // Load user MCP servers
+      if (fs.existsSync(this.userMcpServersPath)) {
+        try {
+          const mcpContent = fs.readFileSync(this.userMcpServersPath, "utf-8");
+          const mcpConfig = JSON.parse(mcpContent);
+          userMcpServers = mcpConfig.mcpServers || {};
+        } catch (error) {
+          console.warn(`Failed to load user MCP config from ${this.userMcpServersPath}:`, error instanceof Error ? error.message : "Unknown error");
+        }
+      }
+
+      // Load project MCP servers
+      if (fs.existsSync(this.projectMcpServersPath)) {
+        try {
+          const mcpContent = fs.readFileSync(this.projectMcpServersPath, "utf-8");
+          const mcpConfig = JSON.parse(mcpContent);
+          projectMcpServers = mcpConfig.mcpServers || {};
+        } catch (error) {
+          console.warn(`Failed to load project MCP config from ${this.projectMcpServersPath}:`, error instanceof Error ? error.message : "Unknown error");
+        }
+      }
+
+      // Merge user and project MCP servers, with project overriding user
+      settings.mcpServers = {...userMcpServers, ...projectMcpServers};
+
       // Merge with defaults to ensure all required fields exist
-      return { ...DEFAULT_USER_SETTINGS, ...settings };
+      return {...DEFAULT_USER_SETTINGS, ...settings};
     } catch (error) {
-      console.warn(
-        "Failed to load user settings:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      return { ...DEFAULT_USER_SETTINGS };
+      console.warn("Failed to load user settings:", error instanceof Error ? error.message : "Unknown error");
+      return {...DEFAULT_USER_SETTINGS};
     }
   }
 
   /**
    * Save user settings to ~/.grok/user-settings.json
+   * mcpServers is saved to ~/.zds-ai/mcp.json separately
    */
   public saveUserSettings(settings: Partial<UserSettings>): void {
     try {
       this.ensureDirectoryExists(this.userSettingsPath);
 
       // Read existing settings directly to avoid recursion
-      let existingSettings: UserSettings = { ...DEFAULT_USER_SETTINGS };
+      let existingSettings: UserSettings = {...DEFAULT_USER_SETTINGS};
       if (fs.existsSync(this.userSettingsPath)) {
         try {
           const content = fs.readFileSync(this.userSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
-          existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
+          existingSettings = {...DEFAULT_USER_SETTINGS, ...parsed};
         } catch (error) {
           // If file is corrupted, use defaults
           console.warn("Corrupted user settings file, using defaults");
         }
       }
 
-      const mergedSettings = { ...existingSettings, ...settings };
+      const mergedSettings = {...existingSettings, ...settings};
 
-      fs.writeFileSync(
-        this.userSettingsPath,
-        JSON.stringify(mergedSettings, null, 2),
-        { mode: 0o600 } // Secure permissions for API key
+      // Extract mcpServers and save separately
+      if (mergedSettings.mcpServers !== undefined) {
+        const mcpServers = mergedSettings.mcpServers;
+
+        // Save MCP servers to separate file
+        this.ensureDirectoryExists(this.userMcpServersPath);
+        const mcpConfig = { mcpServers };
+        fs.writeFileSync(this.userMcpServersPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
+      }
+
+      // Remove mcpServers from settings before saving to main file
+      const settingsToSave = {...mergedSettings};
+      delete settingsToSave.mcpServers;
+
+      fs.writeFileSync(this.userSettingsPath, JSON.stringify(settingsToSave, null, 2), {mode: 0o600} // Secure permissions for API key
       );
     } catch (error) {
-      console.error(
-        "Failed to save user settings:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      console.error("Failed to save user settings:", error instanceof Error ? error.message : "Unknown error");
       throw error;
     }
   }
@@ -174,11 +193,8 @@ export class SettingsManager {
   /**
    * Update a specific user setting
    */
-  public updateUserSetting<K extends keyof UserSettings>(
-    key: K,
-    value: UserSettings[K]
-  ): void {
-    const settings = { [key]: value } as Partial<UserSettings>;
+  public updateUserSetting<K extends keyof UserSettings>(key: K, value: UserSettings[K]): void {
+    const settings = {[key]: value} as Partial<UserSettings>;
     this.saveUserSettings(settings);
   }
 
@@ -191,61 +207,97 @@ export class SettingsManager {
   }
 
   /**
-   * Load project settings from .grok/settings.json
+   * Load project settings from .zds-ai/project-settings.json
+   * mcpServers is loaded from .zds-ai/project-mcp.json if it exists
    */
   public loadProjectSettings(): ProjectSettings {
     try {
-      if (!fs.existsSync(this.projectSettingsPath)) {
-        // Return defaults without creating file
-        return { ...DEFAULT_PROJECT_SETTINGS };
+      let settings: ProjectSettings = {...DEFAULT_PROJECT_SETTINGS};
+
+      // Load main project settings
+      if (fs.existsSync(this.projectSettingsPath)) {
+        const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
+        if (content.trim()) {
+          const parsed = JSON.parse(content);
+          settings = {...DEFAULT_PROJECT_SETTINGS, ...parsed};
+        }
       }
 
-      const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
-
-      // Handle empty files
-      if (!content.trim()) {
-        return { ...DEFAULT_PROJECT_SETTINGS };
+      // Load project MCP servers from separate file
+      if (fs.existsSync(this.projectMcpServersPath)) {
+        try {
+          const mcpContent = fs.readFileSync(this.projectMcpServersPath, "utf-8");
+          const mcpConfig = JSON.parse(mcpContent);
+          settings.mcpServers = mcpConfig.mcpServers || {};
+        } catch (error) {
+          console.warn(`Failed to load project MCP config from ${this.projectMcpServersPath}:`, error instanceof Error ? error.message : "Unknown error");
+        }
       }
 
-      const settings = JSON.parse(content);
-
-      // Merge with defaults
-      return { ...DEFAULT_PROJECT_SETTINGS, ...settings };
+      return settings;
     } catch (error) {
-      console.warn(
-        "Failed to load project settings:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      return { ...DEFAULT_PROJECT_SETTINGS };
+      console.warn("Failed to load project settings:", error instanceof Error ? error.message : "Unknown error");
+      return {...DEFAULT_PROJECT_SETTINGS};
     }
   }
 
   /**
-   * Save project settings to .grok/settings.json
-   * Note: This is a no-op - project settings are not used in ZDS agent workflow
+   * Save project settings to .zds-ai/project-settings.json
+   * mcpServers is saved to .zds-ai/project-mcp.json separately
    */
   public saveProjectSettings(settings: Partial<ProjectSettings>): void {
-    // Do nothing - all settings are stored in ~/.grok/user-settings.json
-    // This prevents creating .grok/settings.json files scattered around the filesystem
+    try {
+      this.ensureDirectoryExists(this.projectSettingsPath);
+
+      // Read existing settings
+      let existingSettings: ProjectSettings = {...DEFAULT_PROJECT_SETTINGS};
+      if (fs.existsSync(this.projectSettingsPath)) {
+        try {
+          const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
+          if (content.trim()) {
+            const parsed = JSON.parse(content);
+            existingSettings = {...DEFAULT_PROJECT_SETTINGS, ...parsed};
+          }
+        } catch (error) {
+          console.warn("Corrupted project settings file, using defaults");
+        }
+      }
+
+      const mergedSettings = {...existingSettings, ...settings};
+
+      // Extract mcpServers and save separately
+      if (mergedSettings.mcpServers !== undefined) {
+        const mcpServers = mergedSettings.mcpServers;
+
+        // Save MCP servers to separate file
+        this.ensureDirectoryExists(this.projectMcpServersPath);
+        const mcpConfig = { mcpServers };
+        fs.writeFileSync(this.projectMcpServersPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
+      }
+
+      // Remove mcpServers from settings before saving to main file
+      const settingsToSave = {...mergedSettings};
+      delete settingsToSave.mcpServers;
+
+      fs.writeFileSync(this.projectSettingsPath, JSON.stringify(settingsToSave, null, 2), { mode: 0o600 });
+    } catch (error) {
+      console.error("Failed to save project settings:", error instanceof Error ? error.message : "Unknown error");
+      throw error;
+    }
   }
 
   /**
    * Update a specific project setting
    */
-  public updateProjectSetting<K extends keyof ProjectSettings>(
-    key: K,
-    value: ProjectSettings[K]
-  ): void {
-    const settings = { [key]: value } as Partial<ProjectSettings>;
+  public updateProjectSetting<K extends keyof ProjectSettings>(key: K, value: ProjectSettings[K]): void {
+    const settings = {[key]: value} as Partial<ProjectSettings>;
     this.saveProjectSettings(settings);
   }
 
   /**
    * Get a specific project setting
    */
-  public getProjectSetting<K extends keyof ProjectSettings>(
-    key: K
-  ): ProjectSettings[K] {
+  public getProjectSetting<K extends keyof ProjectSettings>(key: K): ProjectSettings[K] {
     const settings = this.loadProjectSettings();
     return settings[key];
   }
@@ -546,6 +598,16 @@ export class SettingsManager {
     }
 
     return undefined; // No default - let API decide
+  }
+
+  /**
+   * Ensure directory exists for a given file path
+   */
+  private ensureDirectoryExists(filePath: string): void {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, {recursive: true, mode: 0o700});
+    }
   }
 }
 

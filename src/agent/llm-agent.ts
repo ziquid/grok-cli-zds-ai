@@ -852,6 +852,27 @@ export class LLMAgent extends EventEmitter {
         currentResponse.choices[0].message = this.messageProcessor.parseXMLToolCalls(currentResponse.choices[0].message);
       }
 
+      // Execute postLLMResponse hook
+      const postLLMResponseHookPath = getSettingsManager().getPostLLMResponseHook();
+      if (postLLMResponseHookPath) {
+        const hookResult = await executeOperationHook(
+          postLLMResponseHookPath,
+          "postLLMResponse",
+          {
+            LLM_RESPONSE: getTextContent(currentResponse.choices?.[0]?.message?.content),
+            TOOL_CALLS: JSON.stringify(currentResponse.choices?.[0]?.message?.tool_calls || [])
+          },
+          30000,
+          false,
+          this.getCurrentTokenCount(),
+          this.getMaxContextSize()
+        );
+
+        if (hookResult.approved && hookResult.commands) {
+          await this.processHookResult(hookResult);
+        }
+      }
+
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         const assistantMessage = currentResponse.choices?.[0]?.message;
@@ -1486,6 +1507,27 @@ export class LLMAgent extends EventEmitter {
 
         // Parse XML tool calls from accumulated message if present
         accumulatedMessage = this.messageProcessor.parseXMLToolCalls(accumulatedMessage);
+
+        // Execute postLLMResponse hook
+        const postLLMResponseHookPath = getSettingsManager().getPostLLMResponseHook();
+        if (postLLMResponseHookPath) {
+          const hookResult = await executeOperationHook(
+            postLLMResponseHookPath,
+            "postLLMResponse",
+            {
+              LLM_RESPONSE: getTextContent(accumulatedMessage.content),
+              TOOL_CALLS: JSON.stringify(accumulatedMessage.tool_calls || [])
+            },
+            30000,
+            false,
+            this.getCurrentTokenCount(),
+            this.getMaxContextSize()
+          );
+
+          if (hookResult.approved && hookResult.commands) {
+            await this.processHookResult(hookResult);
+          }
+        }
 
         // Clean up tool call arguments before adding to conversation history
         // This prevents Ollama from rejecting malformed tool calls on subsequent API calls

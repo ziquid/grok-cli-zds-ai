@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
-import { LLMAgent, ChatEntry } from "../../agent/llm-agent";
+import { LLMAgent, ChatEntry } from "../../agent/llm-agent.js";
 import { useInputHandler } from "../../hooks/use-input-handler.js";
 import { LoadingSpinner } from "./loading-spinner.js";
 import { CommandSuggestions } from "./command-suggestions.js";

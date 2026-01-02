@@ -1,4 +1,4 @@
-import { LLMAgent, ChatEntry } from "../agent/llm-agent";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent.js";
 import { getTextContent } from "./content-utils.js";
 
 export interface RephraseHandlerResult {

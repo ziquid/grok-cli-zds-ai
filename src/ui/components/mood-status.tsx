@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { LLMAgent } from "../../agent/llm-agent";
+import { LLMAgent } from "../../agent/llm-agent.js";
 
 interface MoodStatusProps {
   agent?: LLMAgent;

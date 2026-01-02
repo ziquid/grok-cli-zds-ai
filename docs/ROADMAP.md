@@ -5,9 +5,9 @@
 ### Features
 
 - [🔘] 1: HOOKS
-  - [🔘] 1.1: Rename prePrompt to preLLMResponse
-  - [  ] 1.2: Add postUserInput hook
-  - [  ] 1.3: Add postLLMResponse hook
+  - [✅] 1.1: Rename prePrompt to preLLMResponse
+  - [✅] 1.2: Add postUserInput hook
+  - [✅] 1.3: Add postLLMResponse hook
   - [  ] 1.4: Add preToolCall hook
   - [  ] 1.5: Add postToolCall hook
 
@@ -18,9 +18,9 @@
   - [  ] 3.1: Introduce StreamingLLMAgent class
   - [✅] 3.2: Move sessionState to top of context.json file
 
-- [  ] 4: Tool enhancements
-  - [  ] 4.1: Add encode-speech tool
-  - [🔘] 4.2: Add getLoraDetails to ImageTool
+- [🔘] 4: Tool enhancements
+  - [✅] 4.1: Add encode-speech tool
+  - [✅] 4.2: Add getLoraDetails to ImageTool
   - [  ] 4.3: Add compareImageToPrompt to ImageTool
   - [  ] 4.4: Add joycaption to repository
 

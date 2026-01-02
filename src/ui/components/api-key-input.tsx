@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
-import { LLMAgent } from "../../agent/llm-agent";
+import { LLMAgent } from "../../agent/llm-agent.js";
 import { getSettingsManager } from "../../utils/settings-manager.js";
 
 interface ApiKeyInputProps {

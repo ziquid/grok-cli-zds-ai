@@ -6,7 +6,7 @@ import React from "react";
 import { render } from "ink";
 import { program } from "commander";
 import * as dotenv from "dotenv";
-import { LLMAgent } from "./agent/llm-agent";
+import { LLMAgent } from "./agent/llm-agent.js";
 import ChatInterface from "./ui/components/chat-interface.js";
 import { getSettingsManager } from "./utils/settings-manager.js";
 import { ConfirmationService } from "./utils/confirmation-service.js";
@@ -150,7 +150,7 @@ async function showAllTools(debugLogFile?: string): Promise<void> {
     await mcpManager.ensureServersInitialized();
 
     // Create a temporary agent and use introspect tool (no startup hook needed for listing tools)
-    const { LLMAgent } = await import('./agent/llm-agent');
+    const { LLMAgent } = await import('./agent/llm-agent.js');
     const tempAgent = new LLMAgent("dummy");
     await tempAgent.initialize();
     const result = await tempAgent["introspect"].introspect("tools");

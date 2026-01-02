@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useInput } from "ink";
-import { LLMAgent, ChatEntry } from "../agent/llm-agent";
+import { LLMAgent, ChatEntry } from "../agent/llm-agent.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import { ChatHistoryManager } from "../utils/chat-history-manager.js";
 import { useEnhancedInput, Key } from "./use-enhanced-input.js";
