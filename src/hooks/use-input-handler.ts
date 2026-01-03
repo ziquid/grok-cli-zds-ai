@@ -389,6 +389,18 @@ export function useInputHandler({
   }, [input]);
 
   const commandSuggestions: CommandSuggestion[] = [
+    { command: "/?", description: "Introspect help (alias for /introspect)" },
+    { command: "/? all", description: "Show tools, env, and context" },
+    { command: "/? commands", description: "Show available slash commands" },
+    { command: "/? context", description: "Show context/token usage" },
+    { command: "/? def:", description: "Show variable definition with birth children tree" },
+    { command: "/? defs", description: "Show all prompt variable definitions" },
+    { command: "/? env", description: "Show environment variables" },
+    { command: "/? render:", description: "Render a specific prompt variable" },
+    { command: "/? tool:", description: "Show details about a specific tool" },
+    { command: "/? tools", description: "Show all available tools" },
+    { command: "/? var:", description: "Show details about a specific prompt variable" },
+    { command: "/? vars", description: "Show all set prompt variables" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/compact", description: "Reduce context size (keep last 20 messages)" },
@@ -398,18 +410,18 @@ export function useInputHandler({
     { command: "/exit", description: "Exit the application" },
     { command: "/help", description: "Show help information" },
     { command: "/ink", description: "Switch to Ink UI mode (restart required)" },
-    { command: "/introspect", description: "Show available tools" },
+    { command: "/introspect", description: "Introspect help" },
     { command: "/introspect all", description: "Show tools, env, and context" },
     { command: "/introspect commands", description: "Show available slash commands" },
     { command: "/introspect context", description: "Show context/token usage" },
-    { command: "/introspect env", description: "Show environment variables" },
-    { command: "/introspect tools", description: "Show all available tools" },
-    { command: "/introspect tool:", description: "Show details about a specific tool" },
-    { command: "/introspect vars", description: "Show all set prompt variables" },
-    { command: "/introspect var:", description: "Show details about a specific prompt variable" },
-    { command: "/introspect render:", description: "Render a specific prompt variable" },
-    { command: "/introspect defs", description: "Show all prompt variable definitions" },
     { command: "/introspect def:", description: "Show variable definition with birth children tree" },
+    { command: "/introspect defs", description: "Show all prompt variable definitions" },
+    { command: "/introspect env", description: "Show environment variables" },
+    { command: "/introspect render:", description: "Render a specific prompt variable" },
+    { command: "/introspect tool:", description: "Show details about a specific tool" },
+    { command: "/introspect tools", description: "Show all available tools" },
+    { command: "/introspect var:", description: "Show details about a specific prompt variable" },
+    { command: "/introspect vars", description: "Show all set prompt variables" },
     { command: "/models", description: "Switch LLM Model" },
     { command: "/mood", description: "Set mood text (e.g., /mood focused green)" },
     { command: "/no-ink", description: "Switch to plain console mode (restart required)" },
@@ -535,7 +547,15 @@ export function useInputHandler({
       }
     }
 
-    if (trimmedInput.startsWith("/introspect")) {
+    if (trimmedInput.startsWith("/introspect") || trimmedInput.startsWith("/?")) {
+      // Add user message to show the command in chat history
+      const userEntry: ChatEntry = {
+        type: "user",
+        content: trimmedInput,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, userEntry]);
+
       const parts = trimmedInput.split(" ");
       const target = parts[1] || "help";
 
@@ -874,6 +894,14 @@ Available models: ${modelNames.join(", ")}`,
         }
       } else {
         // Default: show context usage info (redirect to /introspect context)
+        // Add user message to show the command in chat history
+        const userEntry: ChatEntry = {
+          type: "user",
+          content: trimmedInput,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, userEntry]);
+
         const toolResult = await agent["introspect"].introspect("context");
         const contextEntry: ChatEntry = {
           type: "assistant",

@@ -2,10 +2,11 @@
 # generate_image_sd.sh - Generate image via SD API, save base64/JSON/PNG
 
 # Find config from ZDS_AI_AGENT_CONFIG_FILE
-[[ ! -s "$ZDS_AI_AGENT_CONFIG_FILE" ]] && echo Failed to find config file >&2 # && exit 1 # uncommented for testing
-LOGDIR=${ZDS_AI_AGENT_LOGS_DIR:-~/Documents/ZDS-Agents/logs}
-CURRENT_DIR="$(pwd -P)"
-LOGFILE=${LOGDIR}/${ZDS_AI_AGENT_SESSION:-no-session}.log.txt
+[[ ! -s "$ZDS_AI_AGENT_CONFIG_FILE" ]] && echo Failed to find config file $ZDS_AI_AGENT_CONFIG_FILE >&2 && exit 1
+[[ ! -s "$ZDS_AI_AGENT_LOG_FILE" ]] && echo Failed to find log file $ZDS_AI_AGENT_LOG_FILE >&2 && exit 1
+[[ -z "$ZDS_AI_AGENT_SESSION" ]] && echo Failed to validate agent session >&2 && exit 1
+[[ -z "$ZDS_AI_AGENT_HOME_DIR" ]] && echo Failed to validate agent home dir >&2 && exit 1
+LOGFILE=${ZDS_AI_AGENT_LOG_FILE}
 
 # Load environment variables
 [[ -f ~/.env ]] && source ~/.env
@@ -165,13 +166,8 @@ PROMPT="$1"
 NEGATIVE_PROMPT="${2:-score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs}"
 
 # Override with command line flags if specified
-if [[ -n "$CFG_SCALE_OVERRIDE" ]]; then
-  CFG_SCALE="$CFG_SCALE_OVERRIDE"
-fi
-
-if [[ -n "$STEPS_OVERRIDE" ]]; then
-  STEPS="$STEPS_OVERRIDE"
-fi
+[[ -n "$CFG_SCALE_OVERRIDE" ]] && CFG_SCALE="$CFG_SCALE_OVERRIDE"
+[[ -n "$STEPS_OVERRIDE" ]] && STEPS="$STEPS_OVERRIDE"
 
 # Validate that we have at least a prompt
 if [[ -z "$PROMPT" ]]; then
@@ -200,7 +196,7 @@ NAME=${NAME:-${PROMPT}}
 SLUG=$(echo -n $NAME | tr '[:space:]' '_' | sed -e 's/[^a-zA-Z0-9_]/_/g' | cut -c 1-32)
 
 # Dirs
-OUTDIR=${ZDS_AI_AGENT_HOME_DIR:-~/Documents/ZDS-Agents}/out
+OUTDIR=${ZDS_AI_AGENT_HOME_DIR}/out
 mkdir -p $OUTDIR/photos/tmp
 OUTPUT_B64=$OUTDIR/photos/tmp/${SLUG}.b64
 OUTPUT_PNG=$OUTDIR/photos/${SLUG}.png

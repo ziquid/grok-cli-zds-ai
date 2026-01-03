@@ -78,7 +78,7 @@ export class VariableDef {
   /**
    * Get all variable definitions
    * Ensures all PROMPT_VARS are loaded into definitions map
-   * 
+   *
    * @returns Array of all VariableDef instances
    */
   static getAllDefinitions(): VariableDef[] {
@@ -90,6 +90,16 @@ export class VariableDef {
     }
 
     return Array.from(VariableDef.definitions.values());
+  }
+
+  /**
+   * Check if a variable is explicitly defined in PROMPT_VARS
+   *
+   * @param name Variable name
+   * @returns True if defined in PROMPT_VARS, false if created implicitly
+   */
+  static isExplicit(name: string): boolean {
+    return PROMPT_VARS.some(v => v.name === name);
   }
 }
 
@@ -200,26 +210,37 @@ export class Variable {
   static findBirthChildren(parent: string): Variable[] {
     const prefix = `${parent}:`;
     const found: Variable[] = [];
+    const foundNames = new Set<string>();
 
     // First check existing variables
     for (const variable of Variable.variables.values()) {
       if (variable.name.startsWith(prefix) && variable.renderFull) {
-        found.push(variable);
+        // Only include immediate children (no additional colons after prefix)
+        const remainder = variable.name.substring(prefix.length);
+        if (!remainder.includes(':')) {
+          found.push(variable);
+          foundNames.add(variable.name);
+        }
       }
     }
 
-    // If no variables found, check definitions and create them
-    if (found.length === 0) {
-      const allDefs = VariableDef.getAllDefinitions();
-      for (const def of allDefs) {
-        if (def.name.startsWith(prefix) && def.name !== parent && def.renderFull) {
+    // Also check definitions and create variables for any we haven't found yet
+    const allDefs = VariableDef.getAllDefinitions();
+    for (const def of allDefs) {
+      if (def.name.startsWith(prefix) && def.name !== parent && def.renderFull) {
+        // Only include immediate children (no additional colons after prefix)
+        const remainder = def.name.substring(prefix.length);
+        if (!remainder.includes(':')) {
           // Create the variable if it doesn't exist
-          let variable = Variable.get(def.name);
-          if (!variable) {
-            variable = new Variable(def.name);
-            Variable.variables.set(def.name, variable);
+          if (!foundNames.has(def.name)) {
+            let variable = Variable.get(def.name);
+            if (!variable) {
+              variable = new Variable(def.name);
+              Variable.variables.set(def.name, variable);
+            }
+            found.push(variable);
+            foundNames.add(def.name);
           }
-          found.push(variable);
         }
       }
     }
@@ -339,17 +360,25 @@ export class Variable {
 
     // Then, substitute %% with own values + birth children
     const birthChildren = Variable.findBirthChildren(this.name);
-    const birthRendered = birthChildren
-      .map(child => Variable.renderFull(child.name, renderingStack))
-      .join("");
+
+    // Render children, wrapping those with default templates
+    const birthRendered = birthChildren.map(child => {
+      const childContent = Variable.renderFull(child.name, renderingStack);
+
+      // If child has default template, wrap it in child's tag
+      if (child.def.template === "%%") {
+        // Use last segment of child's name for tag (e.g., SESSION:FRONTEND → frontend)
+        const parts = child.name.split(':');
+        const tagName = parts[parts.length - 1].toLowerCase();
+        return `<${tagName}>${childContent}</${tagName}>\n`;
+      } else {
+        // Child has custom template -- it handles its own wrapping
+        return childContent;
+      }
+    }).join("");
+
     const ownValues = this.renderFullValue();
     rendered = rendered.replace("%%", ownValues + birthRendered);
-
-    // If using default template and has birth children, wrap with XML tags
-    if (isDefaultTemplate && birthChildren.length > 0) {
-      const tagName = this.name.toLowerCase().replace(/:/g, "-");
-      rendered = `<${tagName}>\n${rendered}\n</${tagName}>\n`;
-    }
 
     return rendered;
   }
@@ -442,4 +471,9 @@ const PROMPT_VARS: VariableDef[] = [
     template: "<current-working-directory>%%</current-working-directory>\n",
     getter: () => process.cwd()
   }),
+  new VariableDef({ name: "SESSION:BACKEND:MODEL", weight: 10, persists: true }),
+  new VariableDef({ name: "SESSION:BACKEND:SERVICE", weight: 20, persists: true }),
+  new VariableDef({ name: "SESSION:FRONTEND", weight: 30, persists: true }),
+  new VariableDef({ name: "SESSION:STDIN_IS_TTY", weight: 31, persists: true }),
+  new VariableDef({ name: "SESSION:STDOUT_IS_TTY", weight: 31, persists: true }),
 ];

@@ -3,6 +3,7 @@ import { ToolDiscovery, getHandledToolNames } from "./tool-discovery.js";
 import { getAllLLMTools } from "../grok/tools.js";
 import { BUILT_IN_COMMANDS } from "../utils/slash-commands.js";
 import { Variable, VariableDef } from "../agent/prompt-variables.js";
+import chalk from "chalk";
 
 export class IntrospectTool implements ToolDiscovery {
   private agent: any; // Reference to the LLMAgent for accessing tool class info
@@ -136,14 +137,16 @@ Workflow for using unknown MCP tools:
         if (!variable) {
           return {
             success: false,
-            error: `Variable not found: ${varName}`
+            error: `Variable not found: ${varName}\n\nNote: Variables are only created when rendered. Use /? def:${varName} to see the definition.`
           };
         }
 
         // Format the variable details in a readable way
         let output = `Variable: ${variable.name}\n`;
 
-        if (variable.values.length === 1) {
+        if (variable.values.length === 0) {
+          output += `No direct values (renders from children/getter)\n`;
+        } else if (variable.values.length === 1) {
           output += `Value: ${variable.values[0]}\n`;
         } else {
           output += `Values (${variable.values.length}):\n`;
@@ -206,25 +209,32 @@ Workflow for using unknown MCP tools:
 
           // Show current variable with YAML-like formatting
           const indent = "  ".repeat(depth);
-          output += `${indent}name: "${varName}"\n`;
-          output += `${indent}weight: ${def.weight}\n`;
-          output += `${indent}persists: ${def.persists}\n`;
-          output += `${indent}renderFull: ${def.renderFull}\n`;
+          const isExplicit = VariableDef.isExplicit(varName);
+          const defType = isExplicit ? 'explicit' : 'implicit';
+          output += `${indent}name: ${chalk.cyan(`"${varName}"`)} ${chalk.dim(`(${defType})`)}\n`;
+          output += `${indent}weight: ${chalk.yellow(def.weight)}, persists: ${chalk.yellow(def.persists)}, renderFull: ${chalk.yellow(def.renderFull)}\n`;
 
           if (def.env_var) {
-            output += `${indent}env_var: "${def.env_var}"\n`;
+            output += `${indent}env_var: ${chalk.cyan(`"${def.env_var}"`)}\n`;
           }
           if (def.getter) {
-            output += `${indent}has_getter: true\n`;
+            output += `${indent}has_getter: ${chalk.yellow('true')}\n`;
           }
 
           // Always show template
           if (def.template && def.template !== "%%") {
             const templatePreview = def.template.length > 60 ?
               def.template.substring(0, 60) + "..." : def.template;
-            output += `${indent}template: "${templatePreview.replace(/\n/g, "\\n")}"\n`;
+            output += `${indent}template: ${chalk.magenta(`"${templatePreview.replace(/\n/g, "\\n")}"`)}\n`;
           } else if (def.template === "%%") {
-            output += `${indent}template: "%%" # default\n`;
+            output += `${indent}template: ${chalk.magenta('"%%"')} ${chalk.dim('# default')}\n`;
+          }
+
+          // Show current value if variable exists and has values
+          if (variable && variable.values.length > 0) {
+            const valuePreview = variable.values.join(", ").length > 60 ?
+              variable.values.join(", ").substring(0, 60) + "..." : variable.values.join(", ");
+            output += `${indent}value: ${chalk.green(`"${valuePreview.replace(/\n/g, "\\n")}"`)}\n`;
           }
 
           // Show birth children (prefix match)
@@ -254,18 +264,29 @@ Workflow for using unknown MCP tools:
 
           // Display children recursively
           if (allChildren.length > 0) {
+            output += '\n';
             output += `${indent}children:\n`;
-            for (const child of allChildren) {
-              const childTypeLabel = child.type === 'birth' ? 'birth' : 'adopted';
-              output += `${indent}  - # ${childTypeLabel}\n`;
-              const childOutput = buildVariableTree(child.name, depth + 2, new Set(visited));
-              // Indent each line of the child output for YAML list item
-              const indentedChildOutput = childOutput
-                .split('\n')
-                .filter(line => line.trim())
-                .map(line => `${indent}    ${line}`)
-                .join('\n') + '\n';
-              output += indentedChildOutput;
+            for (let i = 0; i < allChildren.length; i++) {
+              const child = allChildren[i];
+              // Build child tree with no indentation, we'll add it when outputting
+              const childOutput = buildVariableTree(child.name, 0, new Set(visited));
+              const lines = childOutput.split('\n').filter(line => line.trim());
+
+              // First line gets the list marker
+              if (lines.length > 0) {
+                const firstLine = lines[0];
+                output += `${indent}  - ${firstLine}\n`;
+
+                // Remaining lines get normal indentation
+                for (let j = 1; j < lines.length; j++) {
+                  output += `${indent}    ${lines[j]}\n`;
+                }
+
+                // Add blank line after each child except the last one
+                if (i < allChildren.length - 1) {
+                  output += '\n';
+                }
+              }
             }
           }
 

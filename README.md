@@ -393,7 +393,7 @@ Options:
   --auto-approve                      auto-approve all operations without confirmation prompts
   --auto-approve-commands <commands>  comma-separated list of commands to auto-approve (e.g.,
                                       'chdir,list_files,pwd')
-  -c, --context <file>                path to context persistence file (default: ~/.grok/chat-history.json)
+  -c, --context <file>                path to context persistence file (default: ~/.zds-ai/context.json)
   --no-ink                            disable Ink UI and use plain console input/output
   --debug-log <file>                  redirect MCP server debug output to log file instead of suppressing
   --show-all-tools                    list all available tools (internal and MCP) and exit

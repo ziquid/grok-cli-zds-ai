@@ -4,8 +4,8 @@ import * as os from "os";
 import type { ChatEntry } from "../agent/llm-agent.js";
 import { getTextContent } from "./content-utils.js";
 
-const HISTORY_FILE_NAME = "chat-history.json";
-const HISTORY_DIR = path.join(os.homedir(), ".grok");
+const HISTORY_FILE_NAME = "context.json";
+const HISTORY_DIR = path.join(os.homedir(), ".zds-ai");
 
 export interface SessionState {
   session: string;
@@ -33,7 +33,7 @@ export interface ContextData {
 }
 
 /**
- * Manages chat history persistence to ~/.grok/chat-history.json or custom path
+ * Manages chat history persistence to ~/.zds-ai/context.json or custom path
  */
 export class ChatHistoryManager {
   private static instance: ChatHistoryManager;

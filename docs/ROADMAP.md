@@ -33,6 +33,30 @@
   - [  ] 6.2: Update the README
   - [✅] 6.3: Documented classes in src/agent
 
+- [✅] 7: CLI USABILITY IMPROVEMENTS
+  - [✅] 7.1: Add `/? ` as shorter alias for `/introspect` command
+  - [✅] 7.2: Enhanced `/? ` (introspect) output formatting
+    - Added color-coded output (cyan for values, yellow for properties, magenta for templates, dim for comments)
+    - Improved YAML-like tree structure for variable definitions
+    - Show explicit/implicit indicator for variable definitions
+    - Display current values in def: output when available
+    - Better error messages suggesting def: when var: not found
+
+- [✅] 8: FILE LOCATION MIGRATION
+  - [✅] 8.1: Move settings from ~/.grok/ to ~/.zds-ai/
+    - User settings: ~/.grok/user-settings.json → ~/.zds-ai/cli-settings.json
+    - MCP config: ~/.grok/mcp.json → ~/.zds-ai/mcp.json
+    - Project settings: .grok/settings.json → .zds-ai/project-settings.json
+    - Chat history: ~/.grok/chat-history.json → ~/.zds-ai/context.json
+
+- [✅] 9: PROMPT VARIABLE SYSTEM IMPROVEMENTS
+  - [✅] 9.1: Add SESSION variables for session state tracking
+    - SESSION:BACKEND:MODEL (weight 10, persistent)
+    - SESSION:BACKEND:SERVICE (weight 20, persistent)
+    - SESSION:FRONTEND (weight 30, persistent)
+    - SESSION:STDIN_IS_TTY (weight 31, persistent)
+    - SESSION:STDOUT_IS_TTY (weight 31, persistent)
+
 
 ### Bug Fixes
 
@@ -41,6 +65,11 @@
 - [✅] 3: Fixed hook prompt variable commands (SET, SET_FILE, SET_TEMP_FILE) not being applied
 - [✅] 4: Fixed hook ENV commands not being applied in llm-agent.ts hooks
 - [  ] 5: Save permanent prompt vars with context.json
+- [✅] 6: Fixed /introspect and /? commands not showing user input in chat history
+- [✅] 7: Fixed SET/SET_FILE/SET_TEMP_FILE regex to allow underscores in variable names
+- [✅] 8: Fixed XML wrapping logic for prompt variables (now checks child's template, not parent's)
+- [✅] 9: Fixed findBirthChildren to only return immediate children, not grandchildren
+- [✅] 10: Fixed var: output showing "Values (0)" - now shows "No direct values (renders from children/getter)"
 
 ## Version 0.2.0
 
@@ -48,3 +77,15 @@
 
 - [  ] 1: CODE IMPROVEMENTS
   - [  ] 1.1: Start separating FE and BE
+  - [  ] 1.2: Refactor settings manager
+    - Clean up settings-manager.ts code structure
+    - Improve error handling and validation
+    - Simplify the interface for loading/saving settings
+    - Better separation of user vs project settings
+
+- [  ] 2: DATA PERSISTENCE
+  - [  ] 2.1: Migrate context storage from JSON files to SQLite database
+    - Replace context.json with SQLite schema
+    - Maintain backward compatibility for reading old JSON files
+    - Improve query performance for large conversation histories
+    - Enable better analytics and search capabilities

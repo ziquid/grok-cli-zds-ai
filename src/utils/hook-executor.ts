@@ -194,7 +194,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       apiKeyEnvVar = cmd.value.trim();
     } else if (cmd.type === "SET") {
       // Parse "VAR_NAME=value"
-      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.*)$/);
+      const match = cmd.value.match(/^([A-Z_:]+)=(.*)$/);
       if (match) {
         const [, varName, value] = match;
 
@@ -209,7 +209,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       }
     } else if (cmd.type === "SET_FILE") {
       // Parse "VAR_NAME=/path/to/file"
-      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.+)$/);
+      const match = cmd.value.match(/^([A-Z_:]+)=(.+)$/);
       if (match) {
         const [, varName, filePath] = match;
 
@@ -240,7 +240,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
       }
     } else if (cmd.type === "SET_TEMP_FILE") {
       // Parse "VAR_NAME=/path/to/file"
-      const match = cmd.value.match(/^([A-Z]+:[A-Z]+)=(.+)$/);
+      const match = cmd.value.match(/^([A-Z_:]+)=(.+)$/);
       if (match) {
         const [, varName, filePath] = match;
 

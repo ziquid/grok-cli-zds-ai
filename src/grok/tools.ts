@@ -335,7 +335,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
     type: "function",
     function: {
       name: "clearCache",
-      description: "Clear the conversation cache/context and reset to initial state.  Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code. Second call with the code clears the cache.",
+      description: "Clear the conversation cache/context and reset to initial state.  Requires a two-step confirmation process to ensure notes are saved first. First call generates a confirmation code.  Second call with the code clears the cache.",
       parameters: {
         type: "object",
         properties: {
@@ -352,7 +352,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
     type: "function",
     function: {
       name: "restart",
-      description: "Restart the application. Use this when you need to reload the application with updated configuration or to apply changes.",
+      description: "Restart the application.  Use this when you need to reload the application with updated configuration or to apply changes.",
       parameters: {
         type: "object",
         properties: {},
@@ -667,7 +667,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
           },
           configScale: {
             type: "number",
-            description: "Guidance scale - how closely to follow the prompt (default: 5.0)",
+            description: "Guidance scale: how closely to follow the prompt (default: 5.0)",
           },
           numSteps: {
             type: "integer",
@@ -679,7 +679,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
           },
           name: {
             type: "string",
-            description: "Optional slug to include in the filename (e.g., 'portrait' becomes 'portrait-2025-10-12T14-30-45.png')",
+            description: "Optional slug to use as the filename",
           },
           move: {
             type: "boolean",
@@ -709,7 +709,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
           backend: {
             type: "string",
             enum: ["joy", "fast"],
-            description: "Captioning backend to use: 'joy' for joycaption (slower, higher quality) or 'fast' for fastcaption.sh (faster, good quality). Default: 'fast'",
+            description: "Captioning backend to use: 'joy' for joycaption (slower, higher quality) or 'fast' for fastcaption.sh (faster, good quality).  Default: 'fast'",
           },
         },
         required: ["filename"],
@@ -862,7 +862,7 @@ const MORPH_EDIT_TOOL: LLMTool = {
   type: "function",
   function: {
     name: "editFile",
-    description: "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nMake edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
+    description: "Make a smart edit to an existing file.\n\nA smart AI bot will apply the edit for you.  Make it clear what the edit is while minimizing the unchanged lines you send.\nWhen writing the edit, specify each change in sequence, with the special comment // ... existing code ... to represent unchanged lines in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nRepeat as few lines of the original file as possible to convey the change without providing ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence -- if you omit the existing-code comment, the AI bot may delete these lines!\n\nIf you do want to delete a section, provide context before and after to delete it.  If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code``` and you want to remove Block 2, output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit is and where it should be applied.\nMake edits to a file in a single editFile call instead of multiple editFile calls to the same file.  The apply model can handle many distinct edits at once.",
     parameters: {
       type: "object",
       properties: {
@@ -872,11 +872,11 @@ const MORPH_EDIT_TOOL: LLMTool = {
         },
         instructions: {
           type: "string",
-          description: "A single sentence instruction describing what you are going to do for the sketched edit. This is used to assist the less intelligent model in applying the edit. Use the first person to describe what you are going to do. Use it to disambiguate uncertainty in the edit."
+          description: "A single-sentence instruction describing what you are going to do for the sketched edit, written in the first person.  This will be used to help apply the edit.  Use it to disambiguate uncertainty in the edit."
         },
         code_edit: {
           type: "string",
-          description: "Specify ONLY the precise lines of code that you wish to edit. NEVER specify or write out unchanged code. Instead, represent all unchanged code using the comment of the language you're editing in - example: // ... existing code ..."
+          description: "Specify ONLY the precise lines of code that you wish to edit.  NEVER specify or write out unchanged code.  Instead, represent all unchanged code using the comment of the language you're editing in, e.g.: // ... existing code ..."
         }
       },
       required: ["filename", "instructions", "code_edit"]

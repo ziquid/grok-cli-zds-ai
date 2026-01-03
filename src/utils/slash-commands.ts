@@ -5,6 +5,7 @@ import { ConfirmationService } from "./confirmation-service.js";
  * Built-in slash commands list - single source of truth
  */
 export const BUILT_IN_COMMANDS = `Built-in Commands:
+  /?          - Introspect tools and environment (alias for /introspect)
   /clear      - Clear chat history (current session + persisted)
   /compact    - Reduce context size (keep last 20 messages)
   /context    - Show context usage info
@@ -12,7 +13,7 @@ export const BUILT_IN_COMMANDS = `Built-in Commands:
   /context edit - Edit context JSON file (opens in $EDITOR)
   /help       - Show this help
   /ink        - Switch to Ink UI mode (restart required)
-  /introspect - Show available tools (internal and MCP)
+  /introspect - Introspect tools and environment
   /models     - Switch between available models
   /mood <text> [color] - Set current mood
   /no-ink     - Switch to plain console mode (restart required)
@@ -232,8 +233,8 @@ export async function processSlashCommand(
     }
   }
 
-  // /introspect command
-  if (trimmedInput.startsWith("/introspect")) {
+  // /introspect command (and /? alias)
+  if (trimmedInput.startsWith("/introspect") || trimmedInput.startsWith("/?")) {
     const parts = trimmedInput.split(" ");
     const target = parts[1] || "help";
 

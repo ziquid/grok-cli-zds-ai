@@ -501,7 +501,7 @@ program
   )
   .option(
     "-c, --context <file>",
-    "path to context persistence file (default: ~/.grok/chat-history.json)"
+    "path to context persistence file (default: ~/.zds-ai/context.json)"
   )
   .option(
     '--no-ink',
