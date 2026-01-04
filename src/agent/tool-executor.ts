@@ -1,7 +1,7 @@
 import { LLMToolCall } from "../grok/client.js";
 import { ToolResult } from "../types/index.js";
 import { getAllLLMTools, getMCPManager } from "../grok/tools.js";
-import { executeToolApprovalHook } from "../utils/hook-executor.js";
+import { executeToolApprovalHook, executePreToolCallHook } from "../utils/hook-executor.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 
 /** Maximum attempts to parse nested JSON strings */
@@ -232,6 +232,22 @@ export class ToolExecutor {
         }
 
         await this.agent.processHookResult(approvalResult);
+      }
+
+      // Execute preToolCall hook
+      const preToolCallHookPath = settings.getPreToolCallHook();
+      if (preToolCallHookPath && !isTaskTool) {
+        const hookResult = await executePreToolCallHook(
+          preToolCallHookPath,
+          toolCall.function.name,
+          args,
+          30000,
+          this.agent.getCurrentTokenCount(),
+          this.agent.getMaxContextSize()
+        );
+
+        // Process hook results (env vars, system messages, etc.)
+        await this.agent.processHookResult(hookResult);
       }
 
       return await this.executeToolByName(toolCall.function.name, args);

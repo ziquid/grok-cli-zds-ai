@@ -458,6 +458,8 @@ const PROMPT_VARS: VariableDef[] = [
     template: "<zds-pre>%ZDS:PRE%</zds-pre>\n<org>%ORG%</org>\n<job>%JOB%</job>\n<char>%CHAR%</char>\n<project>%PROJECT%</project>\n<task>%TASK%</task>\n<message>%MESSAGE%</message>\n<backend>%BACKEND%</backend>\n<app>%APP%</app>\n<zds-post>%ZDS:POST%</zds-post>\n%%"
   }),
   new VariableDef({ name: "ZDS:POST", weight: 99, persists: true }),
+  new VariableDef({ name: "ORG:NAME", weight: 10, persists: true, renderFull: true }),
+  new VariableDef({ name: "ORG:NOTES", weight: 20, persists: true, renderFull: true }),
   new VariableDef({
     name: "APP:TOOLS",
     weight: 70,

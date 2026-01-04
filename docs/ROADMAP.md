@@ -8,13 +8,13 @@
   - [✅] 1.1: Rename prePrompt to preLLMResponse
   - [✅] 1.2: Add postUserInput hook
   - [✅] 1.3: Add postLLMResponse hook
-  - [  ] 1.4: Add preToolCall hook
+  - [✅] 1.4: Add preToolCall hook
   - [  ] 1.5: Add postToolCall hook
 
 - [  ] 2: HOOK COMMANDS
   - [  ] 2.1: Add MAXCONTEXT command for setting maximum context length
 
-- [  ] 3: CODE IMPROVEMENTS
+- [🔘] 3: CODE IMPROVEMENTS
   - [  ] 3.1: Introduce StreamingLLMAgent class
   - [✅] 3.2: Move sessionState to top of context.json file
 
@@ -70,6 +70,7 @@
 - [✅] 8: Fixed XML wrapping logic for prompt variables (now checks child's template, not parent's)
 - [✅] 9: Fixed findBirthChildren to only return immediate children, not grandchildren
 - [✅] 10: Fixed var: output showing "Values (0)" - now shows "No direct values (renders from children/getter)"
+- [✅] 11: Fixed var: output not showing children (now displays children list matching def: output)
 
 ## Version 0.2.0
 

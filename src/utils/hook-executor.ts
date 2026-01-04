@@ -423,18 +423,22 @@ export async function executeOperationHook(
 }
 
 /**
- * Execute a tool approval hook with tool name and parameters passed via environment
+ * Generic tool hook executor for both approval and preToolCall hooks
  * @param hookPath Path to hook script (supports ~/ expansion)
+ * @param operation Operation name to set in environment (or undefined for toolApproval)
  * @param toolName Name of the tool being executed
  * @param parameters Tool parameters as key-value pairs
  * @param timeoutMs Timeout in milliseconds (default 30000)
+ * @param blockOnError If true, non-zero exit code rejects; if false, processes commands anyway
  * @returns Promise<HookResult>
  */
-export async function executeToolApprovalHook(
+async function executeToolHook(
   hookPath: string,
+  operation: string | undefined,
   toolName: string,
   parameters: Record<string, any>,
   timeoutMs: number = 30000,
+  blockOnError: boolean = true,
   contextCurrent?: number,
   contextMax?: number
 ): Promise<HookResult> {
@@ -448,6 +452,11 @@ export async function executeToolApprovalHook(
     ...process.env as Record<string, string>,
     [`${ENV_PREFIX}TOOL_NAME`]: toolName,
   };
+
+  // Set operation if provided (preToolCall sets this, toolApproval doesn't)
+  if (operation) {
+    env[`${ENV_PREFIX}OPERATION`] = operation;
+  }
 
   // Add context information if provided
   if (contextCurrent !== undefined) {
@@ -477,34 +486,43 @@ export async function executeToolApprovalHook(
           return;
         }
 
-        // Non-zero exit code = rejected
+        // Non-zero exit code handling depends on blockOnError
         if (error.code && error.code > 0) {
-          // Parse commands even on rejection
+          // Parse commands even on error
           const commands = parseHookOutput(stdout);
 
-          // Extract TOOL_RESULT commands as the denial reason
-          const toolResultLines: string[] = [];
-          for (const cmd of commands) {
-            if (cmd.type === "TOOL_RESULT") {
-              toolResultLines.push(cmd.value);
+          if (blockOnError) {
+            // Extract TOOL_RESULT commands as the denial reason
+            const toolResultLines: string[] = [];
+            for (const cmd of commands) {
+              if (cmd.type === "TOOL_RESULT") {
+                toolResultLines.push(cmd.value);
+              }
             }
+
+            const reason = toolResultLines.length > 0
+              ? toolResultLines.join("\n")
+              : (stdout.trim() || stderr.trim() || "Tool execution denied by hook");
+
+            resolve({
+              approved: false,
+              reason,
+              timedOut: false,
+              commands,
+            });
+          } else {
+            // Non-blocking hook: process commands anyway
+            resolve({
+              approved: true,
+              timedOut: false,
+              commands,
+            });
           }
-
-          const reason = toolResultLines.length > 0
-            ? toolResultLines.join("\n")
-            : (stdout.trim() || stderr.trim() || "Tool execution denied by hook");
-
-          resolve({
-            approved: false,
-            reason,
-            timedOut: false,
-            commands,
-          });
           return;
         }
       }
 
-      // Exit code 0 = approved
+      // Exit code 0 = success
       const commands = parseHookOutput(stdout);
       resolve({
         approved: true,
@@ -522,4 +540,63 @@ export async function executeToolApprovalHook(
       }
     }, timeoutMs);
   });
+}
+
+/**
+ * Execute a preToolCall hook with tool name and parameters passed via environment
+ * This hook runs before tool execution and can modify environment/prompt variables
+ * Non-blocking: always processes commands even on non-zero exit
+ * @param hookPath Path to hook script (supports ~/ expansion)
+ * @param toolName Name of the tool being executed
+ * @param parameters Tool parameters as key-value pairs
+ * @param timeoutMs Timeout in milliseconds (default 30000)
+ * @returns Promise<HookResult>
+ */
+export async function executePreToolCallHook(
+  hookPath: string,
+  toolName: string,
+  parameters: Record<string, any>,
+  timeoutMs: number = 30000,
+  contextCurrent?: number,
+  contextMax?: number
+): Promise<HookResult> {
+  return executeToolHook(
+    hookPath,
+    "preToolCall",
+    toolName,
+    parameters,
+    timeoutMs,
+    false, // Non-blocking: process commands even on error
+    contextCurrent,
+    contextMax
+  );
+}
+
+/**
+ * Execute a tool approval hook with tool name and parameters passed via environment
+ * Blocking: non-zero exit code rejects the tool execution
+ * @param hookPath Path to hook script (supports ~/ expansion)
+ * @param toolName Name of the tool being executed
+ * @param parameters Tool parameters as key-value pairs
+ * @param timeoutMs Timeout in milliseconds (default 30000)
+ * @returns Promise<HookResult>
+ */
+export async function executeToolApprovalHook(
+  hookPath: string,
+  toolName: string,
+  parameters: Record<string, any>,
+  timeoutMs: number = 30000,
+  contextCurrent?: number,
+  contextMax?: number
+): Promise<HookResult> {
+  return executeToolHook(
+    hookPath,
+    undefined, // toolApproval doesn't set OPERATION
+    toolName,
+    parameters,
+    timeoutMs,
+    true, // Blocking: reject on error
+    contextCurrent,
+    contextMax
+  );
 }

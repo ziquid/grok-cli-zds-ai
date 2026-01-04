@@ -141,23 +141,106 @@ Workflow for using unknown MCP tools:
           };
         }
 
-        // Format the variable details in a readable way
-        let output = `Variable: ${variable.name}\n`;
+        // Format the variable details with colors matching def: output style
+        const varDef = VariableDef.getOrCreate(variable.name);
+        const isExplicit = VariableDef.isExplicit(variable.name);
+        const defType = isExplicit ? 'explicit' : 'implicit';
+        let output = `${chalk.cyan(variable.name)} ${chalk.dim(`(${defType})`)}\n`;
 
-        if (variable.values.length === 0) {
-          output += `No direct values (renders from children/getter)\n`;
-        } else if (variable.values.length === 1) {
-          output += `Value: ${variable.values[0]}\n`;
+        // Only show isNew if the variable has values
+        if (variable.values.length > 0) {
+          output += `weight: ${chalk.yellow(variable.weight)}, persists: ${chalk.yellow(variable.persists)}, renderFull: ${chalk.yellow(varDef.renderFull)}, isNew: ${chalk.yellow(variable.isNew)}\n`;
         } else {
-          output += `Values (${variable.values.length}):\n`;
+          output += `weight: ${chalk.yellow(variable.weight)}, persists: ${chalk.yellow(variable.persists)}, renderFull: ${chalk.yellow(varDef.renderFull)}\n`;
+        }
+
+        // Show template
+        if (varDef.template && varDef.template !== "%%") {
+          const templatePreview = varDef.template.length > 60 ?
+            varDef.template.substring(0, 60) + "..." : varDef.template;
+          output += `template: ${chalk.magenta(`"${templatePreview.replace(/\n/g, "\\n")}"`)}\n`;
+        } else if (varDef.template === "%%") {
+          output += `template: ${chalk.magenta('"%%"')} ${chalk.dim('# default')}\n`;
+        }
+
+        // Show values with color coding
+        if (variable.values.length === 0) {
+          output += `${chalk.dim('values (0)')}\n`;
+        } else if (variable.values.length === 1) {
+          const valuePreview = variable.values[0].length > 100 ?
+            variable.values[0].substring(0, 100) + "..." : variable.values[0];
+          output += `value: ${chalk.green(`"${valuePreview.replace(/\n/g, "\\n")}"`)}\n`;
+        } else {
+          output += `${chalk.dim('values (' + variable.values.length + '):')}\n`;
           variable.values.forEach((value, index) => {
-            output += `  [${index + 1}] ${value}\n`;
+            const valuePreview = value.length > 100 ? value.substring(0, 100) + "..." : value;
+            output += `  ${chalk.dim('[' + (index + 1) + ']')} ${chalk.green('"' + valuePreview.replace(/\n/g, "\\n") + '"')}\n`;
           });
         }
 
-        output += `Weight: ${variable.weight}\n`;
-        output += `Persists: ${variable.persists}\n`;
-        output += `Is New: ${variable.isNew}\n`;
+        // Show children if they exist with detailed formatting
+        const birthChildren = Variable.findBirthChildren(varName);
+
+        // Show adopted children (from template)
+        const adoptedChildren = varDef.adoptedChildren.filter(child =>
+          !birthChildren.some(birthChild => birthChild.name === child)
+        );
+
+        // Combine all children and sort by weight
+        const allChildren = [
+          ...birthChildren.map(child => ({ name: child.name, weight: child.weight, type: 'birth' })),
+          ...adoptedChildren.map(child => {
+            const childDef = VariableDef.getOrCreate(child);
+            const childVar = Variable.get(child);
+            return {
+              name: child,
+              weight: childVar?.weight || childDef.weight,
+              type: 'adopted'
+            };
+          })
+        ].sort((a, b) => {
+          if (a.weight !== b.weight) return a.weight - b.weight;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (allChildren.length > 0) {
+          output += `${chalk.dim('children (' + allChildren.length + '):')}\n`;
+
+          allChildren.forEach(child => {
+            const childVar = Variable.get(child.name);
+            const childDef = VariableDef.getOrCreate(child.name);
+            const isExplicit = VariableDef.isExplicit(child.name);
+            const defType = isExplicit ? 'explicit' : 'implicit';
+
+            // Show child with same format as parent variable
+            output += `  - ${chalk.cyan(child.name)} ${chalk.dim(`(${defType})`)}\n`;
+
+            // Only show isNew if the child variable exists and has values
+            if (childVar && childVar.values.length > 0) {
+              output += `    weight: ${chalk.yellow(child.weight)}, persists: ${chalk.yellow(childDef.persists)}, renderFull: ${chalk.yellow(childDef.renderFull)}, isNew: ${chalk.yellow(childVar.isNew)}\n`;
+            } else {
+              output += `    weight: ${chalk.yellow(child.weight)}, persists: ${chalk.yellow(childDef.persists)}, renderFull: ${chalk.yellow(childDef.renderFull)}\n`;
+            }
+
+            // Show template
+            if (childDef.template && childDef.template !== "%%") {
+              const templatePreview = childDef.template.length > 60 ?
+                childDef.template.substring(0, 60) + "..." : childDef.template;
+              output += `    template: ${chalk.magenta(`"${templatePreview.replace(/\n/g, "\\n")}"`)}\n`;
+            } else if (childDef.template === "%%") {
+              output += `    template: ${chalk.magenta('"%%"')} ${chalk.dim('# default')}\n`;
+            }
+
+            // Show child value if available with count
+            if (childVar && childVar.values.length > 0) {
+              const childValue = childVar.values.join(", ");
+              const valuePreview = childValue.length > 60 ? childValue.substring(0, 60) + "..." : childValue;
+              output += `    values (${childVar.values.length}): ${chalk.green(`"${valuePreview.replace(/\n/g, "\\n")}"`)}\n`;
+            } else if (childVar) {
+              output += `    ${chalk.dim('values (0)')}\n`;
+            }
+          });
+        }
 
         return {
           success: true,
@@ -230,11 +313,13 @@ Workflow for using unknown MCP tools:
             output += `${indent}template: ${chalk.magenta('"%%"')} ${chalk.dim('# default')}\n`;
           }
 
-          // Show current value if variable exists and has values
+          // Show current value if variable exists and has values with count
           if (variable && variable.values.length > 0) {
             const valuePreview = variable.values.join(", ").length > 60 ?
               variable.values.join(", ").substring(0, 60) + "..." : variable.values.join(", ");
-            output += `${indent}value: ${chalk.green(`"${valuePreview.replace(/\n/g, "\\n")}"`)}\n`;
+            output += `${indent}values (${variable.values.length}): ${chalk.green(`"${valuePreview.replace(/\n/g, "\\n")}"`)}\n`;
+          } else if (variable) {
+            output += `${indent}${chalk.dim('values (0)')}\n`;
           }
 
           // Show birth children (prefix match)
@@ -265,7 +350,7 @@ Workflow for using unknown MCP tools:
           // Display children recursively
           if (allChildren.length > 0) {
             output += '\n';
-            output += `${indent}children:\n`;
+            output += `${indent}${chalk.dim('children (' + allChildren.length + '):')}\n`;
             for (let i = 0; i < allChildren.length; i++) {
               const child = allChildren[i];
               // Build child tree with no indentation, we'll add it when outputting

@@ -18,8 +18,8 @@ export interface UserSettings {
   postUserInputHook?: string; // Command to run after each user input is received
   preLLMResponseHook?: string; // Command to run before each prompt is sent to the LLM
   postLLMResponseHook?: string; // Command to run after each prompt is sent to the LLM
-  preToolUseHook?: string; // Command to run before each approved tool call is executed
-  postToolUseHook?: string; // Command to run after each approved tool call is executed
+  preToolCallHook?: string; // Command to run before each approved tool call is executed
+  postToolCallHook?: string; // Command to run after each approved tool call is executed
   taskApprovalHook?: string; // Command to validate task operations (start/transition/stop)
   toolApprovalHook?: string; // Command to validate tool execution before running
   personaHook?: string; // Command to validate persona changes
@@ -430,17 +430,17 @@ export class SettingsManager {
   }
 
   /**
-   * Get preToolUse hook command from user settings
+   * Get preToolCall hook command from user settings
    */
-  public getPreToolUseHook(): string | undefined {
-    return this.getUserSetting("preToolUseHook");
+  public getPreToolCallHook(): string | undefined {
+    return this.getUserSetting("preToolCallHook");
   }
 
   /**
-   * Get postToolUse hook command from user settings
+   * Get postToolCall hook command from user settings
    */
-  public getPostToolUseHook(): string | undefined {
-    return this.getUserSetting("postToolUseHook");
+  public getPostToolCallHook(): string | undefined {
+    return this.getUserSetting("postToolCallHook");
   }
 
   /**
