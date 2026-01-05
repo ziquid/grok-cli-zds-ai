@@ -7,7 +7,7 @@
 
 ## Commit Messages
 
-Write commit messages focused on **features and benefits**, not functions and filenames.
+Write commit messages focused on **features and benefits**, not functions and filenames.  Describe what the user can now do, not what code changed.
 
 **Bad (implementation details):**
 - "Added executePostToolCallHook() to hook-executor.ts"
@@ -19,4 +19,3 @@ Write commit messages focused on **features and benefits**, not functions and fi
 - "Enables context-aware responses to tool calls"
 - "Hooks can inject guidance based on tool outcomes"
 
-Describe what the user can now do, not what code changed.

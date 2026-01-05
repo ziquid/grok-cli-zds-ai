@@ -398,8 +398,8 @@ export class HookManager {
       applyEnvVariables(commands.env);
 
       // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const [varName, value] of commands.promptVars.entries()) {
-        Variable.set(varName, value);
+      for (const {name, value} of commands.promptVars) {
+        Variable.set(name, value);
       }
 
       const parts = [];
@@ -433,8 +433,8 @@ export class HookManager {
       applyEnvVariables(commands.env);
 
       // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const [varName, value] of commands.promptVars.entries()) {
-        Variable.set(varName, value);
+      for (const {name, value} of commands.promptVars) {
+        Variable.set(name, value);
       }
 
       const successMsg = `Model changed to "${commands.model}"`;
@@ -449,8 +449,8 @@ export class HookManager {
       applyEnvVariables(commands.env);
 
       // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const [varName, value] of commands.promptVars.entries()) {
-        Variable.set(varName, value);
+      for (const {name, value} of commands.promptVars) {
+        Variable.set(name, value);
       }
     }
 

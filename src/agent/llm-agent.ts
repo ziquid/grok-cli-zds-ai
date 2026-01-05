@@ -311,8 +311,8 @@ export class LLMAgent extends EventEmitter {
 
           applyEnvVariables(results.env);
 
-          for (const [varName, value] of results.promptVars.entries()) {
-            Variable.set(varName, value);
+          for (const {name, value} of results.promptVars) {
+            Variable.set(name, value);
           }
 
           // Process hook commands through HookManager
@@ -773,8 +773,8 @@ export class LLMAgent extends EventEmitter {
       if (hookResult.approved && hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
         applyEnvVariables(results.env);
-        for (const [varName, value] of results.promptVars.entries()) {
-          Variable.set(varName, value);
+        for (const {name, value} of results.promptVars) {
+          Variable.set(name, value);
         }
         if (results.prefill) {
           this.messageProcessor.setHookPrefillText(results.prefill);
@@ -814,8 +814,8 @@ export class LLMAgent extends EventEmitter {
         if (hookResult.approved && hookResult.commands) {
           const results = applyHookCommands(hookResult.commands);
           applyEnvVariables(results.env);
-          for (const [varName, value] of results.promptVars.entries()) {
-            Variable.set(varName, value);
+          for (const {name, value} of results.promptVars) {
+            Variable.set(name, value);
           }
           if (results.prefill) {
             this.messageProcessor.setHookPrefillText(results.prefill);
@@ -1273,8 +1273,8 @@ export class LLMAgent extends EventEmitter {
       if (hookResult.approved && hookResult.commands) {
         const results = applyHookCommands(hookResult.commands);
         applyEnvVariables(results.env);
-        for (const [varName, value] of results.promptVars.entries()) {
-          Variable.set(varName, value);
+        for (const {name, value} of results.promptVars) {
+          Variable.set(name, value);
         }
         if (results.prefill) {
           this.messageProcessor.setHookPrefillText(results.prefill);
@@ -1350,8 +1350,8 @@ export class LLMAgent extends EventEmitter {
 
           if (hookResult.approved && hookResult.commands) {
             const results = applyHookCommands(hookResult.commands);
-            for (const [varName, value] of results.promptVars.entries()) {
-              Variable.set(varName, value);
+            for (const {name, value} of results.promptVars) {
+              Variable.set(name, value);
             }
             if (results.prefill) {
               this.messageProcessor.setHookPrefillText(results.prefill);

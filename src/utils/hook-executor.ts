@@ -106,7 +106,7 @@ export interface HookCommandResults {
   baseUrl?: string;
   apiKeyEnvVar?: string;
   prefill?: string;
-  promptVars: Map<string, string>;
+  promptVars: Array<{name: string; value: string}>;
 }
 
 /**
@@ -130,7 +130,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
   const env: Record<string, string> = {};
   const toolResultLines: string[] = [];
   const systemLines: string[] = [];
-  const promptVars: Map<string, string> = new Map();
+  const promptVars: Array<{name: string; value: string}> = [];
   let model: string | undefined = undefined;
   let backend: string | undefined = undefined;
   let baseUrl: string | undefined = undefined;
@@ -205,7 +205,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
           finalValue = finalValue.substring(0, MAX_TEXT_SIZE) + "\n\n[Text truncated at 10,000 bytes]";
         }
 
-        promptVars.set(varName, finalValue);
+        promptVars.push({name: varName, value: finalValue});
       }
     } else if (cmd.type === "SET_FILE") {
       // Parse "VAR_NAME=/path/to/file"
@@ -231,11 +231,11 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
             fileContents = fs.readFileSync(expandedPath, 'utf-8');
           }
 
-          promptVars.set(varName, fileContents);
+          promptVars.push({name: varName, value: fileContents});
         } catch (error) {
           // Add error to variable value
           const errorMsg = error instanceof Error ? error.message : String(error);
-          promptVars.set(varName, `[Error reading file ${filePath}: ${errorMsg}]`);
+          promptVars.push({name: varName, value: `[Error reading file ${filePath}: ${errorMsg}]`});
         }
       }
     } else if (cmd.type === "SET_TEMP_FILE") {
@@ -262,14 +262,14 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
             fileContents = fs.readFileSync(expandedPath, 'utf-8');
           }
 
-          promptVars.set(varName, fileContents);
+          promptVars.push({name: varName, value: fileContents});
 
           // Delete temp file after reading
           fs.unlinkSync(expandedPath);
         } catch (error) {
           // Add error to variable value (file might not exist or delete might fail)
           const errorMsg = error instanceof Error ? error.message : String(error);
-          promptVars.set(varName, `[Error with temp file ${filePath}: ${errorMsg}]`);
+          promptVars.push({name: varName, value: `[Error with temp file ${filePath}: ${errorMsg}]`});
         }
       }
     } else if (cmd.type === "PREFILL") {
