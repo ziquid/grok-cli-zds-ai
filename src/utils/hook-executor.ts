@@ -573,6 +573,105 @@ export async function executePreToolCallHook(
 }
 
 /**
+ * Execute a postToolCall hook with tool name, parameters, and result passed via environment
+ * This hook runs after tool execution and can add context/guidance based on results
+ * Non-blocking: always processes commands even on non-zero exit
+ * @param hookPath Path to hook script (supports ~/ expansion)
+ * @param toolName Name of the tool that was executed
+ * @param parameters Tool parameters as key-value pairs
+ * @param result Tool execution result
+ * @param timeoutMs Timeout in milliseconds (default 30000)
+ * @returns Promise<HookResult>
+ */
+export async function executePostToolCallHook(
+  hookPath: string,
+  toolName: string,
+  parameters: Record<string, any>,
+  result: { success: boolean; output?: string; error?: string },
+  timeoutMs: number = 30000,
+  contextCurrent?: number,
+  contextMax?: number
+): Promise<HookResult> {
+  // Expand ~ to home directory
+  const expandedPath = expandTilde(hookPath);
+
+  // Build environment with tool info and result using ZDS_AI_AGENT_* naming convention
+  const env: Record<string, string> = {
+    ...process.env as Record<string, string>,
+    [`${ENV_PREFIX}OPERATION`]: "postToolCall",
+    [`${ENV_PREFIX}TOOL_NAME`]: toolName,
+    [`${ENV_PREFIX}TOOL_SUCCESS`]: result.success.toString(),
+  };
+
+  // Add tool output/error to environment
+  if (result.output) {
+    env[`${ENV_PREFIX}TOOL_OUTPUT`] = result.output;
+  }
+  if (result.error) {
+    env[`${ENV_PREFIX}TOOL_ERROR`] = result.error;
+  }
+
+  // Add context information if provided
+  if (contextCurrent !== undefined) {
+    env[`${ENV_PREFIX}CONTEXT_CURRENT`] = contextCurrent.toString();
+  }
+  if (contextMax !== undefined) {
+    env[`${ENV_PREFIX}CONTEXT_MAX`] = contextMax.toString();
+  }
+
+  // Add each parameter as ZDS_AI_AGENT_PARAM_<KEY>=<VALUE>
+  for (const [key, value] of Object.entries(parameters)) {
+    const envKey = `${ENV_PREFIX}PARAM_${key.toUpperCase()}`;
+    env[envKey] = typeof value === 'string' ? value : JSON.stringify(value);
+  }
+
+  return new Promise((resolve) => {
+    // Execute hook with isolated environment (child process only)
+    const child = exec(expandedPath, { env, timeout: timeoutMs }, (error, stdout, stderr) => {
+      if (error) {
+        // Check if it was a timeout
+        if (error.killed && error.signal === "SIGTERM") {
+          // Timeout = auto-approve (don't block the agent)
+          resolve({
+            approved: true,
+            timedOut: true,
+          });
+          return;
+        }
+
+        // Non-zero exit code: non-blocking, process commands anyway
+        if (error.code && error.code > 0) {
+          const commands = parseHookOutput(stdout);
+          resolve({
+            approved: true,
+            timedOut: false,
+            commands,
+          });
+          return;
+        }
+      }
+
+      // Exit code 0 = success
+      const commands = parseHookOutput(stdout);
+      resolve({
+        approved: true,
+        timedOut: false,
+        commands,
+      });
+    });
+
+    // Handle timeout explicitly
+    setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch (_e) {
+        // Process may have already exited
+      }
+    }, timeoutMs);
+  });
+}
+
+/**
  * Execute a tool approval hook with tool name and parameters passed via environment
  * Blocking: non-zero exit code rejects the tool execution
  * @param hookPath Path to hook script (supports ~/ expansion)

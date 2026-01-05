@@ -1,7 +1,7 @@
 import { LLMToolCall } from "../grok/client.js";
 import { ToolResult } from "../types/index.js";
 import { getAllLLMTools, getMCPManager } from "../grok/tools.js";
-import { executeToolApprovalHook, executePreToolCallHook } from "../utils/hook-executor.js";
+import { executeToolApprovalHook, executePreToolCallHook, executePostToolCallHook } from "../utils/hook-executor.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 
 /** Maximum attempts to parse nested JSON strings */
@@ -250,7 +250,26 @@ export class ToolExecutor {
         await this.agent.processHookResult(hookResult);
       }
 
-      return await this.executeToolByName(toolCall.function.name, args);
+      const result = await this.executeToolByName(toolCall.function.name, args);
+
+      // Execute postToolCall hook
+      const postToolCallHookPath = settings.getPostToolCallHook();
+      if (postToolCallHookPath && !isTaskTool) {
+        const hookResult = await executePostToolCallHook(
+          postToolCallHookPath,
+          toolCall.function.name,
+          args,
+          result,
+          30000,
+          this.agent.getCurrentTokenCount(),
+          this.agent.getMaxContextSize()
+        );
+
+        // Process hook results (env vars, system messages, etc.)
+        await this.agent.processHookResult(hookResult);
+      }
+
+      return result;
     } catch (error: any) {
       return { success: false, error: `Tool execution error: ${error.message}` };
     }

@@ -108,3 +108,4 @@ temp/
 *.context.backup-*.json
 *.context.messages.backup-*.json
 out/
+bin-wrapper

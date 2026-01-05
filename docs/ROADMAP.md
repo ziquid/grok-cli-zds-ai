@@ -4,12 +4,12 @@
 
 ### Features
 
-- [🔘] 1: HOOKS
+- [✅] 1: HOOKS
   - [✅] 1.1: Rename prePrompt to preLLMResponse
   - [✅] 1.2: Add postUserInput hook
   - [✅] 1.3: Add postLLMResponse hook
   - [✅] 1.4: Add preToolCall hook
-  - [  ] 1.5: Add postToolCall hook
+  - [✅] 1.5: Add postToolCall hook
 
 - [  ] 2: HOOK COMMANDS
   - [  ] 2.1: Add MAXCONTEXT command for setting maximum context length
