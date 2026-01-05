@@ -143,8 +143,9 @@ Workflow for using unknown MCP tools:
 
         // Format the variable details with colors matching def: output style
         const varDef = VariableDef.getOrCreate(variable.name);
+        const isIntrinsic = VariableDef.isIntrinsic(variable.name);
         const isExplicit = VariableDef.isExplicit(variable.name);
-        const defType = isExplicit ? 'explicit' : 'implicit';
+        const defType = isIntrinsic ? 'intrinsic' : (isExplicit ? 'explicit' : 'implicit');
         let output = `${chalk.cyan(variable.name)} ${chalk.dim(`(${defType})`)}\n`;
 
         // Only show isNew if the variable has values
@@ -209,8 +210,9 @@ Workflow for using unknown MCP tools:
           allChildren.forEach(child => {
             const childVar = Variable.get(child.name);
             const childDef = VariableDef.getOrCreate(child.name);
+            const isIntrinsic = VariableDef.isIntrinsic(child.name);
             const isExplicit = VariableDef.isExplicit(child.name);
-            const defType = isExplicit ? 'explicit' : 'implicit';
+            const defType = isIntrinsic ? 'intrinsic' : (isExplicit ? 'explicit' : 'implicit');
 
             // Show child with same format as parent variable
             output += `  - ${chalk.cyan(child.name)} ${chalk.dim(`(${defType})`)}\n`;
@@ -292,8 +294,9 @@ Workflow for using unknown MCP tools:
 
           // Show current variable with YAML-like formatting
           const indent = "  ".repeat(depth);
+          const isIntrinsic = VariableDef.isIntrinsic(varName);
           const isExplicit = VariableDef.isExplicit(varName);
-          const defType = isExplicit ? 'explicit' : 'implicit';
+          const defType = isIntrinsic ? 'intrinsic' : (isExplicit ? 'explicit' : 'implicit');
           output += `${indent}name: ${chalk.cyan(`"${varName}"`)} ${chalk.dim(`(${defType})`)}\n`;
           output += `${indent}weight: ${chalk.yellow(def.weight)}, persists: ${chalk.yellow(def.persists)}, renderFull: ${chalk.yellow(def.renderFull)}\n`;
 

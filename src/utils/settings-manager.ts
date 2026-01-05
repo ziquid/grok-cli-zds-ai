@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as yaml from "js-yaml";
 
 /**
  * User-level settings stored in ~/.grok/user-settings.json
@@ -67,6 +68,7 @@ export class SettingsManager {
 
   private userSettingsPath: string;
   private userMcpServersPath: string;
+  private userVarsPath: string;
   private projectSettingsPath: string;
   private projectMcpServersPath: string;
 
@@ -76,6 +78,9 @@ export class SettingsManager {
 
     // User mcp servers path: ~/.zds-ai/mcp.json
     this.userMcpServersPath = path.join(os.homedir(), ".zds-ai", "mcp.json");
+
+    // User variable definitions path: ~/.zds-ai/cli-vars.yml
+    this.userVarsPath = path.join(os.homedir(), ".zds-ai", "cli-vars.yml");
 
     // Project settings path: .zds-ai/project-settings.json (in current working directory)
     this.projectSettingsPath = path.join(process.cwd(), ".zds-ai", "project-settings.json");
@@ -598,6 +603,32 @@ export class SettingsManager {
     }
 
     return undefined; // No default - let API decide
+  }
+
+  /**
+   * Load variable definitions from ~/.zds-ai/cli-vars.yml
+   * Returns array of variable definition objects
+   */
+  public loadVariableDefinitions(): any[] {
+    try {
+      if (!fs.existsSync(this.userVarsPath)) {
+        // Return empty array if file doesn't exist
+        return [];
+      }
+
+      const fileContents = fs.readFileSync(this.userVarsPath, 'utf8');
+      const data = yaml.load(fileContents) as { variables: any[] };
+
+      if (!data || !Array.isArray(data.variables)) {
+        console.error('Invalid cli-vars.yml format: expected { variables: [...] }');
+        return [];
+      }
+
+      return data.variables;
+    } catch (error) {
+      console.error(`Error loading ~/.zds-ai/cli-vars.yml: ${error}`);
+      return [];
+    }
   }
 
   /**

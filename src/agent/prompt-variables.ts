@@ -1,3 +1,5 @@
+import { SettingsManager } from '../utils/settings-manager.js';
+
 /**
  * Variable definition class for prompt template system
  * Defines structure, behavior, and relationships between variables
@@ -78,28 +80,37 @@ export class VariableDef {
   /**
    * Get all variable definitions
    * Ensures all PROMPT_VARS are loaded into definitions map
+   * Later definitions override earlier ones (YAML overrides hardcoded)
    *
    * @returns Array of all VariableDef instances
    */
   static getAllDefinitions(): VariableDef[] {
-    // First, ensure all PROMPT_VARS are loaded into definitions
+    // Load all PROMPT_VARS into definitions (later entries override earlier)
     for (const promptVar of PROMPT_VARS) {
-      if (!VariableDef.definitions.has(promptVar.name)) {
-        VariableDef.definitions.set(promptVar.name, promptVar);
-      }
+      VariableDef.definitions.set(promptVar.name, promptVar);
     }
 
     return Array.from(VariableDef.definitions.values());
   }
 
   /**
-   * Check if a variable is explicitly defined in PROMPT_VARS
+   * Check if a variable is intrinsic (hardcoded in TypeScript)
    *
    * @param name Variable name
-   * @returns True if defined in PROMPT_VARS, false if created implicitly
+   * @returns True if defined in INTRINSIC_VARS
+   */
+  static isIntrinsic(name: string): boolean {
+    return INTRINSIC_VARS.some(v => v.name === name);
+  }
+
+  /**
+   * Check if a variable is explicit (defined in external YAML file)
+   *
+   * @param name Variable name
+   * @returns True if defined in EXTERNAL_VARS
    */
   static isExplicit(name: string): boolean {
-    return PROMPT_VARS.some(v => v.name === name);
+    return EXTERNAL_VARS.some(v => v.name === name);
   }
 }
 
@@ -413,69 +424,62 @@ export class Variable {
   }
 }
 
-/** Predefined variable definitions for the prompt system */
-const PROMPT_VARS: VariableDef[] = [
-  new VariableDef({ name: "ZDS:PRE", weight: 0, persists: true }),
-  new VariableDef({ name: "USER:PRE", weight: 0, template: "<pre explanation=\"Before you do any processing, please remember:\">\n%%\n</pre>\n" }),
-  new VariableDef({
-    name: "USER:ENV",
-    weight: 10,
-    template: "<env explanation=\"The following environment variables have changed since the last prompt:\">\n%%\n</env>\n"
-  }),
-  new VariableDef({ name: "USER:TIMESTAMP", weight: 11, template: "<timestamp explanation=\"Current local time:\">%%</timestamp>\n" }),
-  new VariableDef({
-    name: "USER:RAG",
-    weight: 20,
-    template: "<rag explanation=\"The following data may aid you in performing this request or answering this question:\">\n%%\n</rag>\n"
-  }),
-  new VariableDef({ name: "USER:PROMPT", weight: 50 }),
-  new VariableDef({
-    name: "USER:GUIDANCE",
-    weight: 90,
-    template: "\n<guidance explanation=\"Use the following information to guide your response:\">\n%%\n</guidance>\n"
-  }),
-  new VariableDef({ name: "USER:POST", weight: 99, template: "\n<post explanation=\"Please also observe these:\">\n%%\n</post>\n" }),
-  new VariableDef({
-    name: "MESSAGE",
-    weight: 60,
-    template: "%%"
-  }),
-  new VariableDef({ name: "MESSAGE:ACL:CURRENT", template: "<current>%%</current>\n" }),
-  new VariableDef({ name: "MESSAGE:AUTHOR", template: "<author>%%</author>\n" }),
-  new VariableDef({ name: "MESSAGE:CHANNEL", template: "<channel>%%</channel>\n" }),
-  new VariableDef({ name: "MESSAGE:TANGENT:IS_TANGENT", template: "<is-tangent>%%</is-tangent>\n" }),
-  new VariableDef({ name: "MESSAGE:ACL:MAX", template: "<max>%%</max>\n" }),
-  new VariableDef({ name: "MESSAGE:MEMBERS", template: "<members>%%</members>\n" }),
-  new VariableDef({ name: "MESSAGE:PRIVACY", template: "<privacy>%%</privacy>\n" }),
-  new VariableDef({ name: "MESSAGE:RESPONSE_TYPES:ACCEPTED", template: "<accepted>%%</accepted>\n" }),
-  new VariableDef({ name: "MESSAGE:RESPONSE_TYPES:FORBIDDEN", template: "<forbidden>%%</forbidden>\n" }),
-  new VariableDef({ name: "MESSAGE:SERVER", template: "<server>%%</server>\n" }),
-  new VariableDef({ name: "MESSAGE:SOURCE", template: "<source>%%</source>\n" }),
-  new VariableDef({ name: "MESSAGE:TANGENT:NAME", template: "<name>%%</name>\n" }),
-  new VariableDef({ name: "MESSAGE:TIMESTAMP", template: "<timestamp>%%</timestamp>\n" }),
+/**
+ * Intrinsic (hardcoded) variable definitions
+ * These cannot be externalized and provide fallback defaults
+ */
+const INTRINSIC_VARS: VariableDef[] = [
   new VariableDef({
     name: "SYSTEM",
-    template: "<zds-pre>%ZDS:PRE%</zds-pre>\n<org>%ORG%</org>\n<job>%JOB%</job>\n<char>%CHAR%</char>\n<project>%PROJECT%</project>\n<task>%TASK%</task>\n<message>%MESSAGE%</message>\n<backend>%BACKEND%</backend>\n<app>%APP%</app>\n<zds-post>%ZDS:POST%</zds-post>\n%%"
-  }),
-  new VariableDef({ name: "ZDS:POST", weight: 99, persists: true }),
-  new VariableDef({ name: "ORG:NAME", weight: 10, persists: true, renderFull: true }),
-  new VariableDef({ name: "ORG:NOTES", weight: 20, persists: true, renderFull: true }),
-  new VariableDef({
-    name: "APP:TOOLS",
-    weight: 70,
-    persists: true,
-    template: "<tools>%%</tools>\n"
+    template: "You are a helpful AI assistant.\n\n%APP%"
   }),
   new VariableDef({
     name: "APP:CWD",
     weight: 80,
-    persists: true,
-    template: "<current-working-directory>%%</current-working-directory>\n",
     getter: () => process.cwd()
   }),
-  new VariableDef({ name: "SESSION:BACKEND:MODEL", weight: 10, persists: true }),
-  new VariableDef({ name: "SESSION:BACKEND:SERVICE", weight: 20, persists: true }),
-  new VariableDef({ name: "SESSION:FRONTEND", weight: 30, persists: true }),
-  new VariableDef({ name: "SESSION:STDIN_IS_TTY", weight: 31, persists: true }),
-  new VariableDef({ name: "SESSION:STDOUT_IS_TTY", weight: 31, persists: true }),
+  new VariableDef({
+    name: "APP:TOOLS",
+    weight: 70,
+    persists: true
+  }),
+  new VariableDef({
+    name: "APP:TIMESTAMP:UTC",
+    weight: 81,
+    getter: () => new Date().toISOString()
+  }),
+  new VariableDef({
+    name: "APP:TIMESTAMP:LOCALIZED",
+    weight: 82,
+    getter: () => new Date().toLocaleString()
+  }),
+  new VariableDef({
+    name: "USER:PROMPT",
+    weight: 50
+  }),
+];
+
+/**
+ * Load variable definitions from ~/.zds-ai/cli-vars.yml via SettingsManager
+ * Returns array of VariableDef instances
+ */
+function loadVariableDefinitions(): VariableDef[] {
+  const settingsManager = SettingsManager.getInstance();
+  const varDefs = settingsManager.loadVariableDefinitions();
+  return varDefs.map(varDef => new VariableDef(varDef));
+}
+
+/**
+ * External (YAML) variable definitions
+ * Loaded from ~/.zds-ai/cli-vars.yml
+ */
+const EXTERNAL_VARS: VariableDef[] = loadVariableDefinitions();
+
+/**
+ * Predefined variable definitions for the prompt system
+ * Intrinsic definitions provide defaults, external definitions override
+ */
+const PROMPT_VARS: VariableDef[] = [
+  ...INTRINSIC_VARS,
+  ...EXTERNAL_VARS,
 ];
