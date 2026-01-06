@@ -32,6 +32,7 @@
   - [✅] 6.1: Update the morph tool instructions
   - [  ] 6.2: Update the README
   - [✅] 6.3: Documented classes in src/agent
+  - [✅] 6.4: Add AGENTS.md
 
 - [✅] 7: CLI USABILITY IMPROVEMENTS
   - [✅] 7.1: Add `/? ` as shorter alias for `/introspect` command

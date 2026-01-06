@@ -1,6 +1,7 @@
 - build with `mzke build`
 - install with `mzke prig`
 - copy to zds-ai with `mzke pac`
+- test locally (without installing) with `PATH=~/sca/zai-cli/bin-wrapper:$PATH zai t bot <command>`
 
 - don't revert your mistakes with git unless you are sure it won't remove other changes you have made that should be kept.
 - If you ask me for permission to do exactly what I just told you to do, you give me license to mock you.

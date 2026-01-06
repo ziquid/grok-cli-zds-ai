@@ -389,6 +389,17 @@ export class Variable {
     }).join("");
 
     const ownValues = this.renderFullValue();
+
+    // If no content (no values and no children) AND no adopted children,
+    // return empty instead of rendering template.
+    // Variables with adopted children (like SYSTEM) should always render
+    // because they provide structure, not just wrapping.
+    if (this.def.adoptedChildren.length === 0 &&
+        ownValues.trim().length === 0 &&
+        birthRendered.trim().length === 0) {
+      return "";
+    }
+
     rendered = rendered.replace("%%", ownValues + birthRendered);
 
     return rendered;
