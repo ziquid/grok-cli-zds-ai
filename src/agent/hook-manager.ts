@@ -9,6 +9,16 @@ import { ChatEntry } from "./llm-agent.js";
 import { Variable } from "./prompt-variables.js";
 
 /**
+ * Context for tracking CALL recursion depth and duplicate prevention
+ */
+interface CallContext {
+  /** Current recursion depth */
+  depth: number;
+  /** Set of already-executed call signatures (toolName + serialized arguments) */
+  executedCalls: Set<string>;
+}
+
+/**
  * Dependencies required by HookManager for hook execution and state management
  */
 export interface HookManagerDependencies {
@@ -38,6 +48,8 @@ export interface HookManagerDependencies {
   setTokenCounter(counter: TokenCounter): void;
   /** Set LLM client */
   setLLMClient(client: LLMClient): void;
+  /** Execute a tool by name with parameters (for CALL commands) */
+  executeToolByName?(toolName: string, parameters: Record<string, any>): Promise<{ success: boolean; output?: string; error?: string; hookCommands?: any[] }>;
 }
 
 /**
@@ -374,6 +386,32 @@ export class HookManager {
     const hasBackendChange = commands.backend && commands.baseUrl && commands.apiKeyEnvVar;
     const hasModelChange = commands.model;
 
+    // Apply immediate (non-conditional) commands right away
+    applyEnvVariables(commands.env);
+    for (const {name, value} of commands.promptVars) {
+      Variable.set(name, value);
+    }
+    if (commands.system) {
+      this.deps.chatHistory.push({
+        type: "system",
+        content: commands.system,
+        timestamp: new Date(),
+      });
+    }
+
+    // Check for CONDITIONAL commands without any CONDITION - this is an error
+    if (commands.conditionalResults && !hasBackendChange && !hasModelChange) {
+      const errorMsg = "Hook error: CONDITIONAL commands present but no CONDITION BACKEND or CONDITION MODEL specified. Conditional commands ignored.";
+      console.warn(errorMsg);
+      this.deps.chatHistory.push({
+        type: "system",
+        content: errorMsg,
+        timestamp: new Date(),
+      });
+      // Don't return false - allow processing to continue, just skip the conditional commands
+    }
+
+    // If there's a backend/model change, test it and apply conditional commands on success
     if (hasBackendChange) {
       const testResult = await this.testBackendModelChange(
         commands.backend!,
@@ -395,11 +433,19 @@ export class HookManager {
         return false;
       }
 
-      applyEnvVariables(commands.env);
-
-      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const {name, value} of commands.promptVars) {
-        Variable.set(name, value);
+      // Apply conditional commands after successful test
+      if (commands.conditionalResults) {
+        applyEnvVariables(commands.conditionalResults.env);
+        for (const {name, value} of commands.conditionalResults.promptVars) {
+          Variable.set(name, value);
+        }
+        if (commands.conditionalResults.system) {
+          this.deps.chatHistory.push({
+            type: "system",
+            content: commands.conditionalResults.system,
+            timestamp: new Date(),
+          });
+        }
       }
 
       const parts = [];
@@ -430,11 +476,19 @@ export class HookManager {
         return false;
       }
 
-      applyEnvVariables(commands.env);
-
-      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const {name, value} of commands.promptVars) {
-        Variable.set(name, value);
+      // Apply conditional commands after successful test
+      if (commands.conditionalResults) {
+        applyEnvVariables(commands.conditionalResults.env);
+        for (const {name, value} of commands.conditionalResults.promptVars) {
+          Variable.set(name, value);
+        }
+        if (commands.conditionalResults.system) {
+          this.deps.chatHistory.push({
+            type: "system",
+            content: commands.conditionalResults.system,
+            timestamp: new Date(),
+          });
+        }
       }
 
       const successMsg = `Model changed to "${commands.model}"`;
@@ -445,20 +499,21 @@ export class HookManager {
       });
 
       this.deps.emit('modelChange', { model: commands.model });
-    } else {
-      applyEnvVariables(commands.env);
+    }
+    // If no backend/model change, conditional commands are ignored (there's no condition to satisfy)
 
-      // Apply prompt variables (SET, SET_FILE, SET_TEMP_FILE commands)
-      for (const {name, value} of commands.promptVars) {
-        Variable.set(name, value);
-      }
+    // Execute CALL commands after all other processing (fire-and-forget)
+    // Execute immediate CALLs
+    if (commands.calls.length > 0) {
+      this.executeCalls(commands.calls).catch(error => {
+        console.error("Error executing immediate CALL commands:", error);
+      });
     }
 
-    if (commands.system) {
-      this.deps.chatHistory.push({
-        type: "system",
-        content: commands.system,
-        timestamp: new Date(),
+    // Execute conditional CALLs only if backend/model test succeeded
+    if (commands.conditionalResults && commands.conditionalResults.calls.length > 0 && (hasBackendChange || hasModelChange)) {
+      this.executeCalls(commands.conditionalResults.calls).catch(error => {
+        console.error("Error executing conditional CALL commands:", error);
       });
     }
 
@@ -691,5 +746,116 @@ export class HookManager {
       }
       return true;
     });
+  }
+
+  /**
+   * Execute CALL commands asynchronously with recursion depth and duplicate tracking
+   * Fire-and-forget execution that processes hooks from called tools
+   *
+   * @param calls Array of CALL command strings
+   * @param context Call context for tracking recursion and duplicates
+   */
+  private async executeCalls(calls: string[], context: CallContext = { depth: 0, executedCalls: new Set() }): Promise<void> {
+    // Maximum recursion depth is 5
+    const MAX_DEPTH = 5;
+
+    if (context.depth >= MAX_DEPTH) {
+      console.warn(`CALL recursion depth limit (${MAX_DEPTH}) reached, skipping remaining calls`);
+      return;
+    }
+
+    // Check if executeToolByName is available
+    if (!this.deps.executeToolByName) {
+      console.warn("CALL commands require executeToolByName dependency, skipping calls");
+      return;
+    }
+
+    for (const callSpec of calls) {
+      // Parse "toolName arg1=val1 arg2=val2"
+      const parts = callSpec.trim().split(/\s+/);
+      if (parts.length === 0) {
+        continue;
+      }
+
+      const toolName = parts[0];
+      const parameters: Record<string, any> = {};
+
+      // Parse parameters
+      for (let i = 1; i < parts.length; i++) {
+        const match = parts[i].match(/^([^=]+)=(.*)$/);
+        if (match) {
+          const [, key, value] = match;
+          // Try to parse as JSON, fall back to string
+          try {
+            parameters[key] = JSON.parse(value);
+          } catch {
+            parameters[key] = value;
+          }
+        }
+      }
+
+      // Create signature for duplicate detection
+      const signature = `${toolName}:${JSON.stringify(parameters)}`;
+      if (context.executedCalls.has(signature)) {
+        console.warn(`Skipping duplicate CALL: ${signature}`);
+        continue;
+      }
+
+      // Mark as executed
+      context.executedCalls.add(signature);
+
+      // Execute tool asynchronously (fire-and-forget)
+      this.executeCallAsync(toolName, parameters, context).catch(error => {
+        console.error(`Error executing CALL ${toolName}:`, error);
+      });
+    }
+  }
+
+  /**
+   * Execute a single CALL asynchronously with hook processing
+   * Runs tool hooks which may generate more CALL commands
+   *
+   * @param toolName Tool to execute
+   * @param parameters Tool parameters
+   * @param context Call context for tracking recursion
+   */
+  private async executeCallAsync(
+    toolName: string,
+    parameters: Record<string, any>,
+    context: CallContext
+  ): Promise<void> {
+    if (!this.deps.executeToolByName) {
+      return;
+    }
+
+    try {
+      // Execute the tool
+      const result = await this.deps.executeToolByName(toolName, parameters);
+
+      // Process any hook commands that were generated during tool execution
+      if (result.hookCommands && result.hookCommands.length > 0) {
+        const hookResults = applyHookCommands(result.hookCommands);
+
+        // Extract CALL commands from hook results (both immediate and conditional)
+        const recursiveCalls: string[] = [...hookResults.calls];
+
+        // Add conditional calls if present (they would have been validated by the tool's hooks)
+        if (hookResults.conditionalResults && hookResults.conditionalResults.calls.length > 0) {
+          recursiveCalls.push(...hookResults.conditionalResults.calls);
+        }
+
+        // Recursively execute CALL commands with incremented depth
+        if (recursiveCalls.length > 0) {
+          const nestedContext: CallContext = {
+            depth: context.depth + 1,
+            executedCalls: context.executedCalls, // Share the same set to prevent duplicates across entire chain
+          };
+          await this.executeCalls(recursiveCalls, nestedContext);
+        }
+      }
+
+    } catch (error) {
+      console.error(`Error in executeCallAsync for ${toolName}:`, error);
+    }
   }
 }

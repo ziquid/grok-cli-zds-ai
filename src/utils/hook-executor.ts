@@ -46,51 +46,93 @@ export interface HookResult {
 }
 
 export interface HookCommand {
-  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR" | "SET" | "SET_FILE" | "SET_TEMP_FILE" | "PREFILL";
+  type: "ENV" | "TOOL_RESULT" | "ECHO" | "RUN" | "BACKEND" | "MODEL" | "SYSTEM" | "SYSTEM_FILE" | "BASE_URL" | "API_KEY_ENV_VAR" | "SET" | "SET_FILE" | "SET_TEMP_FILE" | "PREFILL" | "CALL";
   value: string;
+  isConditional?: boolean;
 }
 
 /**
  * Parse hook output for command directives
- * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", "API_KEY_ENV_VAR ", "SET ", "SET_FILE ", "SET_TEMP_FILE ", or "PREFILL " are commands
+ * Lines starting with "ENV ", "TOOL_RESULT ", "ECHO ", "RUN ", "BACKEND ", "MODEL ", "SYSTEM ", "SYSTEM_FILE ", "BASE_URL ", "API_KEY_ENV_VAR ", "SET ", "SET_FILE ", "SET_TEMP_FILE ", "PREFILL ", or "CALL " are commands
+ * BACKEND and MODEL commands may optionally be prefixed with "CONDITION " for clarity
+ * ENV, SET*, SYSTEM*, TOOL_RESULT, PREFILL, and CALL commands may be prefixed with "CONDITIONAL " to make them dependent on backend/model test success
  * Other lines are treated as TOOL_RESULT if present
  */
 function parseHookOutput(stdout: string): HookCommand[] {
   const commands: HookCommand[] = [];
   const lines = stdout.split("\n").filter((line) => line.trim());
 
-  for (const line of lines) {
-    if (line.startsWith("ENV ")) {
-      commands.push({ type: "ENV", value: line.slice(4) });
+  for (let line of lines) {
+    let isConditional = false;
+
+    // Handle CONDITIONAL prefix (marks command as dependent on backend/model test)
+    if (line.startsWith("CONDITIONAL ")) {
+      isConditional = true;
+      line = line.slice(12); // Strip "CONDITIONAL "
+    }
+
+    // Handle CONDITION prefix (only valid for BACKEND and MODEL)
+    if (line.startsWith("CONDITION ")) {
+      const remainder = line.slice(10); // Strip "CONDITION "
+      if (remainder.startsWith("BACKEND ")) {
+        commands.push({ type: "BACKEND", value: remainder.slice(8) });
+      } else if (remainder.startsWith("MODEL ")) {
+        commands.push({ type: "MODEL", value: remainder.slice(6) });
+      } else {
+        // CONDITION prefix is only valid for BACKEND and MODEL
+        throw new Error(`Invalid hook command: CONDITION prefix is only valid for BACKEND and MODEL commands, got: CONDITION ${remainder}`);
+      }
+    } else if (line.startsWith("ENV ")) {
+      commands.push({ type: "ENV", value: line.slice(4), isConditional });
     } else if (line.startsWith("TOOL_RESULT ")) {
-      commands.push({ type: "TOOL_RESULT", value: line.slice(12) });
+      commands.push({ type: "TOOL_RESULT", value: line.slice(12), isConditional });
     } else if (line.startsWith("ECHO ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for ECHO commands`);
+      }
       commands.push({ type: "ECHO", value: line.slice(5) });
     } else if (line.startsWith("RUN ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for RUN commands`);
+      }
       commands.push({ type: "RUN", value: line.slice(4) });
     } else if (line.startsWith("BACKEND ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for BACKEND commands (use CONDITION BACKEND instead)`);
+      }
       commands.push({ type: "BACKEND", value: line.slice(8) });
     } else if (line.startsWith("MODEL ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for MODEL commands (use CONDITION MODEL instead)`);
+      }
       commands.push({ type: "MODEL", value: line.slice(6) });
     } else if (line.startsWith("SYSTEM_FILE ")) {
-      commands.push({ type: "SYSTEM_FILE", value: line.slice(12) });
+      commands.push({ type: "SYSTEM_FILE", value: line.slice(12), isConditional });
     } else if (line.startsWith("SYSTEM ")) {
-      commands.push({ type: "SYSTEM", value: line.slice(7) });
+      commands.push({ type: "SYSTEM", value: line.slice(7), isConditional });
     } else if (line.startsWith("BASE_URL ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for BASE_URL commands`);
+      }
       commands.push({ type: "BASE_URL", value: line.slice(9) });
     } else if (line.startsWith("API_KEY_ENV_VAR ")) {
+      if (isConditional) {
+        throw new Error(`Invalid hook command: CONDITIONAL prefix is not valid for API_KEY_ENV_VAR commands`);
+      }
       commands.push({ type: "API_KEY_ENV_VAR", value: line.slice(16) });
     } else if (line.startsWith("SET_TEMP_FILE ")) {
-      commands.push({ type: "SET_TEMP_FILE", value: line.slice(14) });
+      commands.push({ type: "SET_TEMP_FILE", value: line.slice(14), isConditional });
     } else if (line.startsWith("SET_FILE ")) {
-      commands.push({ type: "SET_FILE", value: line.slice(9) });
+      commands.push({ type: "SET_FILE", value: line.slice(9), isConditional });
     } else if (line.startsWith("SET ")) {
-      commands.push({ type: "SET", value: line.slice(4) });
+      commands.push({ type: "SET", value: line.slice(4), isConditional });
     } else if (line.startsWith("PREFILL ")) {
-      commands.push({ type: "PREFILL", value: line.slice(8) });
+      commands.push({ type: "PREFILL", value: line.slice(8), isConditional });
+    } else if (line.startsWith("CALL ")) {
+      commands.push({ type: "CALL", value: line.slice(5), isConditional });
     } else if (line.trim()) {
       // Non-empty lines without a command prefix are treated as TOOL_RESULT
-      commands.push({ type: "TOOL_RESULT", value: line });
+      commands.push({ type: "TOOL_RESULT", value: line, isConditional });
     }
   }
 
@@ -107,6 +149,15 @@ export interface HookCommandResults {
   apiKeyEnvVar?: string;
   prefill?: string;
   promptVars: Array<{name: string; value: string}>;
+  calls: string[];
+  conditionalResults?: {
+    env: Record<string, string>;
+    toolResult: string;
+    system: string;
+    prefill?: string;
+    promptVars: Array<{name: string; value: string}>;
+    calls: string[];
+  };
 }
 
 /**
@@ -124,13 +175,50 @@ export interface HookCommandResults {
  * SET commands set prompt variables (text limited to 10,000 bytes)
  * SET_FILE commands read file contents (up to 20,000 bytes) and set prompt variables
  * SET_TEMP_FILE commands read file contents (up to 20,000 bytes), set prompt variables, and delete file
+ *
+ * Commands marked with isConditional=true are separated and returned in conditionalResults.
+ * These should only be applied after backend/model tests succeed.
+ *
  * Returns extracted values for caller to use
  */
 export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
+  // Separate conditional and non-conditional commands
+  const immediateCommands = commands.filter(cmd => !cmd.isConditional);
+  const conditionalCommands = commands.filter(cmd => cmd.isConditional);
+
+  // Process immediate commands
+  const immediateResults = processCommandBatch(immediateCommands);
+
+  // Process conditional commands (if any)
+  let conditionalResults: HookCommandResults['conditionalResults'] = undefined;
+  if (conditionalCommands.length > 0) {
+    const conditionalBatch = processCommandBatch(conditionalCommands);
+    conditionalResults = {
+      env: conditionalBatch.env,
+      toolResult: conditionalBatch.toolResult,
+      system: conditionalBatch.system,
+      prefill: conditionalBatch.prefill,
+      promptVars: conditionalBatch.promptVars,
+      calls: conditionalBatch.calls,
+    };
+  }
+
+  return {
+    ...immediateResults,
+    conditionalResults,
+  };
+}
+
+/**
+ * Process a batch of hook commands and return extracted values
+ * Internal helper for applyHookCommands
+ */
+function processCommandBatch(commands: HookCommand[]): HookCommandResults {
   const env: Record<string, string> = {};
   const toolResultLines: string[] = [];
   const systemLines: string[] = [];
   const promptVars: Array<{name: string; value: string}> = [];
+  const calls: string[] = [];
   let model: string | undefined = undefined;
   let backend: string | undefined = undefined;
   let baseUrl: string | undefined = undefined;
@@ -275,6 +363,9 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     } else if (cmd.type === "PREFILL") {
       // PREFILL sets the assistant prefill text (last one wins if multiple)
       prefill = cmd.value;
+    } else if (cmd.type === "CALL") {
+      // CALL commands are collected for asynchronous execution after hook processing
+      calls.push(cmd.value);
     }
   }
 
@@ -288,6 +379,7 @@ export function applyHookCommands(commands: HookCommand[]): HookCommandResults {
     apiKeyEnvVar,
     prefill,
     promptVars,
+    calls,
   };
 }
 
