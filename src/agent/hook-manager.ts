@@ -521,9 +521,20 @@ export class HookManager {
   }
 
   /**
+   * Render system message with current variable state
+   * Updates messages[0] with fresh system prompt from variables
+   */
+  private renderSystemMessage(): void {
+    this.deps.messages[0] = {
+      role: "system",
+      content: Variable.renderFull('SYSTEM')
+    };
+  }
+
+  /**
    * Test model change by making API call
    * Validates model compatibility before switching
-   * 
+   *
    * @param newModel Model name to test
    * @returns Success status and error message if failed
    */
@@ -531,6 +542,8 @@ export class HookManager {
     const previousModel = this.deps.getCurrentModel();
     const previousTokenCounter = this.deps.getTokenCounter();
 
+    // Render system message with current variable state before testing
+    this.renderSystemMessage();
     const testMessages = this.stripInProgressToolCalls(this.deps.messages);
     const supportsTools = this.deps.getLLMClient().getSupportsTools();
     const tools = supportsTools ? await getAllLLMTools() : [];
@@ -639,6 +652,8 @@ export class HookManager {
         console.warn("MCP reinitialization failed:", mcpError);
       }
 
+      // Render system message with current variable state before testing
+      this.renderSystemMessage();
       const testMessages = this.stripInProgressToolCalls(this.deps.messages);
       const supportsTools = this.deps.getLLMClient().getSupportsTools();
       const tools = supportsTools ? await getAllLLMTools() : [];

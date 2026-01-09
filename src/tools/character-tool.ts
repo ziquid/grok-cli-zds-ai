@@ -11,7 +11,23 @@ export class CharacterTool implements ToolDiscovery {
   }
 
   getHandledToolNames(): string[] {
-    return ["setPersona", "setMood", "getPersona", "getMood", "getAvailablePersonas"];
+    const settings = getSettingsManager();
+    const personaHook = settings.getPersonaHook();
+    const moodHook = settings.getMoodHook();
+
+    const tools: string[] = [];
+
+    // Only expose persona tools if persona hook is configured
+    if (personaHook) {
+      tools.push("setPersona", "getPersona", "getAvailablePersonas");
+    }
+
+    // Only expose mood tools if mood hook is configured
+    if (moodHook) {
+      tools.push("setMood", "getMood");
+    }
+
+    return tools;
   }
 
   /**

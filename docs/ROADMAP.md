@@ -57,6 +57,12 @@
     - SESSION:FRONTEND (weight 30, persistent)
     - SESSION:STDIN_IS_TTY (weight 31, persistent)
     - SESSION:STDOUT_IS_TTY (weight 31, persistent)
+  - [✅] 9.2: Dynamic system message rendering
+    - System prompt now renders from variables before each LLM call
+    - `getSystemPrompt()` automatically renders current variable state
+    - `setSystemPrompt()` deprecated - always renders from variables
+    - Ensures instance hook variables always included in fresh sessions
+    - `renderSystemMessage()` method added to LLMAgent and HookManager
 
 
 ### Bug Fixes
@@ -72,6 +78,8 @@
 - [✅] 9: Fixed findBirthChildren to only return immediate children, not grandchildren
 - [✅] 10: Fixed var: output showing "Values (0)" - now shows "No direct values (renders from children/getter)"
 - [✅] 11: Fixed var: output not showing children (now displays children list matching def: output)
+- [✅] 12: Fixed empty child wrapper tags being rendered - now only creates XML wrappers when child has content
+- [✅] 13: Fixed orphaned grandchildren not appearing in parent render - automatically creates intermediate parents (e.g., MESSAGE:ACL when MESSAGE:ACL:CURRENT exists)
 
 ## Version 0.2.0
 

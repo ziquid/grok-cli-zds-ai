@@ -256,6 +256,29 @@ export class Variable {
       }
     }
 
+    // Also check for "orphaned grandchildren" - variables like MESSAGE:ACL:CURRENT
+    // where the intermediate parent (MESSAGE:ACL) doesn't exist yet
+    for (const variable of Variable.variables.values()) {
+      if (variable.name.startsWith(prefix) && variable.renderFull) {
+        const remainder = variable.name.substring(prefix.length);
+        // If this is a grandchild (has colon in remainder)
+        if (remainder.includes(':')) {
+          // Extract the intermediate parent name (e.g., MESSAGE:ACL from MESSAGE:ACL:CURRENT)
+          const intermediateName = `${parent}:${remainder.split(':')[0]}`;
+          // If we haven't found this intermediate parent yet, create it
+          if (!foundNames.has(intermediateName)) {
+            let intermediateVar = Variable.get(intermediateName);
+            if (!intermediateVar) {
+              intermediateVar = new Variable(intermediateName);
+              Variable.variables.set(intermediateName, intermediateVar);
+            }
+            found.push(intermediateVar);
+            foundNames.add(intermediateName);
+          }
+        }
+      }
+    }
+
     // Sort by weight (primary), then name alphabetically (secondary)
     found.sort((a, b) => {
       if (a.weight !== b.weight) {
@@ -378,10 +401,14 @@ export class Variable {
 
       // If child has default template, wrap it in child's tag
       if (child.def.template === "%%") {
-        // Use last segment of child's name for tag (e.g., SESSION:FRONTEND → frontend)
-        const parts = child.name.split(':');
-        const tagName = parts[parts.length - 1].toLowerCase();
-        return `<${tagName}>${childContent}</${tagName}>\n`;
+        // Only create wrapper tags if child has rendered content
+        if (childContent.trim()) {
+          // Use last segment of child's name for tag (e.g., SESSION:FRONTEND → frontend)
+          const parts = child.name.split(':');
+          const tagName = parts[parts.length - 1].toLowerCase();
+          return `<${tagName}>${childContent}</${tagName}>\n`;
+        }
+        return ""; // No content, no wrapper
       } else {
         // Child has custom template -- it handles its own wrapping
         return childContent;

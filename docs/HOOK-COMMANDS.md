@@ -5,6 +5,7 @@ This document describes the hook command system in zai-cli.  When you write hook
 ## Table of Contents
 
 - [Overview](#overview)
+- [Conditional Commands](#conditional-commands)
 - [Command Reference](#command-reference)
    - [API_KEY_ENV_VAR](#api_key_env_var)
    - [BACKEND](#backend)
@@ -33,6 +34,73 @@ COMMAND_NAME value
 
 Any line that doesn't match a recognized command is treated as `TOOL_RESULT` content.
 
+## Conditional Commands
+
+Hook commands can be made conditional on backend or model tests succeeding. This allows you to tie certain commands to backend or model changes, so they only apply if the change test succeeds.
+
+### CONDITION Prefix
+
+Mark backend or model commands as conditions that will be tested:
+
+```text
+CONDITION BACKEND backend_name
+CONDITION MODEL model_name
+```
+
+**Notes:**
+- `CONDITION` is optional -- `BACKEND` and `MODEL` work with or without it
+- `CONDITION` prefix is only valid for `BACKEND` and `MODEL` commands
+- If present, makes the intent explicit for readability
+
+### CONDITIONAL Prefix
+
+Mark other commands as dependent on condition tests:
+
+```text
+CONDITIONAL ENV VARIABLE=value
+CONDITIONAL SET NAMESPACE:VAR=value
+CONDITIONAL SYSTEM message
+```
+
+**Valid for:**
+- `ENV`
+- `SET`, `SET_FILE`, `SET_TEMP_FILE`
+- `SYSTEM`, `SYSTEM_FILE`
+- `TOOL_RESULT`
+- `PREFILL`
+
+**Not valid for:**
+- `BACKEND`, `MODEL` (use `CONDITION` instead)
+- `BASE_URL`, `API_KEY_ENV_VAR` (configuration, not conditional)
+- `ECHO`, `RUN` (not implemented)
+
+**Processing order:**
+
+1. Non-conditional commands are applied immediately
+2. If `CONDITION BACKEND` or `CONDITION MODEL` present, backend or model test is run
+3. If test succeeds: conditional commands are applied
+4. If test fails: conditional commands are skipped, non-conditional commands already applied
+
+**Error case:**
+
+If `CONDITIONAL` commands are present but no `CONDITION BACKEND` or `CONDITION MODEL`, an error is logged and the conditional commands are ignored.
+
+**Example:**
+
+```zsh
+# Non-conditional - always applied
+SET USER:NAME=Alice
+
+# Conditions
+CONDITION BACKEND anthropic
+CONDITION MODEL claude-opus-4
+
+# Conditional - only applied if backend or model test succeeds
+CONDITIONAL ENV PERSONA=Professional
+CONDITIONAL SET CHAR:CARD=/path/to/professional.md
+CONDITIONAL SYSTEM Switched to Anthropic with professional persona
+```
+
 ## Command Reference
 
 ### API_KEY_ENV_VAR
@@ -60,6 +128,14 @@ Switch to a different backend service.  Must be used with `BASE_URL` and `API_KE
 
 ```text
 BACKEND backend_name
+BASE_URL https://api.endpoint.com
+API_KEY_ENV_VAR ENV_VAR_NAME
+```
+
+Or with optional `CONDITION` prefix for clarity:
+
+```text
+CONDITION BACKEND backend_name
 BASE_URL https://api.endpoint.com
 API_KEY_ENV_VAR ENV_VAR_NAME
 ```
@@ -156,6 +232,12 @@ Switch to a different model.
 MODEL model_name
 ```
 
+Or with optional `CONDITION` prefix for clarity:
+
+```text
+CONDITION MODEL model_name
+```
+
 **Notes:**
 
 - Model change is tested before being applied
@@ -165,7 +247,7 @@ MODEL model_name
 **Example:**
 
 ```text
-MODEL grok-beta
+CONDITION MODEL grok-beta
 ```
 
 ---
@@ -455,11 +537,11 @@ echo SET_FILE PROJECT:README="$PROJECT_ROOT/README.md"
 # prePrompt hook that switches to Grok for certain queries
 
 if [[ "$ZDS_AI_AGENT_USER_MESSAGE" =~ "real-time|current|latest news" ]]; then
-  echo BACKEND grok
+  echo CONDITION BACKEND grok
   echo BASE_URL https://api.x.ai/v1
   echo API_KEY_ENV_VAR GROK_API_KEY
-  echo MODEL grok-beta
-  echo SYSTEM Use search capabilities to find current information
+  echo CONDITION MODEL grok-beta
+  echo CONDITIONAL SYSTEM Use search capabilities to find current information
 fi
 ```
 
@@ -503,21 +585,19 @@ echo SYSTEM Review the analysis report before proceeding
 #!/usr/bin/env zsh
 # Complex hook combining multiple commands
 
-# Set environment
+# Set environment (non-conditional - always applied)
 echo ENV SESSION_MODE=research
-echo ENV MAX_TOKENS=4000
-
-# Load context files
-echo SYSTEM_FILE ~/research/context.md
 echo SET_FILE RESEARCH:NOTES=~/research/notes.md
 
-# Configure model
-echo MODEL grok-beta
+# Configure model (condition)
+echo CONDITION MODEL grok-beta
 
-# Prefill response
-echo PREFILL Based on the research context provided,
+# Conditional commands (only applied if model test succeeds)
+echo CONDITIONAL ENV MAX_TOKENS=4000
+echo CONDITIONAL SYSTEM_FILE ~/research/context.md
+echo CONDITIONAL PREFILL Based on the research context provided,
 
-# Add tool result
+# Add tool result (non-conditional)
 echo TOOL_RESULT Research mode activated with extended context
 ```
 
@@ -569,12 +649,17 @@ echo TOOL_RESULT Research mode activated with extended context
 ### Execution Order
 
 1. Hook is executed
-1. Commands are parsed from stdout
-1. Environment variables are extracted (not yet applied)
-1. Prompt variables (SET*) are applied
-1. Backend/model changes are tested
-1. If tests pass: ENV variables applied, SYSTEM added, PREFILL stored
-1. If tests fail: hook is rejected, no changes applied
+1. Commands are parsed from stdout, separating conditional from non-conditional
+1. Non-conditional commands are applied immediately:
+   - ENV variables applied
+   - Prompt variables (SET*) applied
+   - SYSTEM messages added
+   - PREFILL stored
+1. If CONDITION BACKEND or CONDITION MODEL present:
+   - Backend/model changes are tested
+   - If tests pass: conditional commands are applied (ENV, SET*, SYSTEM, PREFILL)
+   - If tests fail: conditional commands are skipped, non-conditional already applied
+1. If CONDITIONAL commands present but no CONDITION: error logged, conditional commands skipped
 
 ### Error Handling
 

@@ -4,6 +4,7 @@ import { loadMCPConfig } from "../mcp/config.js";
 import { initializeMCPServers } from "../grok/tools.js";
 import { HookManager } from "./hook-manager.js";
 import { SessionState } from "../utils/chat-history-manager.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
 
 /**
  * Dependencies required by SessionManager for managing session state
@@ -160,18 +161,28 @@ export class SessionManager {
 
     // Restore persona (hook may change backend/model and sets env vars)
     if (state.persona) {
-      try {
-        const result = await this.deps.hookManager.setPersona(state.persona, state.personaColor);
-        if (!result.success) {
-          // If persona hook failed (e.g., backend test failed), still set the persona values
-          // but don't change backend/model. This prevents losing persona state on transitory errors.
-          console.warn(`Persona hook failed, setting persona without backend change: ${result.error}`);
+      const settings = getSettingsManager();
+      const personaHook = settings.getPersonaHook();
+
+      if (personaHook) {
+        // Persona hook is configured, call it
+        try {
+          const result = await this.deps.hookManager.setPersona(state.persona, state.personaColor);
+          if (!result.success) {
+            // If persona hook failed (e.g., backend test failed), still set the persona values
+            // but don't change backend/model. This prevents losing persona state on transitory errors.
+            console.warn(`Persona hook failed, setting persona without backend change: ${result.error}`);
+            this.deps.setPersona(state.persona, state.personaColor);
+            process.env.ZDS_AI_AGENT_PERSONA = state.persona;
+          }
+        } catch (error) {
+          console.warn(`Failed to restore persona "${state.persona}":`, error);
+          // Still set persona values even if hook crashed
           this.deps.setPersona(state.persona, state.personaColor);
           process.env.ZDS_AI_AGENT_PERSONA = state.persona;
         }
-      } catch (error) {
-        console.warn(`Failed to restore persona "${state.persona}":`, error);
-        // Still set persona values even if hook crashed
+      } else {
+        // No persona hook configured, just set the values directly
         this.deps.setPersona(state.persona, state.personaColor);
         process.env.ZDS_AI_AGENT_PERSONA = state.persona;
       }
@@ -179,18 +190,28 @@ export class SessionManager {
 
     // Restore mood (hook sets env vars)
     if (state.mood) {
-      try {
-        const result = await this.deps.hookManager.setMood(state.mood, state.moodColor);
-        if (!result.success) {
-          // If mood hook failed (e.g., backend test failed), still set the mood values
-          // but don't change backend/model. This prevents losing mood state on transitory errors.
-          console.warn(`Mood hook failed, setting mood without backend change: ${result.error}`);
+      const settings = getSettingsManager();
+      const moodHook = settings.getMoodHook();
+
+      if (moodHook) {
+        // Mood hook is configured, call it
+        try {
+          const result = await this.deps.hookManager.setMood(state.mood, state.moodColor);
+          if (!result.success) {
+            // If mood hook failed (e.g., backend test failed), still set the mood values
+            // but don't change backend/model. This prevents losing mood state on transitory errors.
+            console.warn(`Mood hook failed, setting mood without backend change: ${result.error}`);
+            this.deps.setMood(state.mood, state.moodColor);
+            process.env.ZDS_AI_AGENT_MOOD = state.mood;
+          }
+        } catch (error) {
+          console.warn(`Failed to restore mood "${state.mood}":`, error);
+          // Still set mood values even if hook crashed
           this.deps.setMood(state.mood, state.moodColor);
           process.env.ZDS_AI_AGENT_MOOD = state.mood;
         }
-      } catch (error) {
-        console.warn(`Failed to restore mood "${state.mood}":`, error);
-        // Still set mood values even if hook crashed
+      } else {
+        // No mood hook configured, just set the values directly
         this.deps.setMood(state.mood, state.moodColor);
         process.env.ZDS_AI_AGENT_MOOD = state.mood;
       }

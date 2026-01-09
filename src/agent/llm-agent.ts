@@ -520,17 +520,24 @@ export class LLMAgent extends EventEmitter {
     // Set APP:TOOLS variable
     Variable.set("APP:TOOLS", toolsSection);
 
-    // Build THE system prompt
+    // Note: System prompt rendering moved to renderSystemMessage()
+    // which is called just before each LLM API call to ensure
+    // variables reflect current state including hook-set values
+  }
+
+  /**
+   * Render system message with current variable state
+   * Called before LLM API calls and task processing to ensure fresh content
+   */
+  renderSystemMessage(): void {
+    // Render SYSTEM template with current variables
     this.systemPrompt = Variable.renderFull('SYSTEM');
 
-    // Update messages[0] with the system prompt
+    // Update messages[0] with the rendered system prompt
     this.messages[0] = {
       role: "system",
       content: this.systemPrompt,
     };
-
-    // Note: chatHistory no longer contains THE system prompt
-    // Only conversational system messages (persona, mood, etc.) go in chatHistory
   }
 
   /**
@@ -838,6 +845,9 @@ export class LLMAgent extends EventEmitter {
         });
       }
 
+      // Render system message with current variable state before sending to LLM
+      this.renderSystemMessage();
+
       const supportsTools = this.llmClient.getSupportsTools();
       let currentResponse = await this.llmClient.chat(
         this.messages,
@@ -1061,6 +1071,9 @@ export class LLMAgent extends EventEmitter {
             fs.appendFileSync(debugLogPath, `  ${JSON.stringify(msgSummary)}\n`);
           });
 
+          // Render system message with current variable state before sending to LLM
+          this.renderSystemMessage();
+
           currentResponse = await this.llmClient.chat(
             this.messages,
             supportsTools ? await getAllLLMTools() : [],
@@ -1128,6 +1141,9 @@ export class LLMAgent extends EventEmitter {
           }
 
           // Short/empty response, give AI another chance
+          // Render system message with current variable state before sending to LLM
+          this.renderSystemMessage();
+
           currentResponse = await this.llmClient.chat(
             this.messages,
             supportsTools ? await getAllLLMTools() : [],
@@ -1373,6 +1389,9 @@ export class LLMAgent extends EventEmitter {
             content: hookPrefillText
           });
         }
+
+        // Render system message with current variable state before sending to LLM
+        this.renderSystemMessage();
 
         const stream = this.llmClient.chatStream(
           this.messages,
@@ -1843,19 +1862,18 @@ export class LLMAgent extends EventEmitter {
    * @returns The system prompt string
    */
   getSystemPrompt(): string {
+    // Render system message with current variable state before returning
+    this.renderSystemMessage();
     return this.systemPrompt;
   }
 
   /**
    * Set a new system prompt and update the first message.
-   * @param prompt - New system prompt content
+   * @param prompt - Ignored (deprecated) - system prompt is always rendered from variables
    */
   setSystemPrompt(prompt: string): void {
-    this.systemPrompt = prompt;
-    this.messages[0] = {
-      role: "system",
-      content: prompt,
-    };
+    // System prompt is always dynamic - render from current variable state
+    this.renderSystemMessage();
   }
 
   /**
