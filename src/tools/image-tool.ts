@@ -177,7 +177,7 @@ export class ImageTool implements ToolDiscovery {
 
   /**
    * Caption an image using AI image captioning.
-   * Uses joycaption or fastcaption.sh script.
+   * Uses joycaption.sh or fastcaption.sh script.
    */
   async captionImage(
     filename: string,
@@ -193,7 +193,7 @@ export class ImageTool implements ToolDiscovery {
       }
 
       // Build command based on backend selection
-      const scriptName = backend === "fast" ? "fastcaption.sh" : "joycaption";
+      const scriptName = backend === "fast" ? "fastcaption.sh" : "joycaption.sh";
       const command = `${scriptName} '${filename.replace(/'/g, "'\\''")}'`;
 
       try {

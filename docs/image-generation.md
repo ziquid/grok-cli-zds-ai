@@ -160,7 +160,7 @@ done
 ```sh
 # Generate then caption
 generate_image_sd.sh "robot in city" --name "robot-city" --move
-joycaption /path/to/robot-city.png
+joycaption.sh /path/to/robot-city.png
 ```
 
 ## Troubleshooting

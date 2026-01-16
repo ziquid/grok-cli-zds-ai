@@ -709,7 +709,7 @@ const BASE_LLM_TOOLS: LLMTool[] = [
           backend: {
             type: "string",
             enum: ["joy", "fast"],
-            description: "Captioning backend to use: 'joy' for joycaption (slower, higher quality) or 'fast' for fastcaption.sh (faster, good quality).  Default: 'fast'",
+            description: "Captioning backend to use: 'joy' for joycaption.sh (slower, higher quality) or 'fast' for fastcaption.sh (faster, good quality).  Default: 'fast'",
           },
         },
         required: ["filename"],

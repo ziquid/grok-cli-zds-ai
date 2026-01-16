@@ -22,7 +22,7 @@
   - [✅] 4.1: Add encode-speech tool
   - [✅] 4.2: Add getLoraDetails to ImageTool
   - [  ] 4.3: Add compareImageToPrompt to ImageTool
-  - [  ] 4.4: Add joycaption to repository
+  - [✅] 4.4: Add joycaption.sh helper script to repository
 
 - [✅] 5: TECHNICAL DEBT
   - [✅] 5.1: Reduce duplicate code in llm-agent.ts

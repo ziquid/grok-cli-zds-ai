@@ -16,6 +16,7 @@
     "extract-text.sh": "dist/bin/extract-text.sh",
     "fastcaption.sh": "dist/bin/fastcaption.sh",
     "generate_image_sd.sh": "dist/bin/generate_image_sd.sh",
+    "joycaption.sh": "dist/bin/joycaption.sh",
     "read_xlsx.py": "dist/bin/read_xlsx.py",
     "talking-agents.sh": "dist/bin/talking-agents.sh"
   },
