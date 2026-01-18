@@ -1,0 +1,9 @@
+# TruffleHog configuration
+# Exclude documentation files that contain example API key variable names
+
+exclude:
+  paths:
+    - 'docs/**/*.md'
+    - '*.md'
+    - 'AGENTS.md'
+    - 'README.md'
