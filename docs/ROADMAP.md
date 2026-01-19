@@ -71,7 +71,7 @@
 - [✅] 2: Fixed session state persistence (persona, apiKeyEnvVar now save correctly)
 - [✅] 3: Fixed hook prompt variable commands (SET, SET_FILE, SET_TEMP_FILE) not being applied
 - [✅] 4: Fixed hook ENV commands not being applied in llm-agent.ts hooks
-- [  ] 5: Save permanent prompt vars with context.json
+- [✅] 5: Save permanent prompt vars with context.json
 - [✅] 6: Fixed /introspect and /? commands not showing user input in chat history
 - [✅] 7: Fixed SET/SET_FILE/SET_TEMP_FILE regex to allow underscores in variable names
 - [✅] 8: Fixed XML wrapping logic for prompt variables (now checks child's template, not parent's)

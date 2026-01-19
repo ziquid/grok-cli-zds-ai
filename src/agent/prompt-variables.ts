@@ -166,28 +166,39 @@ export class Variable {
   /**
    * Set variable value
    * Creates variable if it doesn't exist
-   * 
+   *
    * @param name Variable name
    * @param value Value to add
    */
   static set(name: string, value: string): void {
-    let variable = Variable.variables.get(name);
-    if (!variable) {
-      variable = new Variable(name);
-      Variable.variables.set(name, variable);
-    }
+    const variable = Variable.getOrCreate(name);
     variable.values.push(value);
     variable.isNew = true;
   }
 
   /**
    * Get variable by name
-   * 
+   *
    * @param name Variable name
    * @returns Variable instance or undefined
    */
   static get(name: string): Variable | undefined {
     return Variable.variables.get(name);
+  }
+
+  /**
+   * Get or create variable by name
+   *
+   * @param name Variable name
+   * @returns Variable instance
+   */
+  static getOrCreate(name: string): Variable {
+    let variable = Variable.variables.get(name);
+    if (!variable) {
+      variable = new Variable(name);
+      Variable.variables.set(name, variable);
+    }
+    return variable;
   }
 
   /**
@@ -207,6 +218,43 @@ export class Variable {
     for (const [name, variable] of Variable.variables.entries()) {
       if (!variable.persists) {
         Variable.variables.delete(name);
+      }
+    }
+  }
+
+  /**
+   * Export persistent variables for saving to context.json
+   * Returns only variables with persists=true
+   *
+   * @returns Object with variable names as keys and objects containing values and isNew state
+   */
+  static exportPersistentVariables(): Record<string, { values: string[]; isNew: boolean }> {
+    const persistent: Record<string, { values: string[]; isNew: boolean }> = {};
+
+    for (const [name, variable] of Variable.variables.entries()) {
+      if (variable.persists && variable.values.length > 0) {
+        persistent[name] = {
+          values: [...variable.values],
+          isNew: variable.isNew
+        };
+      }
+    }
+
+    return persistent;
+  }
+
+  /**
+   * Import persistent variables from saved context.json
+   * Restores variables with their values and isNew state
+   *
+   * @param saved Object with variable names as keys and objects containing values and isNew state
+   */
+  static importPersistentVariables(saved: Record<string, { values: string[]; isNew: boolean }>): void {
+    for (const [name, data] of Object.entries(saved)) {
+      if (data.values.length > 0) {
+        const variable = Variable.getOrCreate(name);
+        variable.values = [...data.values];
+        variable.isNew = data.isNew;
       }
     }
   }

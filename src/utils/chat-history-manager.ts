@@ -3,6 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import type { ChatEntry } from "../agent/llm-agent.js";
 import { getTextContent } from "./content-utils.js";
+import { Variable } from "../agent/prompt-variables.js";
 
 const HISTORY_FILE_NAME = "context.json";
 const HISTORY_DIR = path.join(os.homedir(), ".zds-ai");
@@ -30,6 +31,7 @@ export interface ContextData {
   systemPrompt: string;
   chatHistory: ChatEntry[];
   sessionState?: SessionState;
+  promptVariables?: Record<string, { values: string[]; isNew: boolean }>;
 }
 
 /**
@@ -109,7 +111,7 @@ export class ChatHistoryManager {
       const data = fs.readFileSync(this.historyFilePath, "utf-8");
       const parsed = JSON.parse(data);
 
-      // New format: {systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState}
+      // New format: {systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState, promptVariables?: Record<string, string[]>}
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'systemPrompt' in parsed) {
         const contextData: ContextData = {
           systemPrompt: parsed.systemPrompt || "",
@@ -124,6 +126,13 @@ export class ChatHistoryManager {
           if (legacySessionState) {
             contextData.sessionState = legacySessionState;
           }
+        }
+
+        // Load prompt variables if present
+        if (parsed.promptVariables && typeof parsed.promptVariables === 'object') {
+          contextData.promptVariables = parsed.promptVariables;
+          // Automatically import persistent variables
+          Variable.importPersistentVariables(parsed.promptVariables);
         }
 
         return contextData;
@@ -174,15 +183,26 @@ export class ChatHistoryManager {
   }
 
   /**
-   * Save context (system prompt + chat history + session state) in new format
+   * Save context (system prompt + chat history + session state + prompt variables) in new format
+   * Automatically exports persistent prompt variables
    */
-  saveContext(systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState): void {
+  saveContext(systemPrompt: string, chatHistory: ChatEntry[], sessionState?: SessionState, promptVariables?: Record<string, { values: string[]; isNew: boolean }>): void {
     try {
       const contextData: any = {};
 
       // Include session state first
       if (sessionState) {
         contextData.sessionState = sessionState;
+      }
+
+      // Export persistent variables automatically if not provided
+      if (!promptVariables) {
+        promptVariables = Variable.exportPersistentVariables();
+      }
+
+      // Include prompt variables if any exist
+      if (promptVariables && Object.keys(promptVariables).length > 0) {
+        contextData.promptVariables = promptVariables;
       }
 
       contextData.systemPrompt = systemPrompt;
