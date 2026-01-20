@@ -1,4 +1,4 @@
-# ZDS CLI Roadmap
+# ZDS AI CLI Roadmap
 
 ## Version 0.1.9
 
@@ -64,7 +64,6 @@
     - Ensures instance hook variables always included in fresh sessions
     - `renderSystemMessage()` method added to LLMAgent and HookManager
 
-
 ### Bug Fixes
 
 - [✅] 1: Fixed backend/model switching regression (dependency injection using getters)
@@ -80,6 +79,7 @@
 - [✅] 11: Fixed var: output not showing children (now displays children list matching def: output)
 - [✅] 12: Fixed empty child wrapper tags being rendered - now only creates XML wrappers when child has content
 - [✅] 13: Fixed orphaned grandchildren not appearing in parent render - automatically creates intermediate parents (e.g., MESSAGE:ACL when MESSAGE:ACL:CURRENT exists)
+
 
 ## Version 0.2.0
 
@@ -99,3 +99,7 @@
     - Maintain backward compatibility for reading old JSON files
     - Improve query performance for large conversation histories
     - Enable better analytics and search capabilities
+
+- [  ] 3: MISC IMPROVEMENTS
+   - [  ] 3.1: Consider integrating [Agent Skills](https://agentskills.io)
+   - [  ] 3.2: Add preUserInput hook
