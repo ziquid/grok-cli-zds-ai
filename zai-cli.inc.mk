@@ -8,9 +8,9 @@ copy: ## copy to $(BUN_PACKAGE_NAME_STRIPPED).tgz and zds-ai project
 	cp $(BUN_PACKAGE_NAME_STRIPPED).tgz ~/sca/zds-ai
 
 .PHONY: pack-and-copy
-pack-and-copy pac pc: pack copy ## package, copy to $(BUN_PACKAGE_NAME_STRIPPED).tgz and zds-ai project
+pack-and-copy pac pc: pack-quiet copy ## package quietly, copy to $(BUN_PACKAGE_NAME_STRIPPED).tgz and zds-ai project
 	@:
 
 .PHONY: prigc
-prigc: prig copy ## build, pack, reinstall globally, and copy
+prigc: pqrig copy ## build, pack quietly, reinstall globally, and copy
 	@:
