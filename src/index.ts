@@ -669,7 +669,7 @@ program
         confirmationService.setApprovedCommands(commands);
       }
 
-      console.log("🤖 Starting ZDS AI Agents CLI...\n");
+      console.log("⚡ Starting ZDS AI Agents CLI...\n");
 
       // Support variadic positional arguments for multi-word initial message
       let messageArray = Array.isArray(message) ? message : (message ? [message] : []);
