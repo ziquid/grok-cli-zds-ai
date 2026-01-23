@@ -406,6 +406,7 @@ export function useInputHandler({
     { command: "/compact", description: "Reduce context size (keep last 20 messages)" },
     { command: "/context", description: "Show context usage info" },
     { command: "/context edit", description: "Edit context JSON" },
+    { command: "/context reload", description: "Reload context from file" },
     { command: "/context view", description: "View context in pager" },
     { command: "/exit", description: "Exit the application" },
     { command: "/help", description: "Show help information" },
@@ -889,6 +890,64 @@ Available models: ${modelNames.join(", ")}`,
           return true;
         } catch (error) {
           console.error("Failed to edit context:", error);
+          clearInput();
+          return true;
+        }
+      } else if (subcommand === "reload") {
+        // Reload context from context.json file immediately (no editor, no confirmation)
+        try {
+          const fs = await import("fs");
+          const { ChatHistoryManager } = await import("../utils/chat-history-manager.js");
+
+          // Get context file path
+          const historyManager = ChatHistoryManager.getInstance();
+          const contextFilePath = historyManager.getContextFilePath();
+
+          // Verify context file exists
+          if (!fs.existsSync(contextFilePath)) {
+            const errorEntry: ChatEntry = {
+              type: "assistant",
+              content: `Error: Context file not found: ${contextFilePath}`,
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, errorEntry]);
+            clearInput();
+            return true;
+          }
+
+          // Reload context from file
+          const { systemPrompt: reloadedSystemPrompt, chatHistory: reloadedHistory } = historyManager.loadContext();
+
+          // Update agent's chat history
+          agent.setChatHistory(reloadedHistory);
+
+          // Update system prompt - regenerate if empty
+          if (reloadedSystemPrompt && reloadedSystemPrompt.trim()) {
+            agent.setSystemPrompt(reloadedSystemPrompt);
+          } else {
+            await agent.buildSystemMessage();
+          }
+
+          // Sync UI with reloaded context
+          setChatHistory(agent.getChatHistory());
+
+          // Add confirmation message
+          const confirmEntry: ChatEntry = {
+            type: "assistant",
+            content: "Context reloaded from file",
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, confirmEntry]);
+
+          clearInput();
+          return true;
+        } catch (error) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error reloading context: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
           clearInput();
           return true;
         }

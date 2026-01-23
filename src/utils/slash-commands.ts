@@ -11,6 +11,7 @@ export const BUILT_IN_COMMANDS = `Built-in Commands:
   /context    - Show context usage info
   /context view - View full context in pager (markdown format)
   /context edit - Edit context JSON file (opens in $EDITOR)
+  /context reload - Reload context from file immediately (no confirmation)
   /help       - Show this help
   /ink        - Switch to Ink UI mode (restart required)
   /introspect - Introspect tools and environment
@@ -342,7 +343,7 @@ export async function processSlashCommand(
     const parts = trimmedInput.split(" ");
     const subcommand = parts[1];
 
-    if (subcommand === "view" || subcommand === "edit") {
+    if (subcommand === "view" || subcommand === "edit" || subcommand === "reload") {
       // These commands require interactive mode
       if (isHeadless) {
         console.error(`ERROR: /context ${subcommand} requires interactive mode`);
