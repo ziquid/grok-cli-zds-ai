@@ -79,7 +79,7 @@
 - [✅] 11: Fixed var: output not showing children (now displays children list matching def: output)
 - [✅] 12: Fixed empty child wrapper tags being rendered - now only creates XML wrappers when child has content
 - [✅] 13: Fixed orphaned grandchildren not appearing in parent render - automatically creates intermediate parents (e.g., MESSAGE:ACL when MESSAGE:ACL:CURRENT exists)
-
+- [  ] 14: Persona is not being saved in context.json when personas are changed
 
 ## Version 0.2.0
 
